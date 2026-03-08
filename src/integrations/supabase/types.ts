@@ -14,16 +14,267 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      agents: {
+        Row: {
+          created_at: string
+          first_speaker: string
+          id: string
+          is_active: boolean
+          language_hint: string | null
+          max_duration: number | null
+          name: string
+          phone_number_id: string | null
+          system_prompt: string
+          temperature: number
+          updated_at: string
+          user_id: string
+          voice: string
+        }
+        Insert: {
+          created_at?: string
+          first_speaker?: string
+          id?: string
+          is_active?: boolean
+          language_hint?: string | null
+          max_duration?: number | null
+          name: string
+          phone_number_id?: string | null
+          system_prompt?: string
+          temperature?: number
+          updated_at?: string
+          user_id: string
+          voice?: string
+        }
+        Update: {
+          created_at?: string
+          first_speaker?: string
+          id?: string
+          is_active?: boolean
+          language_hint?: string | null
+          max_duration?: number | null
+          name?: string
+          phone_number_id?: string | null
+          system_prompt?: string
+          temperature?: number
+          updated_at?: string
+          user_id?: string
+          voice?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agents_phone_number_id_fkey"
+            columns: ["phone_number_id"]
+            isOneToOne: false
+            referencedRelation: "phone_configs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      call_logs: {
+        Row: {
+          agent_id: string | null
+          caller_number: string | null
+          created_at: string
+          direction: string
+          duration: number | null
+          ended_at: string | null
+          id: string
+          recipient_number: string | null
+          started_at: string
+          status: string
+          transcript: Json | null
+          twilio_call_sid: string | null
+          ultravox_call_id: string | null
+          user_id: string
+        }
+        Insert: {
+          agent_id?: string | null
+          caller_number?: string | null
+          created_at?: string
+          direction: string
+          duration?: number | null
+          ended_at?: string | null
+          id?: string
+          recipient_number?: string | null
+          started_at?: string
+          status?: string
+          transcript?: Json | null
+          twilio_call_sid?: string | null
+          ultravox_call_id?: string | null
+          user_id: string
+        }
+        Update: {
+          agent_id?: string | null
+          caller_number?: string | null
+          created_at?: string
+          direction?: string
+          duration?: number | null
+          ended_at?: string | null
+          id?: string
+          recipient_number?: string | null
+          started_at?: string
+          status?: string
+          transcript?: Json | null
+          twilio_call_sid?: string | null
+          ultravox_call_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_logs_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      knowledge_base_items: {
+        Row: {
+          agent_id: string
+          content: string | null
+          created_at: string
+          file_path: string | null
+          id: string
+          title: string
+          type: string
+          updated_at: string
+          user_id: string
+          website_url: string | null
+        }
+        Insert: {
+          agent_id: string
+          content?: string | null
+          created_at?: string
+          file_path?: string | null
+          id?: string
+          title: string
+          type?: string
+          updated_at?: string
+          user_id: string
+          website_url?: string | null
+        }
+        Update: {
+          agent_id?: string
+          content?: string | null
+          created_at?: string
+          file_path?: string | null
+          id?: string
+          title?: string
+          type?: string
+          updated_at?: string
+          user_id?: string
+          website_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_base_items_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      phone_configs: {
+        Row: {
+          created_at: string
+          friendly_name: string | null
+          id: string
+          is_active: boolean
+          phone_number: string
+          twilio_account_sid: string
+          twilio_auth_token: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          friendly_name?: string | null
+          id?: string
+          is_active?: boolean
+          phone_number: string
+          twilio_account_sid: string
+          twilio_auth_token: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          friendly_name?: string | null
+          id?: string
+          is_active?: boolean
+          phone_number?: string
+          twilio_account_sid?: string
+          twilio_auth_token?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          company_name: string | null
+          created_at: string
+          full_name: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          company_name?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          company_name?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "moderator" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +401,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "moderator", "user"],
+    },
   },
 } as const
