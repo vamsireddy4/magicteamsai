@@ -1,0 +1,7 @@
+project_id = "dezotzdwfhiwxkrgsiuv"
+
+[functions.handle-inbound-call]
+verify_jwt = false
+
+[functions.make-outbound-call]
+verify_jwt = false

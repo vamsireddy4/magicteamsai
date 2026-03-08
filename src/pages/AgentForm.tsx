@@ -1,0 +1,245 @@
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import DashboardLayout from "@/components/DashboardLayout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { useToast } from "@/hooks/use-toast";
+import { ArrowLeft } from "lucide-react";
+import type { Tables } from "@/integrations/supabase/types";
+
+const VOICES = [
+  "terrence", "tina", "mark", "jessica", "chris", "laura", "david", "sarah"
+];
+
+const FIRST_SPEAKER_OPTIONS = [
+  { value: "FIRST_SPEAKER_AGENT", label: "Agent speaks first (inbound)" },
+  { value: "FIRST_SPEAKER_USER", label: "User speaks first (outbound)" },
+];
+
+export default function AgentForm() {
+  const { id } = useParams();
+  const isEditing = !!id;
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [phoneConfigs, setPhoneConfigs] = useState<Tables<"phone_configs">[]>([]);
+
+  const [form, setForm] = useState({
+    name: "",
+    system_prompt: "You are a helpful and friendly receptionist. Answer questions about the business, take messages, and help callers with their needs.",
+    voice: "terrence",
+    temperature: 0.7,
+    first_speaker: "FIRST_SPEAKER_AGENT",
+    language_hint: "en",
+    max_duration: 300,
+    is_active: true,
+    phone_number_id: null as string | null,
+  });
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("phone_configs").select("*").then(({ data }) => setPhoneConfigs(data || []));
+
+    if (isEditing) {
+      supabase.from("agents").select("*").eq("id", id).single().then(({ data }) => {
+        if (data) {
+          setForm({
+            name: data.name,
+            system_prompt: data.system_prompt,
+            voice: data.voice,
+            temperature: Number(data.temperature),
+            first_speaker: data.first_speaker,
+            language_hint: data.language_hint || "en",
+            max_duration: data.max_duration || 300,
+            is_active: data.is_active,
+            phone_number_id: data.phone_number_id,
+          });
+        }
+      });
+    }
+  }, [user, id]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setLoading(true);
+
+    const payload = { ...form, user_id: user.id };
+
+    const { error } = isEditing
+      ? await supabase.from("agents").update(payload).eq("id", id)
+      : await supabase.from("agents").insert(payload);
+
+    setLoading(false);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: isEditing ? "Agent updated" : "Agent created" });
+      navigate("/agents");
+    }
+  };
+
+  return (
+    <DashboardLayout>
+      <div className="max-w-2xl space-y-6 animate-fade-in">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => navigate("/agents")}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">
+              {isEditing ? "Edit Agent" : "Create Agent"}
+            </h1>
+            <p className="text-muted-foreground mt-1">Configure your AI receptionist.</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <Card>
+            <CardHeader><CardTitle>Basic Info</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Agent Name</Label>
+                <Input
+                  id="name"
+                  placeholder="e.g. Front Desk Receptionist"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="prompt">System Prompt</Label>
+                <Textarea
+                  id="prompt"
+                  placeholder="Describe how your receptionist should behave..."
+                  value={form.system_prompt}
+                  onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
+                  rows={6}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Instructions that define your receptionist's personality and behavior.
+                </p>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Active</Label>
+                  <p className="text-xs text-muted-foreground">Enable this agent to receive calls</p>
+                </div>
+                <Switch
+                  checked={form.is_active}
+                  onCheckedChange={(val) => setForm({ ...form, is_active: val })}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Voice & Behavior</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Voice</Label>
+                  <Select value={form.voice} onValueChange={(val) => setForm({ ...form, voice: val })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {VOICES.map((v) => (
+                        <SelectItem key={v} value={v} className="capitalize">{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>First Speaker</Label>
+                  <Select value={form.first_speaker} onValueChange={(val) => setForm({ ...form, first_speaker: val })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {FIRST_SPEAKER_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Temperature: {form.temperature}</Label>
+                <Slider
+                  value={[form.temperature]}
+                  onValueChange={([val]) => setForm({ ...form, temperature: val })}
+                  min={0}
+                  max={1}
+                  step={0.1}
+                />
+                <p className="text-xs text-muted-foreground">Lower = more focused, higher = more creative</p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Language</Label>
+                  <Input
+                    value={form.language_hint}
+                    onChange={(e) => setForm({ ...form, language_hint: e.target.value })}
+                    placeholder="en"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Max Duration (seconds)</Label>
+                  <Input
+                    type="number"
+                    value={form.max_duration}
+                    onChange={(e) => setForm({ ...form, max_duration: parseInt(e.target.value) || 300 })}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Phone Number</CardTitle></CardHeader>
+            <CardContent>
+              {phoneConfigs.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No phone numbers configured yet.{" "}
+                  <a href="/phone-config" className="text-primary hover:underline">Add one first</a>.
+                </p>
+              ) : (
+                <Select
+                  value={form.phone_number_id || "none"}
+                  onValueChange={(val) => setForm({ ...form, phone_number_id: val === "none" ? null : val })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select a phone number" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {phoneConfigs.map((pc) => (
+                      <SelectItem key={pc.id} value={pc.id}>
+                        {pc.phone_number} {pc.friendly_name ? `(${pc.friendly_name})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="flex gap-3">
+            <Button type="submit" disabled={loading}>
+              {loading ? "Saving..." : isEditing ? "Update Agent" : "Create Agent"}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => navigate("/agents")}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </div>
+    </DashboardLayout>
+  );
+}
