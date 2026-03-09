@@ -21,7 +21,7 @@ export default function Auth() {
   const { toast } = useToast();
 
   // Redirect authenticated users
-  React.useEffect(() => {
+  useEffect(() => {
     if (user && !loading) {
       navigate("/dashboard", { replace: true });
     }
