@@ -20,10 +20,12 @@ export default function Auth() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  if (user) {
-    navigate("/dashboard");
-    return null;
-  }
+  // Redirect authenticated users
+  React.useEffect(() => {
+    if (user && !loading) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [user, loading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
