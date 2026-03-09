@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Phone, Trash2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
+import { Plus, Phone, Trash2, Settings } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -22,7 +22,6 @@ export default function PhoneConfig() {
     twilio_account_sid: "",
     twilio_auth_token: "",
     phone_number: "",
-    friendly_name: "",
   });
 
   const fetchConfigs = async () => {
@@ -39,22 +38,25 @@ export default function PhoneConfig() {
     if (!user) return;
 
     const { error } = await supabase.from("phone_configs").insert({
-      ...form,
+      twilio_account_sid: form.twilio_account_sid,
+      twilio_auth_token: form.twilio_auth_token,
+      phone_number: form.phone_number,
       user_id: user.id,
     });
 
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Phone number added" });
+      toast({ title: "Twilio configuration added successfully" });
       setDialogOpen(false);
-      setForm({ twilio_account_sid: "", twilio_auth_token: "", phone_number: "", friendly_name: "" });
+      setForm({ twilio_account_sid: "", twilio_auth_token: "", phone_number: "" });
       fetchConfigs();
     }
   };
 
   const deleteConfig = async (id: string) => {
     await supabase.from("phone_configs").delete().eq("id", id);
+    toast({ title: "Configuration deleted" });
     fetchConfigs();
   };
 
@@ -63,58 +65,62 @@ export default function PhoneConfig() {
       <div className="space-y-6 animate-fade-in">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Phone Numbers</h1>
-            <p className="text-muted-foreground mt-1">Configure Twilio phone numbers for your agents.</p>
+            <h1 className="text-3xl font-bold tracking-tight">Twilio Configuration</h1>
+            <p className="text-muted-foreground mt-1">Connect your Twilio account to enable phone calls.</p>
           </div>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button><Plus className="h-4 w-4 mr-2" />Add Number</Button>
+              <Button><Plus className="h-4 w-4 mr-2" />Add Twilio Account</Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg">
               <DialogHeader>
-                <DialogTitle>Add Twilio Phone Number</DialogTitle>
+                <DialogTitle>Connect Twilio Account</DialogTitle>
+                <DialogDescription>
+                  Enter your Twilio credentials to enable phone calls for your AI agents.
+                </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Phone Number</Label>
+                  <Label htmlFor="account_sid">Account SID</Label>
                   <Input
-                    value={form.phone_number}
-                    onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
-                    placeholder="+15551234567"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Friendly Name (optional)</Label>
-                  <Input
-                    value={form.friendly_name}
-                    onChange={(e) => setForm({ ...form, friendly_name: e.target.value })}
-                    placeholder="e.g. Main Office Line"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Twilio Account SID</Label>
-                  <Input
+                    id="account_sid"
                     value={form.twilio_account_sid}
                     onChange={(e) => setForm({ ...form, twilio_account_sid: e.target.value })}
                     placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                     required
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Find this in your Twilio Console dashboard.
+                  </p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Twilio Auth Token</Label>
+                  <Label htmlFor="auth_token">Auth Token</Label>
                   <Input
+                    id="auth_token"
                     type="password"
                     value={form.twilio_auth_token}
                     onChange={(e) => setForm({ ...form, twilio_auth_token: e.target.value })}
                     placeholder="Your Twilio auth token"
                     required
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Your auth token is also in the Twilio Console.
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Your Twilio credentials are stored securely and used to handle calls.
-                </p>
-                <Button type="submit" className="w-full">Add Phone Number</Button>
+                <div className="space-y-2">
+                  <Label htmlFor="phone_number">Phone Number</Label>
+                  <Input
+                    id="phone_number"
+                    value={form.phone_number}
+                    onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
+                    placeholder="+15551234567"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Your Twilio phone number in E.164 format (e.g., +15551234567).
+                  </p>
+                </div>
+                <Button type="submit" className="w-full">Connect Twilio Account</Button>
               </form>
             </DialogContent>
           </Dialog>
@@ -129,9 +135,16 @@ export default function PhoneConfig() {
         ) : configs.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-16">
-              <Phone className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-1">No phone numbers</h3>
-              <p className="text-sm text-muted-foreground mb-4">Add a Twilio phone number to get started.</p>
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted mb-4">
+                <Settings className="h-7 w-7 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold mb-1">No Twilio account connected</h3>
+              <p className="text-sm text-muted-foreground mb-4 text-center max-w-sm">
+                Connect your Twilio account to enable inbound and outbound phone calls for your AI agents.
+              </p>
+              <Button onClick={() => setDialogOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />Add Twilio Account
+              </Button>
             </CardContent>
           </Card>
         ) : (
@@ -140,13 +153,13 @@ export default function PhoneConfig() {
               <Card key={config.id}>
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent">
-                      <Phone className="h-4 w-4 text-accent-foreground" />
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                      <Phone className="h-5 w-5 text-primary" />
                     </div>
                     <div>
-                      <p className="font-medium text-sm">{config.phone_number}</p>
+                      <p className="font-medium">{config.phone_number}</p>
                       <p className="text-xs text-muted-foreground">
-                        {config.friendly_name || "No label"} · SID: {config.twilio_account_sid.slice(0, 8)}...
+                        Account SID: {config.twilio_account_sid.slice(0, 8)}...
                       </p>
                     </div>
                   </div>
