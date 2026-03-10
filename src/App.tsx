@@ -47,6 +47,9 @@ const App = () => (
             <Route path="/campaigns" element={<ProtectedRoute><Campaigns /></ProtectedRoute>} />
             <Route path="/outcomes" element={<ProtectedRoute><Outcomes /></ProtectedRoute>} />
             <Route path="/retry-csv" element={<ProtectedRoute><RetryCSV /></ProtectedRoute>} />
+            <Route path="/webhooks" element={<ProtectedRoute><Webhooks /></ProtectedRoute>} />
+            <Route path="/scheduled-calls" element={<ProtectedRoute><ScheduledCalls /></ProtectedRoute>} />
+            <Route path="/custom-tools" element={<ProtectedRoute><CustomTools /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><UserSettings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
