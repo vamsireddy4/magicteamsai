@@ -21,6 +21,7 @@ import RetryCSV from "./pages/RetryCSV";
 import Webhooks from "./pages/Webhooks";
 import ScheduledCalls from "./pages/ScheduledCalls";
 import CustomTools from "./pages/CustomTools";
+import CalendarIntegrations from "./pages/CalendarIntegrations";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
