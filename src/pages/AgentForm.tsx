@@ -245,12 +245,44 @@ export default function AgentForm() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>Model & Voice</CardTitle></CardHeader>
+            <CardHeader><CardTitle>AI Provider & Model</CardTitle></CardHeader>
             <CardContent className="space-y-4">
+              {/* AI Provider selector */}
+              <div className="space-y-2">
+                <Label>AI Provider</Label>
+                <Select value={form.ai_provider} onValueChange={(val) => {
+                  const defaults = val === "gemini"
+                    ? { model: "gemini-2.5-flash-preview-native-audio", voice: "Puck" }
+                    : { model: "fixie-ai/ultravox-v0.7", voice: "terrence" };
+                  setForm({ ...form, ai_provider: val, ...defaults });
+                }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {AI_PROVIDERS.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {form.ai_provider === "gemini"
+                    ? "Uses Google Gemini Live API directly for real-time voice conversations."
+                    : "Uses Ultravox for real-time voice AI with telephony integration."}
+                </p>
+              </div>
+
               {/* Model selector */}
               <div className="space-y-2">
                 <Label>Model</Label>
-                {loadingVoices ? (
+                {form.ai_provider === "gemini" ? (
+                  <Select value={form.model} onValueChange={(val) => setForm({ ...form, model: val })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {GEMINI_MODELS.map((m) => (
+                        <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : loadingVoices ? (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" /> Loading models...
                   </div>
@@ -259,9 +291,7 @@ export default function AgentForm() {
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {models.map((m) => (
-                        <SelectItem key={m.name} value={m.name}>
-                          {m.name}
-                        </SelectItem>
+                        <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
