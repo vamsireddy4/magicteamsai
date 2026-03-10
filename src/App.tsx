@@ -49,7 +49,7 @@ const App = () => (
             <Route path="/outcomes" element={<ProtectedRoute><Outcomes /></ProtectedRoute>} />
             <Route path="/retry-csv" element={<ProtectedRoute><RetryCSV /></ProtectedRoute>} />
             <Route path="/webhooks" element={<ProtectedRoute><Webhooks /></ProtectedRoute>} />
-            <Route path="/scheduled-calls" element={<ProtectedRoute><ScheduledCalls /></ProtectedRoute>} />
+            
             <Route path="/custom-tools" element={<ProtectedRoute><CustomTools /></ProtectedRoute>} />
             <Route path="/calendar-integrations" element={<ProtectedRoute><CalendarIntegrations /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><UserSettings /></ProtectedRoute>} />
