@@ -111,7 +111,9 @@ Deno.serve(async (req) => {
         model: "fixie-ai/ultravox-70B",
         voice: agent.voice,
         temperature: Number(agent.temperature),
-        firstSpeaker: agent.first_speaker === "FIRST_SPEAKER_AGENT" ? "FIRST_SPEAKER_AGENT" : "FIRST_SPEAKER_USER",
+        firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT"
+          ? { agent: {} }
+          : { user: {} },
         medium: {
           twilio: {},
         },
