@@ -170,7 +170,7 @@ export default function CalendarIntegrations() {
                     <Card key={integration.id}>
                       <CardContent className="flex items-center justify-between p-4">
                         <div className="flex items-center gap-4">
-                          <span className="text-2xl">{provider?.icon || "📅"}</span>
+                          <img src={provider?.logo} alt={provider?.name} className="h-8 w-8 rounded object-contain" />
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="font-medium">{integration.display_name}</span>
