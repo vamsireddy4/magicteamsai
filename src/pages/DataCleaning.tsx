@@ -53,7 +53,6 @@ export default function DataCleaning() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [customerFile, setCustomerFile] = useState<File | null>(null);
-  const [bookingsFile, setBookingsFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
   const [contacts, setContacts] = useState<ParsedContact[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
