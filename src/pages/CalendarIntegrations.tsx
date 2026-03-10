@@ -11,6 +11,9 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { CalendarDays, Loader2, Trash2, CheckCircle2, XCircle, Plus } from "lucide-react";
+import googleCalendarLogo from "@/assets/google-calendar-logo.png";
+import calcomLogo from "@/assets/calcom-logo.png";
+import gohighlevelLogo from "@/assets/gohighlevel-logo.png";
 
 interface CalendarIntegration {
   id: string;
@@ -28,7 +31,7 @@ const PROVIDERS = [
   {
     id: "google_calendar",
     name: "Google Calendar",
-    icon: "📅",
+    logo: googleCalendarLogo,
     description: "Check availability and book events on Google Calendar.",
     fields: [
       { key: "api_key", label: "Google API Key", placeholder: "AIza...", help: "Create an API key in Google Cloud Console with Calendar API enabled." },
@@ -38,7 +41,7 @@ const PROVIDERS = [
   {
     id: "cal_com",
     name: "Cal.com",
-    icon: "📆",
+    logo: calcomLogo,
     description: "Check availability and create bookings via Cal.com.",
     fields: [
       { key: "api_key", label: "Cal.com API Key", placeholder: "cal_live_...", help: "Find your API key in Cal.com → Settings → Developer → API Keys." },
@@ -48,7 +51,7 @@ const PROVIDERS = [
   {
     id: "gohighlevel",
     name: "GoHighLevel",
-    icon: "🚀",
+    logo: gohighlevelLogo,
     description: "Check availability and book appointments via GoHighLevel.",
     fields: [
       { key: "api_key", label: "GHL API Key", placeholder: "ghl-...", help: "Find your API key in GoHighLevel → Settings → Business Profile → API Key." },
