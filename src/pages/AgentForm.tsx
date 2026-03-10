@@ -308,32 +308,21 @@ export default function AgentForm() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Voice</Label>
-                  {form.ai_provider !== "gemini" && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">Custom (ElevenLabs)</span>
-                      <Switch
-                        checked={useCustomVoice}
-                        onCheckedChange={(val) => {
-                          setUseCustomVoice(val);
-                          if (!val && voices.length > 0) {
-                            setForm({ ...form, voice: voices[0].name });
-                          }
-                        }}
-                      />
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Custom (ElevenLabs)</span>
+                    <Switch
+                      checked={useCustomVoice}
+                      onCheckedChange={(val) => {
+                        setUseCustomVoice(val);
+                        if (!val && voices.length > 0) {
+                          setForm({ ...form, voice: voices[0].name });
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
 
-                {form.ai_provider === "gemini" ? (
-                  <Select value={form.voice} onValueChange={(val) => setForm({ ...form, voice: val })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {GEMINI_VOICES.map((v) => (
-                        <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : useCustomVoice ? (
+                {useCustomVoice ? (
                   <div className="space-y-2">
                     <Input
                       value={form.voice}
@@ -350,6 +339,25 @@ export default function AgentForm() {
                   </div>
                 ) : (
                   <div className="space-y-2">
+                    {form.ai_provider === "gemini" && (
+                      <>
+                        <p className="text-xs text-muted-foreground">Gemini native voices:</p>
+                        <Select
+                          value={GEMINI_VOICES.some(v => v.value === form.voice) ? form.voice : ""}
+                          onValueChange={(val) => setForm({ ...form, voice: val })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a Gemini native voice" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {GEMINI_VOICES.map((v) => (
+                              <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground mt-2">Or choose an Ultravox voice:</p>
+                      </>
+                    )}
                     <div className="relative">
                       <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                       <Input
