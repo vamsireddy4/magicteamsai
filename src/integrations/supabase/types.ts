@@ -514,8 +514,11 @@ export type Database = {
           id: string
           is_active: boolean
           phone_number: string
-          twilio_account_sid: string
-          twilio_auth_token: string
+          provider: string
+          telnyx_api_key: string | null
+          telnyx_connection_id: string | null
+          twilio_account_sid: string | null
+          twilio_auth_token: string | null
           updated_at: string
           user_id: string
         }
@@ -525,8 +528,11 @@ export type Database = {
           id?: string
           is_active?: boolean
           phone_number: string
-          twilio_account_sid: string
-          twilio_auth_token: string
+          provider?: string
+          telnyx_api_key?: string | null
+          telnyx_connection_id?: string | null
+          twilio_account_sid?: string | null
+          twilio_auth_token?: string | null
           updated_at?: string
           user_id: string
         }
@@ -536,8 +542,11 @@ export type Database = {
           id?: string
           is_active?: boolean
           phone_number?: string
-          twilio_account_sid?: string
-          twilio_auth_token?: string
+          provider?: string
+          telnyx_api_key?: string | null
+          telnyx_connection_id?: string | null
+          twilio_account_sid?: string | null
+          twilio_auth_token?: string | null
           updated_at?: string
           user_id?: string
         }
