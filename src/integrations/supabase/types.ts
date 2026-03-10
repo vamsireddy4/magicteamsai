@@ -14,6 +14,65 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_tools: {
+        Row: {
+          agent_id: string
+          created_at: string
+          description: string
+          http_body_template: Json | null
+          http_headers: Json | null
+          http_method: string
+          http_url: string
+          id: string
+          is_active: boolean
+          name: string
+          parameters: Json | null
+          tool_type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          description: string
+          http_body_template?: Json | null
+          http_headers?: Json | null
+          http_method?: string
+          http_url: string
+          id?: string
+          is_active?: boolean
+          name: string
+          parameters?: Json | null
+          tool_type?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          description?: string
+          http_body_template?: Json | null
+          http_headers?: Json | null
+          http_method?: string
+          http_url?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          parameters?: Json | null
+          tool_type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_tools_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agents: {
         Row: {
           created_at: string
@@ -466,6 +525,53 @@ export type Database = {
         }
         Relationships: []
       }
+      scheduled_calls: {
+        Row: {
+          agent_id: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          recipient_name: string | null
+          recipient_number: string
+          scheduled_at: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          agent_id?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          recipient_name?: string | null
+          recipient_number: string
+          scheduled_at: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          agent_id?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          recipient_name?: string | null
+          recipient_number?: string
+          scheduled_at?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_calls_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -483,6 +589,53 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      webhooks: {
+        Row: {
+          agent_id: string | null
+          created_at: string
+          events: string[]
+          id: string
+          is_active: boolean
+          name: string
+          secret: string | null
+          updated_at: string
+          url: string
+          user_id: string
+        }
+        Insert: {
+          agent_id?: string | null
+          created_at?: string
+          events?: string[]
+          id?: string
+          is_active?: boolean
+          name: string
+          secret?: string | null
+          updated_at?: string
+          url: string
+          user_id: string
+        }
+        Update: {
+          agent_id?: string | null
+          created_at?: string
+          events?: string[]
+          id?: string
+          is_active?: boolean
+          name?: string
+          secret?: string | null
+          updated_at?: string
+          url?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhooks_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

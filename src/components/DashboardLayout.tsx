@@ -17,6 +17,9 @@ import {
   Megaphone,
   ClipboardList,
   RefreshCw,
+  Webhook,
+  CalendarDays,
+  Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +34,9 @@ const navItems = [
   { href: "/phone-config", label: "Phone Numbers", icon: Phone },
   { href: "/call-logs", label: "Call History", icon: History },
   { href: "/outbound-call", label: "Outbound Call", icon: PhoneCall },
+  { href: "/webhooks", label: "Webhooks", icon: Webhook },
+  { href: "/scheduled-calls", label: "Call Calendar", icon: CalendarDays },
+  { href: "/custom-tools", label: "Custom Tools", icon: Wrench },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
