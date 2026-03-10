@@ -14,6 +14,10 @@ import PhoneConfig from "./pages/PhoneConfig";
 import CallLogs from "./pages/CallLogs";
 import OutboundCall from "./pages/OutboundCall";
 import UserSettings from "./pages/UserSettings";
+import DataCleaning from "./pages/DataCleaning";
+import Campaigns from "./pages/Campaigns";
+import Outcomes from "./pages/Outcomes";
+import RetryCSV from "./pages/RetryCSV";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
