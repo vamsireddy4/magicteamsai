@@ -29,8 +29,9 @@ export default function CallLogs() {
   const [calls, setCalls] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCall, setSelectedCall] = useState<CallLog | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
-  useEffect(() => {
+  const fetchCalls = () => {
     if (!user) return;
     supabase
       .from("call_logs")
@@ -40,7 +41,25 @@ export default function CallLogs() {
         setCalls((data as any) || []);
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    fetchCalls();
   }, [user]);
+
+  const syncCallData = async () => {
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-call-data");
+      if (error) throw error;
+      toast.success(`Synced ${data.updated} call(s) from Ultravox`);
+      fetchCalls();
+    } catch (e: any) {
+      toast.error("Failed to sync: " + (e.message || "Unknown error"));
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const formatDuration = (seconds: number | null) => {
     if (!seconds) return "—";
