@@ -12,6 +12,41 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState({ agents: 0, calls: 0, phones: 0, totalDuration: 0 });
   const [recentCalls, setRecentCalls] = useState<any[]>([]);
+  const [syncing, setSyncing] = useState(false);
+
+  const fetchData = async () => {
+    if (!user) return;
+    const [agentsRes, callsRes, phonesRes, recentRes] = await Promise.all([
+      supabase.from("agents").select("id", { count: "exact", head: true }),
+      supabase.from("call_logs").select("id, duration", { count: "exact" }),
+      supabase.from("phone_configs").select("id", { count: "exact", head: true }),
+      supabase.from("call_logs").select("*, agents(name)").order("started_at", { ascending: false }).limit(5),
+    ]);
+
+    const totalDuration = callsRes.data?.reduce((acc, c) => acc + (c.duration || 0), 0) || 0;
+
+    setStats({
+      agents: agentsRes.count || 0,
+      calls: callsRes.count || 0,
+      phones: phonesRes.count || 0,
+      totalDuration,
+    });
+    setRecentCalls(recentRes.data || []);
+  };
+
+  const syncCallData = async () => {
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-call-data");
+      if (error) throw error;
+      toast.success(`Synced ${data.updated} call(s) from Ultravox`);
+      await fetchData();
+    } catch (e: any) {
+      toast.error("Failed to sync: " + (e.message || "Unknown error"));
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
