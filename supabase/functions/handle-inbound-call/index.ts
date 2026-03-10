@@ -2,7 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 Deno.serve(async (req) => {
@@ -110,7 +111,9 @@ Deno.serve(async (req) => {
         model: "fixie-ai/ultravox-70B",
         voice: agent.voice,
         temperature: Number(agent.temperature),
-        firstSpeaker: agent.first_speaker === "FIRST_SPEAKER_AGENT" ? "FIRST_SPEAKER_AGENT" : "FIRST_SPEAKER_USER",
+        firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT"
+          ? { agent: {} }
+          : { user: {} },
         medium: {
           twilio: {},
         },

@@ -2,7 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 Deno.serve(async (req) => {
@@ -68,7 +69,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch phone config for outbound (use agent's linked phone or first available)
+    // Fetch phone config for outbound
     let phoneConfig;
     if (agent.phone_number_id) {
       const { data } = await supabase
@@ -116,7 +117,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Create Ultravox outbound call
+    // Step 1: Create Ultravox call with empty twilio medium to get joinUrl
     const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
       method: "POST",
       headers: {
@@ -128,19 +129,14 @@ Deno.serve(async (req) => {
         model: "fixie-ai/ultravox-70B",
         voice: agent.voice,
         temperature: Number(agent.temperature),
-        firstSpeaker: "FIRST_SPEAKER_USER",
+        firstSpeakerSettings: {
+          user: {},
+        },
         medium: {
-          twilio: {
-            accountSid: phoneConfig.twilio_account_sid,
-            authToken: phoneConfig.twilio_auth_token,
-          },
+          twilio: {},
         },
         languageHint: agent.language_hint || "en",
         maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
-        // For outbound, Ultravox handles calling via Twilio
-        initiator: "INITIATOR_AGENT",
-        medium_twilio_to: recipient_number,
-        medium_twilio_from: phoneConfig.phone_number,
       }),
     });
 
@@ -154,6 +150,43 @@ Deno.serve(async (req) => {
     }
 
     const ultravoxData = await ultravoxResponse.json();
+    const joinUrl = ultravoxData.joinUrl;
+    const ultravoxCallId = ultravoxData.callId;
+
+    console.log(`Ultravox call created: ${ultravoxCallId}, joinUrl: ${joinUrl}`);
+
+    // Step 2: Use Twilio REST API to place the outbound call with TwiML connecting to Ultravox
+    const twiml = `<Response><Connect><Stream url="${joinUrl}"/></Connect></Response>`;
+    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${phoneConfig.twilio_account_sid}/Calls.json`;
+
+    const twilioAuth = btoa(`${phoneConfig.twilio_account_sid}:${phoneConfig.twilio_auth_token}`);
+
+    const twilioBody = new URLSearchParams({
+      To: recipient_number,
+      From: phoneConfig.phone_number,
+      Twiml: twiml,
+    });
+
+    const twilioResponse = await fetch(twilioUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${twilioAuth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: twilioBody.toString(),
+    });
+
+    if (!twilioResponse.ok) {
+      const twilioError = await twilioResponse.text();
+      console.error("Twilio API error:", twilioError);
+      return new Response(
+        JSON.stringify({ error: "Failed to place Twilio call", details: twilioError }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const twilioData = await twilioResponse.json();
+    console.log(`Twilio call placed: ${twilioData.sid}`);
 
     // Log the call
     await supabase.from("call_logs").insert({
@@ -162,12 +195,13 @@ Deno.serve(async (req) => {
       direction: "outbound",
       caller_number: phoneConfig.phone_number,
       recipient_number,
-      ultravox_call_id: ultravoxData.callId,
+      ultravox_call_id: ultravoxCallId,
+      twilio_call_sid: twilioData.sid,
       status: "initiated",
     });
 
     return new Response(
-      JSON.stringify({ success: true, callId: ultravoxData.callId }),
+      JSON.stringify({ success: true, callId: ultravoxCallId, twilioSid: twilioData.sid }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
