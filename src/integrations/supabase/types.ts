@@ -22,6 +22,7 @@ export type Database = {
           is_active: boolean
           language_hint: string | null
           max_duration: number | null
+          model: string
           name: string
           phone_number_id: string | null
           system_prompt: string
@@ -37,6 +38,7 @@ export type Database = {
           is_active?: boolean
           language_hint?: string | null
           max_duration?: number | null
+          model?: string
           name: string
           phone_number_id?: string | null
           system_prompt?: string
@@ -52,6 +54,7 @@ export type Database = {
           is_active?: boolean
           language_hint?: string | null
           max_duration?: number | null
+          model?: string
           name?: string
           phone_number_id?: string | null
           system_prompt?: string
