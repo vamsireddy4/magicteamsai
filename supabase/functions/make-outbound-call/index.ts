@@ -172,6 +172,9 @@ Deno.serve(async (req) => {
       const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
       const telnyxConnectionId = (phoneConfig.telnyx_connection_id || "").trim();
 
+      console.log("Using Telnyx key starting with:", telnyxApiKey.substring(0, 8), "length:", telnyxApiKey.length);
+      console.log("Using Telnyx connection ID:", telnyxConnectionId);
+
       if (!telnyxApiKey || !telnyxConnectionId) {
         return new Response(
           JSON.stringify({ error: "Telnyx credentials missing on this phone config" }),
