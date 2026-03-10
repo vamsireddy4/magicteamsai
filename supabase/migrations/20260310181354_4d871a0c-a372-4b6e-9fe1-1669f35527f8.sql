@@ -1,0 +1,1 @@
+ALTER TABLE public.agents ADD COLUMN ai_provider text NOT NULL DEFAULT 'ultravox';
