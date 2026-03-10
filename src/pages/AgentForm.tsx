@@ -132,6 +132,7 @@ export default function AgentForm() {
             is_active: data.is_active,
             phone_number_id: data.phone_number_id,
             model: (data as any).model || "fixie-ai/ultravox-v0.7",
+            ai_provider: (data as any).ai_provider || "ultravox",
           });
         }
       });
