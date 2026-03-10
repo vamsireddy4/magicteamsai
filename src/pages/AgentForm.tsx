@@ -301,9 +301,6 @@ export default function AgentForm() {
                         )}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-muted-foreground">
-                      {voices.length} voices available from Ultravox
-                    </p>
                   </div>
                 )}
               </div>
