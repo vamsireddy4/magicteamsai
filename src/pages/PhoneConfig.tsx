@@ -96,14 +96,26 @@ export default function PhoneConfig() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="auth_token">Auth Token</Label>
-                  <Input
-                    id="auth_token"
-                    type="password"
-                    value={form.twilio_auth_token}
-                    onChange={(e) => setForm({ ...form, twilio_auth_token: e.target.value })}
-                    placeholder="Your Twilio auth token"
-                    required
-                  />
+                  <div className="relative">
+                    <Input
+                      id="auth_token"
+                      type={showToken ? "text" : "password"}
+                      value={form.twilio_auth_token}
+                      onChange={(e) => setForm({ ...form, twilio_auth_token: e.target.value })}
+                      placeholder="Your Twilio auth token"
+                      required
+                      className="pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                      onClick={() => setShowToken(!showToken)}
+                    >
+                      {showToken ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                    </Button>
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     Your auth token is also in the Twilio Console.
                   </p>
