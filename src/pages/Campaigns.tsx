@@ -11,8 +11,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, MapPin, Phone, Target, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { Plus, MapPin, Phone, Target, MoreVertical, Pencil, Trash2, Play, Loader2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 interface Campaign {
@@ -30,7 +31,15 @@ interface Campaign {
   elevenlabs_campaign_id: string | null;
   notes: string | null;
   created_at: string;
+  phone_config_id: string | null;
+  agent_id: string | null;
+  delay_seconds: number;
+  calls_made: number;
+  total_contacts: number;
 }
+
+interface AgentRow { id: string; name: string; }
+interface PhoneConfigRow { id: string; phone_number: string; friendly_name: string | null; provider: string; }
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -52,26 +61,38 @@ const emptyForm = {
   twilio_phone_number: "",
   elevenlabs_campaign_id: "",
   notes: "",
+  agent_id: "",
+  phone_config_id: "",
+  delay_seconds: "30",
 };
 
 export default function Campaigns() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [agents, setAgents] = useState<AgentRow[]>([]);
+  const [phoneConfigs, setPhoneConfigs] = useState<PhoneConfigRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [filter, setFilter] = useState("all");
+  const [runningCampaign, setRunningCampaign] = useState<string | null>(null);
 
-  const fetchCampaigns = async () => {
+  const fetchData = async () => {
     if (!user) return;
-    const { data } = await supabase.from("campaigns").select("*").order("created_at", { ascending: false });
-    setCampaigns((data as Campaign[]) || []);
+    const [{ data: camps }, { data: ag }, { data: pc }] = await Promise.all([
+      supabase.from("campaigns").select("*").order("created_at", { ascending: false }),
+      supabase.from("agents").select("id, name"),
+      supabase.from("phone_configs").select("id, phone_number, friendly_name, provider").eq("is_active", true),
+    ]);
+    setCampaigns((camps as Campaign[]) || []);
+    setAgents(ag || []);
+    setPhoneConfigs((pc as PhoneConfigRow[]) || []);
     setLoading(false);
   };
 
-  useEffect(() => { fetchCampaigns(); }, [user]);
+  useEffect(() => { fetchData(); }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,11 +112,14 @@ export default function Campaigns() {
       twilio_phone_number: form.twilio_phone_number || null,
       elevenlabs_campaign_id: form.elevenlabs_campaign_id || null,
       notes: form.notes || null,
+      agent_id: form.agent_id || null,
+      phone_config_id: form.phone_config_id || null,
+      delay_seconds: parseInt(form.delay_seconds) || 30,
     };
 
     const { error } = editingId
       ? await supabase.from("campaigns").update(payload).eq("id", editingId)
-      : await supabase.from("campaigns").insert(payload);
+      : await supabase.from("campaigns").insert(payload as any);
 
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -104,7 +128,7 @@ export default function Campaigns() {
       setDialogOpen(false);
       setEditingId(null);
       setForm(emptyForm);
-      fetchCampaigns();
+      fetchData();
     }
   };
 
@@ -123,6 +147,9 @@ export default function Campaigns() {
       twilio_phone_number: c.twilio_phone_number || "",
       elevenlabs_campaign_id: c.elevenlabs_campaign_id || "",
       notes: c.notes || "",
+      agent_id: c.agent_id || "",
+      phone_config_id: c.phone_config_id || "",
+      delay_seconds: c.delay_seconds?.toString() || "30",
     });
     setDialogOpen(true);
   };
@@ -130,7 +157,23 @@ export default function Campaigns() {
   const deleteCampaign = async (id: string) => {
     const { error } = await supabase.from("campaigns").delete().eq("id", id);
     if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
-    else { toast({ title: "Campaign deleted" }); fetchCampaigns(); }
+    else { toast({ title: "Campaign deleted" }); fetchData(); }
+  };
+
+  const startCampaign = async (campaignId: string) => {
+    setRunningCampaign(campaignId);
+    try {
+      const { data, error } = await supabase.functions.invoke("run-campaign", {
+        body: { campaign_id: campaignId },
+      });
+      if (error) throw error;
+      toast({ title: "Campaign started", description: `${data?.total || 0} calls queued` });
+      fetchData();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setRunningCampaign(null);
+    }
   };
 
   const filtered = filter === "all" ? campaigns : campaigns.filter((c) => c.status === filter);
@@ -139,6 +182,13 @@ export default function Campaigns() {
     acc[c.status] = (acc[c.status] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
+
+  const getAgentName = (id: string | null) => id ? agents.find(a => a.id === id)?.name || "Unknown" : "—";
+  const getPhoneLabel = (id: string | null) => {
+    if (!id) return "—";
+    const pc = phoneConfigs.find(p => p.id === id);
+    return pc ? (pc.friendly_name || pc.phone_number) : "Unknown";
+  };
 
   return (
     <DashboardLayout>
@@ -183,8 +233,32 @@ export default function Campaigns() {
                 </div>
                 <div className="grid gap-4 grid-cols-2">
                   <div className="space-y-2">
-                    <Label>Times</Label>
-                    <Input value={form.times} onChange={(e) => setForm({ ...form, times: e.target.value })} placeholder="e.g. 9am-3pm" />
+                    <Label>Agent</Label>
+                    <Select value={form.agent_id} onValueChange={(v) => setForm({ ...form, agent_id: v })}>
+                      <SelectTrigger><SelectValue placeholder="Select agent" /></SelectTrigger>
+                      <SelectContent>
+                        {agents.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Phone Config</Label>
+                    <Select value={form.phone_config_id} onValueChange={(v) => setForm({ ...form, phone_config_id: v })}>
+                      <SelectTrigger><SelectValue placeholder="Select number" /></SelectTrigger>
+                      <SelectContent>
+                        {phoneConfigs.map(pc => (
+                          <SelectItem key={pc.id} value={pc.id}>
+                            {pc.friendly_name || pc.phone_number} ({pc.provider})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid gap-4 grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Delay Between Calls (sec)</Label>
+                    <Input type="number" value={form.delay_seconds} onChange={(e) => setForm({ ...form, delay_seconds: e.target.value })} min={5} />
                   </div>
                   <div className="space-y-2">
                     <Label>Booking Target</Label>
@@ -216,9 +290,15 @@ export default function Campaigns() {
                     </Select>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Twilio Phone Number</Label>
-                  <Input value={form.twilio_phone_number} onChange={(e) => setForm({ ...form, twilio_phone_number: e.target.value })} placeholder="+44..." />
+                <div className="grid gap-4 grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Times</Label>
+                    <Input value={form.times} onChange={(e) => setForm({ ...form, times: e.target.value })} placeholder="e.g. 9am-3pm" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Twilio Phone Number</Label>
+                    <Input value={form.twilio_phone_number} onChange={(e) => setForm({ ...form, twilio_phone_number: e.target.value })} placeholder="+44..." />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>ElevenLabs Campaign ID</Label>
@@ -294,13 +374,38 @@ export default function Campaigns() {
                   <div className="text-xs text-muted-foreground space-y-1">
                     {c.start_date && <p>📅 {c.start_date} → {c.end_date || "TBD"}</p>}
                     {c.times && <p>⏰ {c.times}</p>}
-                    {c.twilio_phone_number && (
-                      <p className="flex items-center gap-1"><Phone className="h-3 w-3" /> {c.twilio_phone_number}</p>
+                    {c.agent_id && <p>🤖 {getAgentName(c.agent_id)}</p>}
+                    {c.phone_config_id && (
+                      <p className="flex items-center gap-1"><Phone className="h-3 w-3" /> {getPhoneLabel(c.phone_config_id)}</p>
                     )}
                     {c.booking_target && (
                       <p className="flex items-center gap-1"><Target className="h-3 w-3" /> Target: {c.booking_target}</p>
                     )}
                   </div>
+
+                  {/* Progress bar when active */}
+                  {c.status === "active" && c.total_contacts > 0 && (
+                    <div className="space-y-1">
+                      <Progress value={(c.calls_made / c.total_contacts) * 100} className="h-2" />
+                      <p className="text-xs text-muted-foreground">{c.calls_made} / {c.total_contacts} calls made</p>
+                    </div>
+                  )}
+
+                  {/* Start campaign button */}
+                  {c.status === "draft" && c.agent_id && c.phone_config_id && (
+                    <Button
+                      size="sm"
+                      className="w-full mt-2"
+                      onClick={() => startCampaign(c.id)}
+                      disabled={runningCampaign === c.id}
+                    >
+                      {runningCampaign === c.id ? (
+                        <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running...</>
+                      ) : (
+                        <><Play className="h-4 w-4 mr-2" /> Start Campaign</>
+                      )}
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             ))}
