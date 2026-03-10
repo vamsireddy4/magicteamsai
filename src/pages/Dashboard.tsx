@@ -66,12 +66,18 @@ export default function Dashboard() {
             <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
             <p className="text-muted-foreground mt-1">Manage your AI receptionists and monitor calls.</p>
           </div>
-          <Link to="/agents/new">
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              New Agent
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={syncCallData} disabled={syncing}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Syncing..." : "Sync Calls"}
             </Button>
-          </Link>
+            <Link to="/agents/new">
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                New Agent
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* Stats */}
