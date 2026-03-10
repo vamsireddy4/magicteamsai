@@ -126,7 +126,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         systemPrompt,
-        model: "fixie-ai/ultravox-70B",
+        model: "fixie-ai/ultravox-v0.7",
         voice: agent.voice,
         temperature: Number(agent.temperature),
         firstSpeakerSettings: {
