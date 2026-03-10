@@ -127,7 +127,7 @@ export default function DataCleaning() {
 
       setContacts(parsed);
       setSelectedIds(new Set(parsed.map((c) => c.id)));
-      setStats({ total: customers.length, bookedRemoved, dupsConsolidated: dupsFound });
+      setStats({ total: customers.length, bookedRemoved: 0, dupsConsolidated: dupsFound });
       toast({ title: "Processing complete", description: `${parsed.length} unique contacts extracted.` });
     } catch (err: any) {
       toast({ title: "Error processing files", description: err.message, variant: "destructive" });
