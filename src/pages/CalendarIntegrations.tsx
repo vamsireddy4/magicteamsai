@@ -11,6 +11,9 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { CalendarDays, Loader2, Trash2, CheckCircle2, XCircle, Plus } from "lucide-react";
+import googleCalendarLogo from "@/assets/google-calendar-logo.png";
+import calcomLogo from "@/assets/calcom-logo.png";
+import gohighlevelLogo from "@/assets/gohighlevel-logo.png";
 
 interface CalendarIntegration {
   id: string;
