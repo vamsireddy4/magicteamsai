@@ -104,7 +104,7 @@ export default function OutboundCall() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button type="submit" className="w-full" disabled={loading || !form.agent_id}>
+              <Button type="submit" className="w-full" disabled={loading || !form.agent_id || !form.phone_config_id}>
                 {loading ? (
                   <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Placing Call...</>
                 ) : (
