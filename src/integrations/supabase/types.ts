@@ -308,16 +308,21 @@ export type Database = {
       campaigns: {
         Row: {
           age_range: string | null
+          agent_id: string | null
           booking_target: number | null
+          calls_made: number
           created_at: string
+          delay_seconds: number
           elevenlabs_campaign_id: string | null
           end_date: string | null
           id: string
           notes: string | null
+          phone_config_id: string | null
           round: number
           start_date: string | null
           status: string
           times: string | null
+          total_contacts: number
           twilio_phone_number: string | null
           updated_at: string
           user_id: string
@@ -326,16 +331,21 @@ export type Database = {
         }
         Insert: {
           age_range?: string | null
+          agent_id?: string | null
           booking_target?: number | null
+          calls_made?: number
           created_at?: string
+          delay_seconds?: number
           elevenlabs_campaign_id?: string | null
           end_date?: string | null
           id?: string
           notes?: string | null
+          phone_config_id?: string | null
           round?: number
           start_date?: string | null
           status?: string
           times?: string | null
+          total_contacts?: number
           twilio_phone_number?: string | null
           updated_at?: string
           user_id: string
@@ -344,23 +354,43 @@ export type Database = {
         }
         Update: {
           age_range?: string | null
+          agent_id?: string | null
           booking_target?: number | null
+          calls_made?: number
           created_at?: string
+          delay_seconds?: number
           elevenlabs_campaign_id?: string | null
           end_date?: string | null
           id?: string
           notes?: string | null
+          phone_config_id?: string | null
           round?: number
           start_date?: string | null
           status?: string
           times?: string | null
+          total_contacts?: number
           twilio_phone_number?: string | null
           updated_at?: string
           user_id?: string
           venue_location?: string | null
           venue_name?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "campaigns_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaigns_phone_config_id_fkey"
+            columns: ["phone_config_id"]
+            isOneToOne: false
+            referencedRelation: "phone_configs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       contacts: {
         Row: {
