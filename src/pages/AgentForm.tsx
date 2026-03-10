@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Search } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
 interface UltravoxVoice {
@@ -20,21 +20,18 @@ interface UltravoxVoice {
   name: string;
   description?: string;
   previewUrl?: string;
+  languageLabel?: string;
+  primaryLanguage?: string;
+  provider?: string;
 }
 
 interface UltravoxModel {
-  modelId: string;
-  name?: string;
-  description?: string;
+  name: string;
 }
 
 const FIRST_SPEAKER_OPTIONS = [
   { value: "FIRST_SPEAKER_AGENT", label: "Agent speaks first (inbound)" },
   { value: "FIRST_SPEAKER_USER", label: "User speaks first (outbound)" },
-];
-
-const FALLBACK_VOICES = [
-  "terrence", "tina", "mark", "jessica", "chris", "laura", "david", "sarah"
 ];
 
 export default function AgentForm() {
@@ -48,6 +45,8 @@ export default function AgentForm() {
   const [voices, setVoices] = useState<UltravoxVoice[]>([]);
   const [models, setModels] = useState<UltravoxModel[]>([]);
   const [loadingVoices, setLoadingVoices] = useState(true);
+  const [voiceSearch, setVoiceSearch] = useState("");
+  const [useCustomVoice, setUseCustomVoice] = useState(false);
 
   const [form, setForm] = useState({
     name: "",
@@ -101,6 +100,16 @@ export default function AgentForm() {
     }
   }, [user, id]);
 
+  // Check if the current voice is a custom one (not in Ultravox list)
+  useEffect(() => {
+    if (voices.length > 0 && form.voice) {
+      const isUltravoxVoice = voices.some(v => v.voiceId === form.voice || v.name === form.voice);
+      if (!isUltravoxVoice && form.voice !== "terrence") {
+        setUseCustomVoice(true);
+      }
+    }
+  }, [voices, form.voice]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -121,10 +130,24 @@ export default function AgentForm() {
     }
   };
 
-  // Determine voice options: use fetched voices or fallback
-  const voiceOptions = voices.length > 0
-    ? voices.map((v) => ({ value: v.voiceId || v.name, label: v.name, description: v.description }))
-    : FALLBACK_VOICES.map((v) => ({ value: v, label: v, description: undefined }));
+  // Filter voices by search
+  const filteredVoices = useMemo(() => {
+    if (!voiceSearch.trim()) return voices;
+    const q = voiceSearch.toLowerCase();
+    return voices.filter(v =>
+      v.name.toLowerCase().includes(q) ||
+      (v.description?.toLowerCase().includes(q)) ||
+      (v.languageLabel?.toLowerCase().includes(q)) ||
+      (v.primaryLanguage?.toLowerCase().includes(q)) ||
+      (v.provider?.toLowerCase().includes(q))
+    );
+  }, [voices, voiceSearch]);
+
+  // Find current voice name for display
+  const currentVoiceName = useMemo(() => {
+    const found = voices.find(v => v.voiceId === form.voice || v.name === form.voice);
+    return found ? `${found.name} ${found.languageLabel || ""}` : form.voice;
+  }, [voices, form.voice]);
 
   return (
     <DashboardLayout>
@@ -197,8 +220,8 @@ export default function AgentForm() {
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {models.map((m) => (
-                        <SelectItem key={m.modelId || m.name} value={m.modelId || m.name || ""}>
-                          {m.modelId || m.name}
+                        <SelectItem key={m.name} value={m.name}>
+                          {m.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -212,42 +235,91 @@ export default function AgentForm() {
                 )}
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                {/* Voice selector */}
-                <div className="space-y-2">
+              {/* Voice type toggle */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
                   <Label>Voice</Label>
-                  {loadingVoices ? (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Loading voices...
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Custom (ElevenLabs)</span>
+                    <Switch
+                      checked={useCustomVoice}
+                      onCheckedChange={(val) => {
+                        setUseCustomVoice(val);
+                        if (!val && voices.length > 0) {
+                          setForm({ ...form, voice: voices[0].name });
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {useCustomVoice ? (
+                  <div className="space-y-2">
+                    <Input
+                      value={form.voice}
+                      onChange={(e) => setForm({ ...form, voice: e.target.value })}
+                      placeholder="Enter ElevenLabs voice ID or name"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Paste your ElevenLabs voice ID for a custom voice.
+                    </p>
+                  </div>
+                ) : loadingVoices ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading voices...
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {/* Search input */}
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        className="pl-9"
+                        placeholder="Search voices by name, language, provider..."
+                        value={voiceSearch}
+                        onChange={(e) => setVoiceSearch(e.target.value)}
+                      />
                     </div>
-                  ) : (
                     <Select value={form.voice} onValueChange={(val) => setForm({ ...form, voice: val })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent className="max-h-60">
-                        {voiceOptions.map((v) => (
-                          <SelectItem key={v.value} value={v.value}>
-                            <span className="capitalize">{v.label}</span>
-                            {v.description && (
-                              <span className="text-xs text-muted-foreground ml-2">— {v.description}</span>
-                            )}
-                          </SelectItem>
-                        ))}
+                      <SelectTrigger>
+                        <SelectValue>{currentVoiceName}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="max-h-72">
+                        {filteredVoices.length === 0 ? (
+                          <div className="p-3 text-sm text-muted-foreground text-center">No voices found</div>
+                        ) : (
+                          filteredVoices.map((v) => (
+                            <SelectItem key={v.voiceId} value={v.name}>
+                              <div className="flex flex-col">
+                                <span className="font-medium">{v.name} {v.languageLabel || ""}</span>
+                                {v.description && (
+                                  <span className="text-xs text-muted-foreground line-clamp-1">{v.description}</span>
+                                )}
+                              </div>
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label>First Speaker</Label>
-                  <Select value={form.first_speaker} onValueChange={(val) => setForm({ ...form, first_speaker: val })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {FIRST_SPEAKER_OPTIONS.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                    <p className="text-xs text-muted-foreground">
+                      {voices.length} voices available from Ultravox
+                    </p>
+                  </div>
+                )}
               </div>
+
+              <div className="space-y-2">
+                <Label>First Speaker</Label>
+                <Select value={form.first_speaker} onValueChange={(val) => setForm({ ...form, first_speaker: val })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {FIRST_SPEAKER_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <Label>Temperature: {form.temperature}</Label>
                 <Slider
