@@ -157,9 +157,16 @@ Deno.serve(async (req) => {
 
     // Step 2: Use Twilio REST API to place the outbound call with TwiML connecting to Ultravox
     const twiml = `<Response><Connect><Stream url="${joinUrl}"/></Connect></Response>`;
-    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${phoneConfig.twilio_account_sid}/Calls.json`;
+    const twilioAccountSid = phoneConfig.twilio_account_sid.trim();
+    const twilioAuthToken = phoneConfig.twilio_auth_token.trim();
+    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`;
 
-    const twilioAuth = btoa(`${phoneConfig.twilio_account_sid}:${phoneConfig.twilio_auth_token}`);
+    console.log(`Twilio SID: ${twilioAccountSid}, Token length: ${twilioAuthToken.length}, From: ${phoneConfig.phone_number}, To: ${recipient_number}`);
+
+    // Use TextEncoder for proper base64 encoding (handles all characters correctly)
+    const encoder = new TextEncoder();
+    const credentials = encoder.encode(`${twilioAccountSid}:${twilioAuthToken}`);
+    const twilioAuth = btoa(String.fromCharCode(...credentials));
 
     const twilioBody = new URLSearchParams({
       To: recipient_number,
