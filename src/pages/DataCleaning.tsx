@@ -242,7 +242,7 @@ export default function DataCleaning() {
               <span className="text-sm text-muted-foreground">
                 {customerFile ? customerFile.name : "Click to upload CSV"}
               </span>
-              <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload("customers")} />
+              <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
             </label>
           </CardContent>
         </Card>
