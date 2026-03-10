@@ -86,15 +86,16 @@ export default function DataCleaning() {
   };
 
   const processFiles = useCallback(async () => {
-    if (!customerFile || !bookingsFile) {
-      toast({ title: "Missing files", description: "Upload both customer and bookings CSVs.", variant: "destructive" });
+    if (!customerFile) {
+      toast({ title: "Missing file", description: "Upload the customer CSV.", variant: "destructive" });
       return;
     }
     setProcessing(true);
     try {
-      const [customerText, bookingsText] = await Promise.all([customerFile.text(), bookingsFile.text()]);
+      const customerText = await customerFile.text();
       const customers = parseCSV(customerText);
-      const bookings = parseCSV(bookingsText);
+      const bookingsText = bookingsFile ? await bookingsFile.text() : "";
+      const bookings = bookingsText ? parseCSV(bookingsText) : [];
 
       const bookedPhones = new Set(
         bookings.map((b) => normalizePhone(b.phone_number || b.phone || "")).filter(Boolean)
@@ -280,7 +281,7 @@ export default function DataCleaning() {
         </div>
 
         <div className="flex gap-3">
-          <Button onClick={processFiles} disabled={processing || !customerFile || !bookingsFile}>
+          <Button onClick={processFiles} disabled={processing || !customerFile}>
             {processing ? "Processing..." : "Process & Clean Data"}
           </Button>
           {contacts.length > 0 && (
