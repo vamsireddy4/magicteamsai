@@ -134,7 +134,7 @@ export default function DataCleaning() {
     } finally {
       setProcessing(false);
     }
-  }, [customerFile, bookingsFile, toast]);
+  }, [customerFile, toast]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
