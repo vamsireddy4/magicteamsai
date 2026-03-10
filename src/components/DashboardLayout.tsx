@@ -36,7 +36,7 @@ const navItems = [
   { href: "/call-logs", label: "Call History", icon: History },
   { href: "/outbound-call", label: "Outbound Call", icon: PhoneCall },
   { href: "/webhooks", label: "Webhooks", icon: Webhook },
-  { href: "/scheduled-calls", label: "Call Calendar", icon: CalendarDays },
+  
   { href: "/custom-tools", label: "Custom Tools", icon: Wrench },
   { href: "/calendar-integrations", label: "Calendars", icon: Calendar },
   { href: "/settings", label: "Settings", icon: Settings },
