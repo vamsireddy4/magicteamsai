@@ -18,6 +18,7 @@ export default function PhoneConfig() {
   const [configs, setConfigs] = useState<Tables<"phone_configs">[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [showToken, setShowToken] = useState(false);
   const [form, setForm] = useState({
     twilio_account_sid: "",
     twilio_auth_token: "",
