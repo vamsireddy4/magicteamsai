@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.make-outbound-call]
 verify_jwt = false
+
+[functions.list-ultravox-voices]
+verify_jwt = false
