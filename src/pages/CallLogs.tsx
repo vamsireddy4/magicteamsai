@@ -80,9 +80,15 @@ export default function CallLogs() {
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-in">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Call History</h1>
-          <p className="text-muted-foreground mt-1">View all inbound and outbound calls.</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Call History</h1>
+            <p className="text-muted-foreground mt-1">View all inbound and outbound calls.</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={syncCallData} disabled={syncing}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Syncing..." : "Sync from Ultravox"}
+          </Button>
         </div>
 
         <Card>
