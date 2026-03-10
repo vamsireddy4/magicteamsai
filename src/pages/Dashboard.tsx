@@ -145,7 +145,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-medium">{call.duration ? formatDuration(call.duration) : "—"}</p>
+                      <p className="text-sm font-medium font-mono">{formatDuration(call.duration || 0)}</p>
                       <p className="text-xs text-muted-foreground">
                         {new Date(call.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {new Date(call.started_at).toLocaleDateString()}
                       </p>
