@@ -15,10 +15,12 @@ export default function OutboundCall() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [agents, setAgents] = useState<Tables<"agents">[]>([]);
+  const [phoneConfigs, setPhoneConfigs] = useState<Tables<"phone_configs">[]>([]);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     agent_id: "",
     recipient_number: "",
+    phone_config_id: "",
   });
 
   useEffect(() => {
