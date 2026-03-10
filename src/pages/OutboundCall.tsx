@@ -26,6 +26,7 @@ export default function OutboundCall() {
   useEffect(() => {
     if (!user) return;
     supabase.from("agents").select("*").eq("is_active", true).then(({ data }) => setAgents(data || []));
+    supabase.from("phone_configs").select("*").eq("is_active", true).then(({ data }) => setPhoneConfigs(data || []));
   }, [user]);
 
   const handleCall = async (e: React.FormEvent) => {
