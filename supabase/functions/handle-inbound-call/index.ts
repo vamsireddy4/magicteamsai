@@ -7,14 +7,11 @@ const corsHeaders = {
 };
 
 Deno.serve(async (req) => {
-  // Handle CORS
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // This endpoint is called by Twilio when an inbound call arrives
-    // Twilio sends form-encoded data
     const contentType = req.headers.get("content-type") || "";
     let callSid = "";
     let from = "";
@@ -22,14 +19,14 @@ Deno.serve(async (req) => {
 
     if (contentType.includes("application/x-www-form-urlencoded")) {
       const formData = await req.formData();
-      callSid = formData.get("CallSid") as string || "";
-      from = formData.get("From") as string || "";
-      to = formData.get("To") as string || "";
+      callSid = (formData.get("CallSid") as string) || (formData.get("call_control_id") as string) || "";
+      from = (formData.get("From") as string) || (formData.get("from") as string) || "";
+      to = (formData.get("To") as string) || (formData.get("to") as string) || "";
     } else {
       const body = await req.json();
-      callSid = body.CallSid || "";
-      from = body.From || "";
-      to = body.To || "";
+      callSid = body.CallSid || body.call_control_id || "";
+      from = body.From || body.from || "";
+      to = body.To || body.to || "";
     }
 
     console.log(`Inbound call from ${from} to ${to}, SID: ${callSid}`);
@@ -48,10 +45,10 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Find the agent associated with this phone number
+    // Find the phone config for this number
     const { data: phoneConfig } = await supabase
       .from("phone_configs")
-      .select("*, agents!agents_phone_number_id_fkey(*)")
+      .select("*")
       .eq("phone_number", to)
       .eq("is_active", true)
       .single();
@@ -63,6 +60,8 @@ Deno.serve(async (req) => {
         { headers: { ...corsHeaders, "Content-Type": "text/xml" } }
       );
     }
+
+    const provider = phoneConfig.provider || "twilio";
 
     // Find the active agent linked to this phone config
     const { data: agent } = await supabase
@@ -85,7 +84,6 @@ Deno.serve(async (req) => {
       .select("*")
       .eq("agent_id", agent.id);
 
-    // Build system prompt with knowledge base
     let systemPrompt = agent.system_prompt;
     if (kbItems && kbItems.length > 0) {
       systemPrompt += "\n\n--- KNOWLEDGE BASE ---\n";
@@ -99,7 +97,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Create Ultravox call
+    // Create Ultravox call with the appropriate medium
+    const medium = provider === "telnyx" ? { telnyx: {} } : { twilio: {} };
+
     const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
       method: "POST",
       headers: {
@@ -114,9 +114,7 @@ Deno.serve(async (req) => {
         firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT"
           ? { agent: {} }
           : { user: {} },
-        medium: {
-          twilio: {},
-        },
+        medium,
         languageHint: agent.language_hint || "en",
         maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
       }),
@@ -149,15 +147,15 @@ Deno.serve(async (req) => {
       status: "in-progress",
     });
 
-    // Return TwiML to connect Twilio to the Ultravox WebSocket
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+    // Return TwiML/TeXML to connect to the Ultravox WebSocket
+    const responseXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
     <Stream url="${joinUrl}" />
   </Connect>
 </Response>`;
 
-    return new Response(twiml, {
+    return new Response(responseXml, {
       headers: { ...corsHeaders, "Content-Type": "text/xml" },
     });
   } catch (error) {
