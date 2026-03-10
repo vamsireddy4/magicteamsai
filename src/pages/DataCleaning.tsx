@@ -224,7 +224,7 @@ export default function DataCleaning() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Data Cleaning Tool</h1>
           <p className="text-muted-foreground mt-1">
-            Upload customer &amp; bookings CSVs → clean, deduplicate → select contacts → start bulk calling.
+            Upload customer CSV → extract &amp; deduplicate → select contacts → start bulk calling.
           </p>
         </div>
 
