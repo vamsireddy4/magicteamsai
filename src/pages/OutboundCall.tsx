@@ -39,6 +39,7 @@ export default function OutboundCall() {
         body: {
           agent_id: form.agent_id,
           recipient_number: form.recipient_number,
+          phone_config_id: form.phone_config_id,
         },
       });
 
