@@ -170,7 +170,7 @@ export default function CalendarIntegrations() {
                     <Card key={integration.id}>
                       <CardContent className="flex items-center justify-between p-4">
                         <div className="flex items-center gap-4">
-                          <span className="text-2xl">{provider?.icon || "📅"}</span>
+                          <img src={provider?.logo} alt={provider?.name} className="h-8 w-8 rounded object-contain" />
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="font-medium">{integration.display_name}</span>
@@ -222,7 +222,7 @@ export default function CalendarIntegrations() {
                     <Card key={provider.id} className={isConnected ? "opacity-60" : ""}>
                       <CardHeader className="pb-3">
                         <div className="flex items-center gap-3">
-                          <span className="text-3xl">{provider.icon}</span>
+                          <img src={provider.logo} alt={provider.name} className="h-10 w-10 rounded object-contain" />
                           <div>
                             <CardTitle className="text-base">{provider.name}</CardTitle>
                             {isConnected && (
@@ -257,7 +257,7 @@ export default function CalendarIntegrations() {
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <span>{currentProviderConfig?.icon}</span>
+                {currentProviderConfig && <img src={currentProviderConfig.logo} alt={currentProviderConfig.name} className="h-6 w-6 rounded object-contain" />}
                 Connect {currentProviderConfig?.name}
               </DialogTitle>
             </DialogHeader>
