@@ -257,7 +257,7 @@ export default function CalendarIntegrations() {
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <span>{currentProviderConfig?.icon}</span>
+                {currentProviderConfig && <img src={currentProviderConfig.logo} alt={currentProviderConfig.name} className="h-6 w-6 rounded object-contain" />}
                 Connect {currentProviderConfig?.name}
               </DialogTitle>
             </DialogHeader>
