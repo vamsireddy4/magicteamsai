@@ -25,75 +25,90 @@ async function placeCall(
   }
 
   const provider = phoneConfig.provider || "twilio";
-  const medium = provider === "telnyx" ? { telnyx: {} } : { twilio: {} };
-
-  const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-API-Key": ultravoxApiKey },
-    body: JSON.stringify({
-      systemPrompt,
-      model: agent.model || "fixie-ai/ultravox-v0.7",
-      voice: agent.voice,
-      temperature: Number(agent.temperature),
-      firstSpeakerSettings: { user: {} },
-      medium,
-      languageHint: agent.language_hint || "en",
-      maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
-    }),
-  });
-
-  if (!ultravoxResponse.ok) {
-    const errorText = await ultravoxResponse.text();
-    throw new Error(`Ultravox error: ${errorText}`);
-  }
-
-  const ultravoxData = await ultravoxResponse.json();
-  const joinUrl = ultravoxData.joinUrl;
-  const ultravoxCallId = ultravoxData.callId;
+  const aiProvider = agent.ai_provider || "ultravox";
   let callSid = "";
+  let ultravoxCallId = "";
 
-  if (provider === "telnyx") {
-    const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
-    const telnyxConnectionId = (phoneConfig.telnyx_connection_id || "").trim();
-    if (!telnyxApiKey || !telnyxConnectionId) throw new Error("Telnyx credentials missing");
+  if (aiProvider === "gemini") {
+    // Gemini Live API path
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const bridgeUrl = `${supabaseUrl}/functions/v1/gemini-voice-bridge?agent_id=${agent.id}`.replace("https://", "wss://");
 
-    const resp = await fetch("https://api.telnyx.com/v2/calls", {
+    if (provider === "telnyx") {
+      const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
+      const telnyxConnectionId = (phoneConfig.telnyx_connection_id || "").trim();
+      if (!telnyxApiKey || !telnyxConnectionId) throw new Error("Telnyx credentials missing");
+      const resp = await fetch("https://api.telnyx.com/v2/calls", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${telnyxApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          connection_id: telnyxConnectionId, to: recipientNumber, from: phoneConfig.phone_number,
+          stream_url: bridgeUrl, stream_track: "both_tracks",
+        }),
+      });
+      if (!resp.ok) throw new Error(`Telnyx error: ${await resp.text()}`);
+      callSid = (await resp.json()).data?.call_control_id || "";
+    } else {
+      const twiml = `<Response><Connect><Stream url="${bridgeUrl}"/></Connect></Response>`;
+      const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
+      const twilioAuthToken = (phoneConfig.twilio_auth_token || "").replace(/[^a-zA-Z0-9]/g, '');
+      const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`, {
+        method: "POST",
+        headers: { "Authorization": `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`, "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ To: recipientNumber, From: phoneConfig.phone_number, Twiml: twiml }).toString(),
+      });
+      if (!resp.ok) throw new Error(`Twilio error: ${await resp.text()}`);
+      callSid = (await resp.json()).sid;
+    }
+  } else {
+    // Ultravox path
+    const medium = provider === "telnyx" ? { telnyx: {} } : { twilio: {} };
+    const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
       method: "POST",
-      headers: { "Authorization": `Bearer ${telnyxApiKey}`, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-API-Key": ultravoxApiKey },
       body: JSON.stringify({
-        connection_id: telnyxConnectionId,
-        to: recipientNumber,
-        from: phoneConfig.phone_number,
-        stream_url: joinUrl,
-        stream_track: "both_tracks",
+        systemPrompt, model: agent.model || "fixie-ai/ultravox-v0.7", voice: agent.voice,
+        temperature: Number(agent.temperature), firstSpeakerSettings: { user: {} }, medium,
+        languageHint: agent.language_hint || "en", maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
       }),
     });
-    if (!resp.ok) throw new Error(`Telnyx error: ${await resp.text()}`);
-    const data = await resp.json();
-    callSid = data.data?.call_control_id || "";
-  } else {
-    const twiml = `<Response><Connect><Stream url="${joinUrl}"/></Connect></Response>`;
-    const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
-    const twilioAuthToken = (phoneConfig.twilio_auth_token || "").replace(/[^a-zA-Z0-9]/g, '');
-    const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`, {
-      method: "POST",
-      headers: { "Authorization": `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`, "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ To: recipientNumber, From: phoneConfig.phone_number, Twiml: twiml }).toString(),
-    });
-    if (!resp.ok) throw new Error(`Twilio error: ${await resp.text()}`);
-    const data = await resp.json();
-    callSid = data.sid;
+    if (!ultravoxResponse.ok) throw new Error(`Ultravox error: ${await ultravoxResponse.text()}`);
+    const ultravoxData = await ultravoxResponse.json();
+    const joinUrl = ultravoxData.joinUrl;
+    ultravoxCallId = ultravoxData.callId;
+
+    if (provider === "telnyx") {
+      const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
+      const telnyxConnectionId = (phoneConfig.telnyx_connection_id || "").trim();
+      if (!telnyxApiKey || !telnyxConnectionId) throw new Error("Telnyx credentials missing");
+      const resp = await fetch("https://api.telnyx.com/v2/calls", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${telnyxApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          connection_id: telnyxConnectionId, to: recipientNumber, from: phoneConfig.phone_number,
+          stream_url: joinUrl, stream_track: "both_tracks",
+        }),
+      });
+      if (!resp.ok) throw new Error(`Telnyx error: ${await resp.text()}`);
+      callSid = (await resp.json()).data?.call_control_id || "";
+    } else {
+      const twiml = `<Response><Connect><Stream url="${joinUrl}"/></Connect></Response>`;
+      const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
+      const twilioAuthToken = (phoneConfig.twilio_auth_token || "").replace(/[^a-zA-Z0-9]/g, '');
+      const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`, {
+        method: "POST",
+        headers: { "Authorization": `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`, "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ To: recipientNumber, From: phoneConfig.phone_number, Twiml: twiml }).toString(),
+      });
+      if (!resp.ok) throw new Error(`Twilio error: ${await resp.text()}`);
+      callSid = (await resp.json()).sid;
+    }
   }
 
   await supabase.from("call_logs").insert({
-    user_id: userId,
-    agent_id: agent.id,
-    direction: "outbound",
-    caller_number: phoneConfig.phone_number,
-    recipient_number: recipientNumber,
-    ultravox_call_id: ultravoxCallId,
-    twilio_call_sid: callSid,
-    status: "initiated",
+    user_id: userId, agent_id: agent.id, direction: "outbound",
+    caller_number: phoneConfig.phone_number, recipient_number: recipientNumber,
+    ultravox_call_id: ultravoxCallId || null, twilio_call_sid: callSid, status: "initiated",
   });
 
   return { ultravoxCallId, callSid };
