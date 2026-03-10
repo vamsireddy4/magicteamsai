@@ -129,6 +129,227 @@ export type Database = {
           },
         ]
       }
+      call_outcomes: {
+        Row: {
+          attempt_number: number
+          call_timestamp: string | null
+          campaign_id: string
+          child_names: string | null
+          contact_id: string | null
+          created_at: string
+          id: string
+          outcome: string
+          parent_name: string | null
+          phone_number: string
+          summary: string | null
+          transcript: string | null
+          user_id: string
+          venue_name: string | null
+        }
+        Insert: {
+          attempt_number?: number
+          call_timestamp?: string | null
+          campaign_id: string
+          child_names?: string | null
+          contact_id?: string | null
+          created_at?: string
+          id?: string
+          outcome?: string
+          parent_name?: string | null
+          phone_number: string
+          summary?: string | null
+          transcript?: string | null
+          user_id: string
+          venue_name?: string | null
+        }
+        Update: {
+          attempt_number?: number
+          call_timestamp?: string | null
+          campaign_id?: string
+          child_names?: string | null
+          contact_id?: string | null
+          created_at?: string
+          id?: string
+          outcome?: string
+          parent_name?: string | null
+          phone_number?: string
+          summary?: string | null
+          transcript?: string | null
+          user_id?: string
+          venue_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_outcomes_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_outcomes_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaigns: {
+        Row: {
+          age_range: string | null
+          booking_target: number | null
+          created_at: string
+          elevenlabs_campaign_id: string | null
+          end_date: string | null
+          id: string
+          notes: string | null
+          round: number
+          start_date: string | null
+          status: string
+          times: string | null
+          twilio_phone_number: string | null
+          updated_at: string
+          user_id: string
+          venue_location: string | null
+          venue_name: string
+        }
+        Insert: {
+          age_range?: string | null
+          booking_target?: number | null
+          created_at?: string
+          elevenlabs_campaign_id?: string | null
+          end_date?: string | null
+          id?: string
+          notes?: string | null
+          round?: number
+          start_date?: string | null
+          status?: string
+          times?: string | null
+          twilio_phone_number?: string | null
+          updated_at?: string
+          user_id: string
+          venue_location?: string | null
+          venue_name: string
+        }
+        Update: {
+          age_range?: string | null
+          booking_target?: number | null
+          created_at?: string
+          elevenlabs_campaign_id?: string | null
+          end_date?: string | null
+          id?: string
+          notes?: string | null
+          round?: number
+          start_date?: string | null
+          status?: string
+          times?: string | null
+          twilio_phone_number?: string | null
+          updated_at?: string
+          user_id?: string
+          venue_location?: string | null
+          venue_name?: string
+        }
+        Relationships: []
+      }
+      contacts: {
+        Row: {
+          age_range: string | null
+          campaign_id: string
+          child_names: string | null
+          created_at: string
+          end_date: string | null
+          first_message: string | null
+          first_name: string
+          id: string
+          language: string | null
+          phone_number: string
+          sheet_reference: string | null
+          start_date: string | null
+          times: string | null
+          user_id: string
+          venue_location: string | null
+          venue_name: string | null
+          voice_id: string | null
+        }
+        Insert: {
+          age_range?: string | null
+          campaign_id: string
+          child_names?: string | null
+          created_at?: string
+          end_date?: string | null
+          first_message?: string | null
+          first_name: string
+          id?: string
+          language?: string | null
+          phone_number: string
+          sheet_reference?: string | null
+          start_date?: string | null
+          times?: string | null
+          user_id: string
+          venue_location?: string | null
+          venue_name?: string | null
+          voice_id?: string | null
+        }
+        Update: {
+          age_range?: string | null
+          campaign_id?: string
+          child_names?: string | null
+          created_at?: string
+          end_date?: string | null
+          first_message?: string | null
+          first_name?: string
+          id?: string
+          language?: string | null
+          phone_number?: string
+          sheet_reference?: string | null
+          start_date?: string | null
+          times?: string | null
+          user_id?: string
+          venue_location?: string | null
+          venue_name?: string | null
+          voice_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      do_not_call: {
+        Row: {
+          added_at: string
+          id: string
+          parent_name: string | null
+          phone_number: string
+          reason: string
+          user_id: string
+          venue_name: string | null
+        }
+        Insert: {
+          added_at?: string
+          id?: string
+          parent_name?: string | null
+          phone_number: string
+          reason: string
+          user_id: string
+          venue_name?: string | null
+        }
+        Update: {
+          added_at?: string
+          id?: string
+          parent_name?: string | null
+          phone_number?: string
+          reason?: string
+          user_id?: string
+          venue_name?: string | null
+        }
+        Relationships: []
+      }
       knowledge_base_items: {
         Row: {
           agent_id: string

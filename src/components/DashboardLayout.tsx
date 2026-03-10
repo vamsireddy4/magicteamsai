@@ -13,11 +13,19 @@ import {
   Menu,
   X,
   PhoneCall,
+  FileSpreadsheet,
+  Megaphone,
+  ClipboardList,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/data-cleaning", label: "Data Cleaning", icon: FileSpreadsheet },
+  { href: "/campaigns", label: "Campaigns", icon: Megaphone },
+  { href: "/outcomes", label: "Outcomes", icon: ClipboardList },
+  { href: "/retry-csv", label: "Retry CSV", icon: RefreshCw },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/knowledge-base", label: "Knowledge Base", icon: BookOpen },
   { href: "/phone-config", label: "Phone Numbers", icon: Phone },
