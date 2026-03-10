@@ -222,7 +222,7 @@ export default function CalendarIntegrations() {
                     <Card key={provider.id} className={isConnected ? "opacity-60" : ""}>
                       <CardHeader className="pb-3">
                         <div className="flex items-center gap-3">
-                          <span className="text-3xl">{provider.icon}</span>
+                          <img src={provider.logo} alt={provider.name} className="h-10 w-10 rounded object-contain" />
                           <div>
                             <CardTitle className="text-base">{provider.name}</CardTitle>
                             {isConnected && (
