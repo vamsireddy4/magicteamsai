@@ -17,6 +17,9 @@ import {
   Megaphone,
   ClipboardList,
   RefreshCw,
+  Webhook,
+  CalendarDays,
+  Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
