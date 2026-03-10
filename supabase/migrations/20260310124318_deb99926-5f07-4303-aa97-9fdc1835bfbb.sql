@@ -1,0 +1,1 @@
+ALTER TABLE public.agents ADD COLUMN model text NOT NULL DEFAULT 'fixie-ai/ultravox-v0.7';
