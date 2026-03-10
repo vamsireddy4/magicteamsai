@@ -215,7 +215,7 @@ export default function DataCleaning() {
     setSelectedIds(new Set());
     setStats(null);
     setCustomerFile(null);
-    setBookingsFile(null);
+    
   };
 
   return (
