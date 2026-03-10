@@ -93,19 +93,10 @@ export default function DataCleaning() {
       const customerText = await customerFile.text();
       const customers = parseCSV(customerText);
 
-      const bookedPhones = new Set(
-        bookings.map((b) => normalizePhone(b.phone_number || b.phone || "")).filter(Boolean)
-      );
-
-      const unbookedCustomers = customers.filter(
-        (c) => !bookedPhones.has(normalizePhone(c.phone_number || c.phone || ""))
-      );
-      const bookedRemoved = customers.length - unbookedCustomers.length;
-
       // Consolidate duplicates by phone
       const grouped = new Map<string, { contact: Record<string, string>; children: Set<string> }>();
       let dupsFound = 0;
-      for (const row of unbookedCustomers) {
+      for (const row of customers) {
         const phone = normalizePhone(row.phone_number || row.phone || "");
         const childName = row.child_name || row.child_names || row.child || "";
         if (grouped.has(phone)) {
