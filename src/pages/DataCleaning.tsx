@@ -86,8 +86,8 @@ export default function DataCleaning() {
   };
 
   const processFiles = useCallback(async () => {
-    if (!customerFile || !bookingsFile) {
-      toast({ title: "Missing files", description: "Upload both customer and bookings CSVs.", variant: "destructive" });
+    if (!customerFile) {
+      toast({ title: "Missing file", description: "Upload the customer CSV.", variant: "destructive" });
       return;
     }
     setProcessing(true);
