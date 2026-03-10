@@ -53,7 +53,6 @@ export default function DataCleaning() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [customerFile, setCustomerFile] = useState<File | null>(null);
-  const [bookingsFile, setBookingsFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
   const [contacts, setContacts] = useState<ParsedContact[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -78,11 +77,10 @@ export default function DataCleaning() {
     });
   }, [user]);
 
-  const handleFileUpload = (type: "customers" | "bookings") => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (type === "customers") setCustomerFile(file);
-    else setBookingsFile(file);
+    setCustomerFile(file);
   };
 
   const processFiles = useCallback(async () => {
@@ -94,22 +92,11 @@ export default function DataCleaning() {
     try {
       const customerText = await customerFile.text();
       const customers = parseCSV(customerText);
-      const bookingsText = bookingsFile ? await bookingsFile.text() : "";
-      const bookings = bookingsText ? parseCSV(bookingsText) : [];
-
-      const bookedPhones = new Set(
-        bookings.map((b) => normalizePhone(b.phone_number || b.phone || "")).filter(Boolean)
-      );
-
-      const unbookedCustomers = customers.filter(
-        (c) => !bookedPhones.has(normalizePhone(c.phone_number || c.phone || ""))
-      );
-      const bookedRemoved = customers.length - unbookedCustomers.length;
 
       // Consolidate duplicates by phone
       const grouped = new Map<string, { contact: Record<string, string>; children: Set<string> }>();
       let dupsFound = 0;
-      for (const row of unbookedCustomers) {
+      for (const row of customers) {
         const phone = normalizePhone(row.phone_number || row.phone || "");
         const childName = row.child_name || row.child_names || row.child || "";
         if (grouped.has(phone)) {
@@ -140,14 +127,14 @@ export default function DataCleaning() {
 
       setContacts(parsed);
       setSelectedIds(new Set(parsed.map((c) => c.id)));
-      setStats({ total: customers.length, bookedRemoved, dupsConsolidated: dupsFound });
+      setStats({ total: customers.length, bookedRemoved: 0, dupsConsolidated: dupsFound });
       toast({ title: "Processing complete", description: `${parsed.length} unique contacts extracted.` });
     } catch (err: any) {
       toast({ title: "Error processing files", description: err.message, variant: "destructive" });
     } finally {
       setProcessing(false);
     }
-  }, [customerFile, bookingsFile, toast]);
+  }, [customerFile, toast]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -228,7 +215,7 @@ export default function DataCleaning() {
     setSelectedIds(new Set());
     setStats(null);
     setCustomerFile(null);
-    setBookingsFile(null);
+    
   };
 
   return (
@@ -237,48 +224,28 @@ export default function DataCleaning() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Data Cleaning Tool</h1>
           <p className="text-muted-foreground mt-1">
-            Upload customer &amp; bookings CSVs → clean, deduplicate → select contacts → start bulk calling.
+            Upload customer CSV → extract &amp; deduplicate → select contacts → start bulk calling.
           </p>
         </div>
 
         {/* Upload Section */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <FileSpreadsheet className="h-4 w-4" /> Customer List CSV
-              </CardTitle>
-              <CardDescription>Full export from Eequ/Playwaze — all parents</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-6 cursor-pointer hover:border-primary/50 transition-colors">
-                <Upload className="h-8 w-8 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">
-                  {customerFile ? customerFile.name : "Click to upload CSV"}
-                </span>
-                <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload("customers")} />
-              </label>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <FileSpreadsheet className="h-4 w-4" /> Bookings List CSV
-              </CardTitle>
-              <CardDescription>Confirmed bookings — these parents will be excluded</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-6 cursor-pointer hover:border-primary/50 transition-colors">
-                <Upload className="h-8 w-8 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">
-                  {bookingsFile ? bookingsFile.name : "Click to upload CSV"}
-                </span>
-                <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload("bookings")} />
-              </label>
-            </CardContent>
-          </Card>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileSpreadsheet className="h-4 w-4" /> Customer List CSV
+            </CardTitle>
+            <CardDescription>Full export from Eequ/Playwaze — all parents</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-6 cursor-pointer hover:border-primary/50 transition-colors">
+              <Upload className="h-8 w-8 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">
+                {customerFile ? customerFile.name : "Click to upload CSV"}
+              </span>
+              <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
+            </label>
+          </CardContent>
+        </Card>
 
         <div className="flex gap-3">
           <Button onClick={processFiles} disabled={processing || !customerFile}>
