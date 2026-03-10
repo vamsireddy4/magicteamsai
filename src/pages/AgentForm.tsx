@@ -29,10 +29,9 @@ interface UltravoxModel {
   name: string;
 }
 
-const GEMINI_MODELS: UltravoxModel[] = [
+const FALLBACK_MODELS: UltravoxModel[] = [
   { name: "fixie-ai/ultravox-v0.7" },
-  { name: "fixie-ai/ultravox-v0.5-gemini-1.5-flash" },
-  { name: "fixie-ai/ultravox-v0.5-gemini-1.5-pro" },
+  { name: "fixie-ai/ultravox-v0.5" },
 ];
 
 const FIRST_SPEAKER_OPTIONS = [
@@ -76,24 +75,22 @@ export default function AgentForm() {
       setLoadingVoices(false);
       if (error || !data) {
         console.error("Failed to fetch Ultravox data:", error);
-        // Still show Gemini models as fallback
-        setModels(GEMINI_MODELS);
+        setModels(FALLBACK_MODELS);
         return;
       }
       if (data.voices && Array.isArray(data.voices)) {
         setVoices(data.voices);
       }
       if (data.models && Array.isArray(data.models)) {
-        // Merge fetched models with Gemini defaults, avoiding duplicates
         const fetched = data.models as UltravoxModel[];
         const fetchedNames = new Set(fetched.map((m) => m.name));
         const merged = [
           ...fetched,
-          ...GEMINI_MODELS.filter((gm) => !fetchedNames.has(gm.name)),
+          ...FALLBACK_MODELS.filter((fm) => !fetchedNames.has(fm.name)),
         ];
         setModels(merged);
       } else {
-        setModels(GEMINI_MODELS);
+        setModels(FALLBACK_MODELS);
       }
     });
 
