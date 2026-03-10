@@ -128,121 +128,172 @@ Deno.serve(async (req) => {
     }
 
     const provider = phoneConfig.provider || "twilio";
-
-    // Create Ultravox call with the appropriate medium
-    const medium = provider === "telnyx" ? { telnyx: {} } : { twilio: {} };
-
-    const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": ultravoxApiKey,
-      },
-      body: JSON.stringify({
-        systemPrompt,
-        model: agent.model || "fixie-ai/ultravox-v0.7",
-        voice: agent.voice,
-        temperature: Number(agent.temperature),
-        firstSpeakerSettings: { user: {} },
-        medium,
-        languageHint: agent.language_hint || "en",
-        maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
-      }),
-    });
-
-    if (!ultravoxResponse.ok) {
-      const errorText = await ultravoxResponse.text();
-      console.error("Ultravox API error:", errorText);
-      return new Response(
-        JSON.stringify({ error: "Failed to create outbound call", details: errorText }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const ultravoxData = await ultravoxResponse.json();
-    const joinUrl = ultravoxData.joinUrl;
-    const ultravoxCallId = ultravoxData.callId;
-
-    console.log(`Ultravox call created: ${ultravoxCallId}, joinUrl: ${joinUrl}`);
+    const aiProvider = (agent as any).ai_provider || "ultravox";
 
     let callSid = "";
+    let ultravoxCallId = "";
 
-    if (provider === "telnyx") {
-      // Use Telnyx Call Control API
-      const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
-      const telnyxConnectionId = (phoneConfig.telnyx_connection_id || "").trim();
-
-      console.log("Using Telnyx key starting with:", telnyxApiKey.substring(0, 8), "length:", telnyxApiKey.length);
-      console.log("Using Telnyx connection ID:", telnyxConnectionId);
-
-      if (!telnyxApiKey || !telnyxConnectionId) {
+    if (aiProvider === "gemini") {
+      // --- GEMINI LIVE API PATH ---
+      const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+      if (!geminiApiKey) {
         return new Response(
-          JSON.stringify({ error: "Telnyx credentials missing on this phone config" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // Use Telnyx Call Control API to initiate call with stream
-      const telnyxResponse = await fetch("https://api.telnyx.com/v2/calls", {
+      // Build WebSocket bridge URL for Gemini
+      const bridgeUrl = `${supabaseUrl}/functions/v1/gemini-voice-bridge?agent_id=${agent.id}`.replace("https://", "wss://");
+
+      if (provider === "telnyx") {
+        const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
+        const telnyxConnectionId = (phoneConfig.telnyx_connection_id || "").trim();
+        if (!telnyxApiKey || !telnyxConnectionId) {
+          return new Response(
+            JSON.stringify({ error: "Telnyx credentials missing" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        const telnyxResponse = await fetch("https://api.telnyx.com/v2/calls", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${telnyxApiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            connection_id: telnyxConnectionId,
+            to: recipient_number,
+            from: phoneConfig.phone_number,
+            stream_url: bridgeUrl,
+            stream_track: "both_tracks",
+          }),
+        });
+        if (!telnyxResponse.ok) {
+          const err = await telnyxResponse.text();
+          return new Response(JSON.stringify({ error: "Telnyx call failed", details: err }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const telnyxData = await telnyxResponse.json();
+        callSid = telnyxData.data?.call_control_id || "";
+      } else {
+        const twiml = `<Response><Connect><Stream url="${bridgeUrl}"/></Connect></Response>`;
+        const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
+        const twilioAuthToken = (phoneConfig.twilio_auth_token || "").replace(/[^a-zA-Z0-9]/g, '');
+        const twilioResponse = await fetch(
+          `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`,
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`,
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({ To: recipient_number, From: phoneConfig.phone_number, Twiml: twiml }).toString(),
+          }
+        );
+        if (!twilioResponse.ok) {
+          const err = await twilioResponse.text();
+          return new Response(JSON.stringify({ error: "Twilio call failed", details: err }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const twilioData = await twilioResponse.json();
+        callSid = twilioData.sid;
+      }
+
+      console.log(`Gemini call placed via ${provider}: ${callSid}`);
+
+    } else {
+      // --- ULTRAVOX PATH (existing) ---
+      if (!ultravoxApiKey) {
+        return new Response(
+          JSON.stringify({ error: "ULTRAVOX_API_KEY not configured" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const medium = provider === "telnyx" ? { telnyx: {} } : { twilio: {} };
+      const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
         method: "POST",
-        headers: {
-          "Authorization": `Bearer ${telnyxApiKey}`,
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json", "X-API-Key": ultravoxApiKey },
         body: JSON.stringify({
-          connection_id: telnyxConnectionId,
-          to: recipient_number,
-          from: phoneConfig.phone_number,
-          stream_url: joinUrl,
-          stream_track: "both_tracks",
+          systemPrompt,
+          model: agent.model || "fixie-ai/ultravox-v0.7",
+          voice: agent.voice,
+          temperature: Number(agent.temperature),
+          firstSpeakerSettings: { user: {} },
+          medium,
+          languageHint: agent.language_hint || "en",
+          maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
         }),
       });
 
-      if (!telnyxResponse.ok) {
-        const telnyxError = await telnyxResponse.text();
-        console.error("Telnyx API error:", telnyxError);
+      if (!ultravoxResponse.ok) {
+        const errorText = await ultravoxResponse.text();
         return new Response(
-          JSON.stringify({ error: "Failed to place Telnyx call", details: telnyxError }),
+          JSON.stringify({ error: "Failed to create outbound call", details: errorText }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      const telnyxData = await telnyxResponse.json();
-      callSid = telnyxData.data?.call_control_id || telnyxData.data?.call_session_id || "";
-      console.log(`Telnyx call placed: ${callSid}`);
-    } else {
-      // Use Twilio REST API
-      const twiml = `<Response><Connect><Stream url="${joinUrl}"/></Connect></Response>`;
-      const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
-      const twilioAuthToken = (phoneConfig.twilio_auth_token || "").replace(/[^a-zA-Z0-9]/g, '');
-      const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`;
-      const twilioAuth = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+      const ultravoxData = await ultravoxResponse.json();
+      const joinUrl = ultravoxData.joinUrl;
+      ultravoxCallId = ultravoxData.callId;
 
-      const twilioResponse = await fetch(twilioUrl, {
-        method: "POST",
-        headers: {
-          "Authorization": `Basic ${twilioAuth}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          To: recipient_number,
-          From: phoneConfig.phone_number,
-          Twiml: twiml,
-        }).toString(),
-      });
+      console.log(`Ultravox call created: ${ultravoxCallId}, joinUrl: ${joinUrl}`);
 
-      if (!twilioResponse.ok) {
-        const twilioError = await twilioResponse.text();
-        console.error("Twilio API error:", twilioError);
-        return new Response(
-          JSON.stringify({ error: "Failed to place Twilio call", details: twilioError }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      if (provider === "telnyx") {
+        const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
+        const telnyxConnectionId = (phoneConfig.telnyx_connection_id || "").trim();
+        if (!telnyxApiKey || !telnyxConnectionId) {
+          return new Response(
+            JSON.stringify({ error: "Telnyx credentials missing on this phone config" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        const telnyxResponse = await fetch("https://api.telnyx.com/v2/calls", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${telnyxApiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            connection_id: telnyxConnectionId,
+            to: recipient_number,
+            from: phoneConfig.phone_number,
+            stream_url: joinUrl,
+            stream_track: "both_tracks",
+          }),
+        });
+        if (!telnyxResponse.ok) {
+          const err = await telnyxResponse.text();
+          return new Response(JSON.stringify({ error: "Failed to place Telnyx call", details: err }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const telnyxData = await telnyxResponse.json();
+        callSid = telnyxData.data?.call_control_id || "";
+      } else {
+        const twiml = `<Response><Connect><Stream url="${joinUrl}"/></Connect></Response>`;
+        const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
+        const twilioAuthToken = (phoneConfig.twilio_auth_token || "").replace(/[^a-zA-Z0-9]/g, '');
+        const twilioResponse = await fetch(
+          `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`,
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`,
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({ To: recipient_number, From: phoneConfig.phone_number, Twiml: twiml }).toString(),
+          }
         );
+        if (!twilioResponse.ok) {
+          const err = await twilioResponse.text();
+          return new Response(JSON.stringify({ error: "Failed to place Twilio call", details: err }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const twilioData = await twilioResponse.json();
+        callSid = twilioData.sid;
       }
 
-      const twilioData = await twilioResponse.json();
-      callSid = twilioData.sid;
-      console.log(`Twilio call placed: ${callSid}`);
+      console.log(`${provider} call placed: ${callSid}`);
     }
 
     // Log the call
@@ -252,13 +303,13 @@ Deno.serve(async (req) => {
       direction: "outbound",
       caller_number: phoneConfig.phone_number,
       recipient_number,
-      ultravox_call_id: ultravoxCallId,
+      ultravox_call_id: ultravoxCallId || null,
       twilio_call_sid: callSid,
       status: "initiated",
     });
 
     return new Response(
-      JSON.stringify({ success: true, callId: ultravoxCallId, callSid }),
+      JSON.stringify({ success: true, callId: ultravoxCallId || callSid, callSid }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

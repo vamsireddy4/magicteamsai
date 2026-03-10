@@ -87,6 +87,7 @@ export default function AgentForm() {
     is_active: true,
     phone_number_id: null as string | null,
     model: "fixie-ai/ultravox-v0.7",
+    ai_provider: "ultravox",
   });
 
   useEffect(() => {

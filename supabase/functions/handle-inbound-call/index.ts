@@ -97,43 +97,59 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Create Ultravox call with the appropriate medium
-    const medium = provider === "telnyx" ? { telnyx: {} } : { twilio: {} };
+    const aiProvider = (agent as any).ai_provider || "ultravox";
+    let streamUrl = "";
+    let ultravoxCallId = "";
 
-    const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": ultravoxApiKey,
-      },
-      body: JSON.stringify({
-        systemPrompt,
-        model: agent.model || "fixie-ai/ultravox-v0.7",
-        voice: agent.voice,
-        temperature: Number(agent.temperature),
-        firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT"
-          ? { agent: {} }
-          : { user: {} },
-        medium,
-        languageHint: agent.language_hint || "en",
-        maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
-      }),
-    });
+    if (aiProvider === "gemini") {
+      // --- GEMINI LIVE API PATH ---
+      const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+      if (!geminiApiKey) {
+        return new Response(
+          `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, Gemini is not configured. Please try again later.</Say></Response>`,
+          { headers: { ...corsHeaders, "Content-Type": "text/xml" } }
+        );
+      }
+      streamUrl = `${supabaseUrl}/functions/v1/gemini-voice-bridge?agent_id=${agent.id}`.replace("https://", "wss://");
+      console.log(`Gemini bridge URL: ${streamUrl}`);
+    } else {
+      // --- ULTRAVOX PATH ---
+      const medium = provider === "telnyx" ? { telnyx: {} } : { twilio: {} };
 
-    if (!ultravoxResponse.ok) {
-      const errorText = await ultravoxResponse.text();
-      console.error("Ultravox API error:", errorText);
-      return new Response(
-        `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, there was a technical issue. Please try again later.</Say></Response>`,
-        { headers: { ...corsHeaders, "Content-Type": "text/xml" } }
-      );
+      const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": ultravoxApiKey,
+        },
+        body: JSON.stringify({
+          systemPrompt,
+          model: agent.model || "fixie-ai/ultravox-v0.7",
+          voice: agent.voice,
+          temperature: Number(agent.temperature),
+          firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT"
+            ? { agent: {} }
+            : { user: {} },
+          medium,
+          languageHint: agent.language_hint || "en",
+          maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
+        }),
+      });
+
+      if (!ultravoxResponse.ok) {
+        const errorText = await ultravoxResponse.text();
+        console.error("Ultravox API error:", errorText);
+        return new Response(
+          `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, there was a technical issue. Please try again later.</Say></Response>`,
+          { headers: { ...corsHeaders, "Content-Type": "text/xml" } }
+        );
+      }
+
+      const ultravoxData = await ultravoxResponse.json();
+      streamUrl = ultravoxData.joinUrl;
+      ultravoxCallId = ultravoxData.callId;
+      console.log(`Ultravox call created: ${ultravoxCallId}, join URL: ${streamUrl}`);
     }
-
-    const ultravoxData = await ultravoxResponse.json();
-    const joinUrl = ultravoxData.joinUrl;
-    const ultravoxCallId = ultravoxData.callId;
-
-    console.log(`Ultravox call created: ${ultravoxCallId}, join URL: ${joinUrl}`);
 
     // Log the call
     await supabase.from("call_logs").insert({
@@ -143,15 +159,15 @@ Deno.serve(async (req) => {
       caller_number: from,
       recipient_number: to,
       twilio_call_sid: callSid,
-      ultravox_call_id: ultravoxCallId,
+      ultravox_call_id: ultravoxCallId || null,
       status: "in-progress",
     });
 
-    // Return TwiML/TeXML to connect to the Ultravox WebSocket
+    // Return TwiML/TeXML to connect to the stream
     const responseXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
-    <Stream url="${joinUrl}" />
+    <Stream url="${streamUrl}" />
   </Connect>
 </Response>`;
 
