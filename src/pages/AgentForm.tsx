@@ -34,6 +34,29 @@ const FALLBACK_MODELS: UltravoxModel[] = [
   { name: "fixie-ai/ultravox-v0.5" },
 ];
 
+const GEMINI_MODELS: UltravoxModel[] = [
+  { name: "gemini-2.5-flash-preview-native-audio" },
+  { name: "gemini-2.5-pro-preview-native-audio" },
+  { name: "gemini-2.0-flash-live-001" },
+  { name: "gemini-2.0-flash-exp" },
+];
+
+const GEMINI_VOICES = [
+  { value: "Puck", label: "Puck" },
+  { value: "Charon", label: "Charon" },
+  { value: "Kore", label: "Kore" },
+  { value: "Fenrir", label: "Fenrir" },
+  { value: "Aoede", label: "Aoede" },
+  { value: "Leda", label: "Leda" },
+  { value: "Orus", label: "Orus" },
+  { value: "Zephyr", label: "Zephyr" },
+];
+
+const AI_PROVIDERS = [
+  { value: "ultravox", label: "Ultravox" },
+  { value: "gemini", label: "Gemini Live API" },
+];
+
 const FIRST_SPEAKER_OPTIONS = [
   { value: "FIRST_SPEAKER_AGENT", label: "Agent speaks first (inbound)" },
   { value: "FIRST_SPEAKER_USER", label: "User speaks first (outbound)" },
