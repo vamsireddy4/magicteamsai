@@ -29,10 +29,9 @@ interface UltravoxModel {
   name: string;
 }
 
-const GEMINI_MODELS: UltravoxModel[] = [
+const FALLBACK_MODELS: UltravoxModel[] = [
   { name: "fixie-ai/ultravox-v0.7" },
-  { name: "fixie-ai/ultravox-v0.5-gemini-1.5-flash" },
-  { name: "fixie-ai/ultravox-v0.5-gemini-1.5-pro" },
+  { name: "fixie-ai/ultravox-v0.5" },
 ];
 
 const FIRST_SPEAKER_OPTIONS = [
