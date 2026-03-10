@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { agent_id, recipient_number } = await req.json();
+    const { agent_id, recipient_number, phone_config_id } = await req.json();
 
     if (!agent_id || !recipient_number) {
       return new Response(
@@ -69,9 +69,19 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch phone config for outbound
+    // Fetch phone config for outbound — prioritize explicit selection, then agent default, then any active
     let phoneConfig;
-    if (agent.phone_number_id) {
+    if (phone_config_id) {
+      const { data } = await supabase
+        .from("phone_configs")
+        .select("*")
+        .eq("id", phone_config_id)
+        .eq("user_id", user.id)
+        .single();
+      phoneConfig = data;
+    }
+
+    if (!phoneConfig && agent.phone_number_id) {
       const { data } = await supabase
         .from("phone_configs")
         .select("*")

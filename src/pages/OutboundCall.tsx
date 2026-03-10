@@ -15,15 +15,18 @@ export default function OutboundCall() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [agents, setAgents] = useState<Tables<"agents">[]>([]);
+  const [phoneConfigs, setPhoneConfigs] = useState<Tables<"phone_configs">[]>([]);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     agent_id: "",
     recipient_number: "",
+    phone_config_id: "",
   });
 
   useEffect(() => {
     if (!user) return;
     supabase.from("agents").select("*").eq("is_active", true).then(({ data }) => setAgents(data || []));
+    supabase.from("phone_configs").select("*").eq("is_active", true).then(({ data }) => setPhoneConfigs(data || []));
   }, [user]);
 
   const handleCall = async (e: React.FormEvent) => {
@@ -36,6 +39,7 @@ export default function OutboundCall() {
         body: {
           agent_id: form.agent_id,
           recipient_number: form.recipient_number,
+          phone_config_id: form.phone_config_id,
         },
       });
 
@@ -87,7 +91,20 @@ export default function OutboundCall() {
                 />
                 <p className="text-xs text-muted-foreground">Include country code (e.g. +1 for US)</p>
               </div>
-              <Button type="submit" className="w-full" disabled={loading || !form.agent_id}>
+              <div className="space-y-2">
+                <Label>Phone Number (Caller ID)</Label>
+                <Select value={form.phone_config_id} onValueChange={(val) => setForm({ ...form, phone_config_id: val })}>
+                  <SelectTrigger><SelectValue placeholder="Select a phone number" /></SelectTrigger>
+                  <SelectContent>
+                    {phoneConfigs.map((pc) => (
+                      <SelectItem key={pc.id} value={pc.id}>
+                        {pc.phone_number} {pc.friendly_name ? `(${pc.friendly_name})` : ""} — {pc.provider}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="submit" className="w-full" disabled={loading || !form.agent_id || !form.phone_config_id}>
                 {loading ? (
                   <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Placing Call...</>
                 ) : (
