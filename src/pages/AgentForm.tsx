@@ -29,6 +29,12 @@ interface UltravoxModel {
   name: string;
 }
 
+const GEMINI_MODELS: UltravoxModel[] = [
+  { name: "fixie-ai/ultravox-v0.7" },
+  { name: "fixie-ai/ultravox-v0.5-gemini-1.5-flash" },
+  { name: "fixie-ai/ultravox-v0.5-gemini-1.5-pro" },
+];
+
 const FIRST_SPEAKER_OPTIONS = [
   { value: "FIRST_SPEAKER_AGENT", label: "Agent speaks first (inbound)" },
   { value: "FIRST_SPEAKER_USER", label: "User speaks first (outbound)" },
