@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.list-ultravox-voices]
 verify_jwt = false
+
+[functions.check-calendar-availability]
+verify_jwt = false
+
+[functions.book-calendar-appointment]
+verify_jwt = false

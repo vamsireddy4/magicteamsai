@@ -21,6 +21,7 @@ import RetryCSV from "./pages/RetryCSV";
 import Webhooks from "./pages/Webhooks";
 import ScheduledCalls from "./pages/ScheduledCalls";
 import CustomTools from "./pages/CustomTools";
+import CalendarIntegrations from "./pages/CalendarIntegrations";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -50,6 +51,7 @@ const App = () => (
             <Route path="/webhooks" element={<ProtectedRoute><Webhooks /></ProtectedRoute>} />
             <Route path="/scheduled-calls" element={<ProtectedRoute><ScheduledCalls /></ProtectedRoute>} />
             <Route path="/custom-tools" element={<ProtectedRoute><CustomTools /></ProtectedRoute>} />
+            <Route path="/calendar-integrations" element={<ProtectedRoute><CalendarIntegrations /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><UserSettings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
