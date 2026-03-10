@@ -92,9 +92,10 @@ export default function DataCleaning() {
     }
     setProcessing(true);
     try {
-      const [customerText, bookingsText] = await Promise.all([customerFile.text(), bookingsFile.text()]);
+      const customerText = await customerFile.text();
       const customers = parseCSV(customerText);
-      const bookings = parseCSV(bookingsText);
+      const bookingsText = bookingsFile ? await bookingsFile.text() : "";
+      const bookings = bookingsText ? parseCSV(bookingsText) : [];
 
       const bookedPhones = new Set(
         bookings.map((b) => normalizePhone(b.phone_number || b.phone || "")).filter(Boolean)
