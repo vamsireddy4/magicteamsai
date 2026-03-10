@@ -91,6 +91,19 @@ export default function OutboundCall() {
                 />
                 <p className="text-xs text-muted-foreground">Include country code (e.g. +1 for US)</p>
               </div>
+              <div className="space-y-2">
+                <Label>Phone Number (Caller ID)</Label>
+                <Select value={form.phone_config_id} onValueChange={(val) => setForm({ ...form, phone_config_id: val })}>
+                  <SelectTrigger><SelectValue placeholder="Select a phone number" /></SelectTrigger>
+                  <SelectContent>
+                    {phoneConfigs.map((pc) => (
+                      <SelectItem key={pc.id} value={pc.id}>
+                        {pc.phone_number} {pc.friendly_name ? `(${pc.friendly_name})` : ""} — {pc.provider}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Button type="submit" className="w-full" disabled={loading || !form.agent_id}>
                 {loading ? (
                   <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Placing Call...</>
