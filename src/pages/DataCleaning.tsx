@@ -77,11 +77,10 @@ export default function DataCleaning() {
     });
   }, [user]);
 
-  const handleFileUpload = (type: "customers" | "bookings") => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (type === "customers") setCustomerFile(file);
-    else setBookingsFile(file);
+    setCustomerFile(file);
   };
 
   const processFiles = useCallback(async () => {
