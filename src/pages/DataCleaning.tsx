@@ -281,7 +281,7 @@ export default function DataCleaning() {
         </div>
 
         <div className="flex gap-3">
-          <Button onClick={processFiles} disabled={processing || !customerFile || !bookingsFile}>
+          <Button onClick={processFiles} disabled={processing || !customerFile}>
             {processing ? "Processing..." : "Process & Clean Data"}
           </Button>
           {contacts.length > 0 && (
