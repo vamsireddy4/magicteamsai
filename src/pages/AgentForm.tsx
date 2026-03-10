@@ -12,16 +12,29 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
-const VOICES = [
-  "terrence", "tina", "mark", "jessica", "chris", "laura", "david", "sarah"
-];
+interface UltravoxVoice {
+  voiceId: string;
+  name: string;
+  description?: string;
+  previewUrl?: string;
+}
+
+interface UltravoxModel {
+  modelId: string;
+  name?: string;
+  description?: string;
+}
 
 const FIRST_SPEAKER_OPTIONS = [
   { value: "FIRST_SPEAKER_AGENT", label: "Agent speaks first (inbound)" },
   { value: "FIRST_SPEAKER_USER", label: "User speaks first (outbound)" },
+];
+
+const FALLBACK_VOICES = [
+  "terrence", "tina", "mark", "jessica", "chris", "laura", "david", "sarah"
 ];
 
 export default function AgentForm() {
@@ -32,6 +45,9 @@ export default function AgentForm() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [phoneConfigs, setPhoneConfigs] = useState<Tables<"phone_configs">[]>([]);
+  const [voices, setVoices] = useState<UltravoxVoice[]>([]);
+  const [models, setModels] = useState<UltravoxModel[]>([]);
+  const [loadingVoices, setLoadingVoices] = useState(true);
 
   const [form, setForm] = useState({
     name: "",
@@ -43,11 +59,27 @@ export default function AgentForm() {
     max_duration: 300,
     is_active: true,
     phone_number_id: null as string | null,
+    model: "fixie-ai/ultravox-v0.7",
   });
 
   useEffect(() => {
     if (!user) return;
     supabase.from("phone_configs").select("*").then(({ data }) => setPhoneConfigs(data || []));
+
+    // Fetch Ultravox voices and models
+    supabase.functions.invoke("list-ultravox-voices").then(({ data, error }) => {
+      setLoadingVoices(false);
+      if (error || !data) {
+        console.error("Failed to fetch Ultravox data:", error);
+        return;
+      }
+      if (data.voices && Array.isArray(data.voices)) {
+        setVoices(data.voices);
+      }
+      if (data.models && Array.isArray(data.models)) {
+        setModels(data.models);
+      }
+    });
 
     if (isEditing) {
       supabase.from("agents").select("*").eq("id", id).single().then(({ data }) => {
@@ -62,6 +94,7 @@ export default function AgentForm() {
             max_duration: data.max_duration || 300,
             is_active: data.is_active,
             phone_number_id: data.phone_number_id,
+            model: (data as any).model || "fixie-ai/ultravox-v0.7",
           });
         }
       });
@@ -87,6 +120,11 @@ export default function AgentForm() {
       navigate("/agents");
     }
   };
+
+  // Determine voice options: use fetched voices or fallback
+  const voiceOptions = voices.length > 0
+    ? voices.map((v) => ({ value: v.voiceId || v.name, label: v.name, description: v.description }))
+    : FALLBACK_VOICES.map((v) => ({ value: v, label: v, description: undefined }));
 
   return (
     <DashboardLayout>
@@ -145,19 +183,58 @@ export default function AgentForm() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>Voice & Behavior</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Model & Voice</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Voice</Label>
-                  <Select value={form.voice} onValueChange={(val) => setForm({ ...form, voice: val })}>
+              {/* Model selector */}
+              <div className="space-y-2">
+                <Label>Model</Label>
+                {loadingVoices ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading models...
+                  </div>
+                ) : models.length > 0 ? (
+                  <Select value={form.model} onValueChange={(val) => setForm({ ...form, model: val })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {VOICES.map((v) => (
-                        <SelectItem key={v} value={v} className="capitalize">{v}</SelectItem>
+                      {models.map((m) => (
+                        <SelectItem key={m.modelId || m.name} value={m.modelId || m.name || ""}>
+                          {m.modelId || m.name}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                ) : (
+                  <Input
+                    value={form.model}
+                    onChange={(e) => setForm({ ...form, model: e.target.value })}
+                    placeholder="fixie-ai/ultravox-v0.7"
+                  />
+                )}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                {/* Voice selector */}
+                <div className="space-y-2">
+                  <Label>Voice</Label>
+                  {loadingVoices ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Loading voices...
+                    </div>
+                  ) : (
+                    <Select value={form.voice} onValueChange={(val) => setForm({ ...form, voice: val })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent className="max-h-60">
+                        {voiceOptions.map((v) => (
+                          <SelectItem key={v.value} value={v.value}>
+                            <span className="capitalize">{v.label}</span>
+                            {v.description && (
+                              <span className="text-xs text-muted-foreground ml-2">— {v.description}</span>
+                            )}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>First Speaker</Label>
