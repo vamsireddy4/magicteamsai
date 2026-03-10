@@ -242,43 +242,23 @@ export default function DataCleaning() {
         </div>
 
         {/* Upload Section */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <FileSpreadsheet className="h-4 w-4" /> Customer List CSV
-              </CardTitle>
-              <CardDescription>Full export from Eequ/Playwaze — all parents</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-6 cursor-pointer hover:border-primary/50 transition-colors">
-                <Upload className="h-8 w-8 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">
-                  {customerFile ? customerFile.name : "Click to upload CSV"}
-                </span>
-                <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload("customers")} />
-              </label>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <FileSpreadsheet className="h-4 w-4" /> Bookings List CSV
-              </CardTitle>
-              <CardDescription>Confirmed bookings — these parents will be excluded</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-6 cursor-pointer hover:border-primary/50 transition-colors">
-                <Upload className="h-8 w-8 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">
-                  {bookingsFile ? bookingsFile.name : "Click to upload CSV"}
-                </span>
-                <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload("bookings")} />
-              </label>
-            </CardContent>
-          </Card>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileSpreadsheet className="h-4 w-4" /> Customer List CSV
+            </CardTitle>
+            <CardDescription>Full export from Eequ/Playwaze — all parents</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-6 cursor-pointer hover:border-primary/50 transition-colors">
+              <Upload className="h-8 w-8 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">
+                {customerFile ? customerFile.name : "Click to upload CSV"}
+              </span>
+              <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload("customers")} />
+            </label>
+          </CardContent>
+        </Card>
 
         <div className="flex gap-3">
           <Button onClick={processFiles} disabled={processing || !customerFile}>
