@@ -4,9 +4,11 @@ import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PhoneIncoming, PhoneOutgoing, History } from "lucide-react";
+import { PhoneIncoming, PhoneOutgoing, History, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import type { Json } from "@/integrations/supabase/types";
 
 interface CallLog {
@@ -27,8 +29,9 @@ export default function CallLogs() {
   const [calls, setCalls] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCall, setSelectedCall] = useState<CallLog | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
-  useEffect(() => {
+  const fetchCalls = () => {
     if (!user) return;
     supabase
       .from("call_logs")
@@ -38,7 +41,25 @@ export default function CallLogs() {
         setCalls((data as any) || []);
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    fetchCalls();
   }, [user]);
+
+  const syncCallData = async () => {
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-call-data");
+      if (error) throw error;
+      toast.success(`Synced ${data.updated} call(s) from Ultravox`);
+      fetchCalls();
+    } catch (e: any) {
+      toast.error("Failed to sync: " + (e.message || "Unknown error"));
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const formatDuration = (seconds: number | null) => {
     if (!seconds) return "—";
@@ -59,9 +80,15 @@ export default function CallLogs() {
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-in">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Call History</h1>
-          <p className="text-muted-foreground mt-1">View all inbound and outbound calls.</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Call History</h1>
+            <p className="text-muted-foreground mt-1">View all inbound and outbound calls.</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={syncCallData} disabled={syncing}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Syncing..." : "Sync from Ultravox"}
+          </Button>
         </div>
 
         <Card>
