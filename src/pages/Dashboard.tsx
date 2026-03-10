@@ -49,28 +49,7 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    if (!user) return;
-    
-    const fetchStats = async () => {
-      const [agentsRes, callsRes, phonesRes, recentRes] = await Promise.all([
-        supabase.from("agents").select("id", { count: "exact", head: true }),
-        supabase.from("call_logs").select("id, duration", { count: "exact" }),
-        supabase.from("phone_configs").select("id", { count: "exact", head: true }),
-        supabase.from("call_logs").select("*, agents(name)").order("started_at", { ascending: false }).limit(5),
-      ]);
-
-      const totalDuration = callsRes.data?.reduce((acc, c) => acc + (c.duration || 0), 0) || 0;
-
-      setStats({
-        agents: agentsRes.count || 0,
-        calls: callsRes.count || 0,
-        phones: phonesRes.count || 0,
-        totalDuration,
-      });
-      setRecentCalls(recentRes.data || []);
-    };
-
-    fetchStats();
+    fetchData();
   }, [user]);
 
   const formatDuration = (seconds: number) => {
