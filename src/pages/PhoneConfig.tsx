@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
-import { Plus, Phone, Trash2, Settings } from "lucide-react";
+import { Plus, Phone, Trash2, Settings, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -18,6 +18,7 @@ export default function PhoneConfig() {
   const [configs, setConfigs] = useState<Tables<"phone_configs">[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [showToken, setShowToken] = useState(false);
   const [form, setForm] = useState({
     twilio_account_sid: "",
     twilio_auth_token: "",
@@ -95,14 +96,26 @@ export default function PhoneConfig() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="auth_token">Auth Token</Label>
-                  <Input
-                    id="auth_token"
-                    type="password"
-                    value={form.twilio_auth_token}
-                    onChange={(e) => setForm({ ...form, twilio_auth_token: e.target.value })}
-                    placeholder="Your Twilio auth token"
-                    required
-                  />
+                  <div className="relative">
+                    <Input
+                      id="auth_token"
+                      type={showToken ? "text" : "password"}
+                      value={form.twilio_auth_token}
+                      onChange={(e) => setForm({ ...form, twilio_auth_token: e.target.value })}
+                      placeholder="Your Twilio auth token"
+                      required
+                      className="pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                      onClick={() => setShowToken(!showToken)}
+                    >
+                      {showToken ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                    </Button>
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     Your auth token is also in the Twilio Console.
                   </p>
