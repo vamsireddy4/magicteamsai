@@ -169,8 +169,8 @@ Deno.serve(async (req) => {
 
     if (provider === "telnyx") {
       // Use Telnyx Call Control API
-      const telnyxApiKey = phoneConfig.telnyx_api_key;
-      const telnyxConnectionId = phoneConfig.telnyx_connection_id;
+      const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
+      const telnyxConnectionId = (phoneConfig.telnyx_connection_id || "").trim();
 
       if (!telnyxApiKey || !telnyxConnectionId) {
         return new Response(
@@ -179,20 +179,20 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Use TeXML to stream to Ultravox
-      const texml = `<?xml version="1.0" encoding="UTF-8"?><Response><Connect><Stream url="${joinUrl}"/></Connect></Response>`;
-
-      const telnyxResponse = await fetch(`https://api.telnyx.com/v2/texml/calls/${telnyxConnectionId}`, {
+      // Use Telnyx Call Control API to initiate call with stream
+      const telnyxResponse = await fetch("https://api.telnyx.com/v2/calls", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${telnyxApiKey}`,
-          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Type": "application/json",
         },
-        body: new URLSearchParams({
-          To: recipient_number,
-          From: phoneConfig.phone_number,
-          TeXML: texml,
-        }).toString(),
+        body: JSON.stringify({
+          connection_id: telnyxConnectionId,
+          to: recipient_number,
+          from: phoneConfig.phone_number,
+          stream_url: joinUrl,
+          stream_track: "both_tracks",
+        }),
       });
 
       if (!telnyxResponse.ok) {
@@ -205,7 +205,7 @@ Deno.serve(async (req) => {
       }
 
       const telnyxData = await telnyxResponse.json();
-      callSid = telnyxData.data?.call_sid || telnyxData.data?.call_control_id || "";
+      callSid = telnyxData.data?.call_control_id || telnyxData.data?.call_session_id || "";
       console.log(`Telnyx call placed: ${callSid}`);
     } else {
       // Use Twilio REST API
