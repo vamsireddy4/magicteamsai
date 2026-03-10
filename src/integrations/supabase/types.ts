@@ -75,6 +75,7 @@ export type Database = {
       }
       agents: {
         Row: {
+          ai_provider: string
           created_at: string
           first_speaker: string
           id: string
@@ -91,6 +92,7 @@ export type Database = {
           voice: string
         }
         Insert: {
+          ai_provider?: string
           created_at?: string
           first_speaker?: string
           id?: string
@@ -107,6 +109,7 @@ export type Database = {
           voice?: string
         }
         Update: {
+          ai_provider?: string
           created_at?: string
           first_speaker?: string
           id?: string
