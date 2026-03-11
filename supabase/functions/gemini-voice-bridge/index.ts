@@ -1,5 +1,5 @@
-// Minimal WebSocket bridge — NO heavy imports to avoid edge function shutdown
-// Uses direct fetch instead of supabase-js client
+// Gemini Live API ↔ Twilio/Telnyx WebSocket bridge
+// Zero npm imports to avoid edge function shutdown issues
 
 const MULAW_DECODE_TABLE = new Int16Array(256);
 (function () {
@@ -57,6 +57,20 @@ function b64encode(bytes: Uint8Array): string {
   return btoa(s);
 }
 
+// Helper to parse WebSocket messages (Gemini may send Blob or string)
+async function parseWsMessage(data: unknown): Promise<Record<string, unknown>> {
+  let text: string;
+  if (data instanceof Blob) {
+    text = await data.text();
+  } else {
+    text = data as string;
+  }
+  return JSON.parse(text);
+}
+
+// Default model for Gemini Live API
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
+
 Deno.serve((req) => {
   const upgrade = req.headers.get("upgrade") || "";
   if (upgrade.toLowerCase() !== "websocket") {
@@ -82,32 +96,37 @@ Deno.serve((req) => {
   let geminiReady = false;
   const audioBuffer: string[] = [];
 
-  // Agent config — loaded async
   let prompt = "You are a helpful AI assistant.";
-  let model = "gemini-2.0-flash-live-001";
+  let model = DEFAULT_GEMINI_MODEL;
   let voice = "Puck";
+  let agentLoaded = false;
 
   async function loadAgent() {
     try {
       const sbUrl = Deno.env.get("SUPABASE_URL")!;
       const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const headers = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
 
-      // Direct REST call — no supabase-js import needed
       const agentRes = await fetch(
         `${sbUrl}/rest/v1/agents?id=eq.${agentId}&select=system_prompt,model,voice`,
-        { headers: { apikey: sbKey, Authorization: `Bearer ${sbKey}` } }
+        { headers }
       );
       const agents = await agentRes.json();
       if (agents?.length > 0) {
         prompt = agents[0].system_prompt || prompt;
-        model = agents[0].model || model;
+        // Map deprecated model names to working ones
+        const rawModel = agents[0].model || "";
+        if (rawModel.includes("gemini-2.0-flash")) {
+          model = DEFAULT_GEMINI_MODEL; // deprecated models → use default
+        } else if (rawModel.includes("gemini")) {
+          model = rawModel;
+        }
         voice = agents[0].voice || voice;
       }
 
-      // Knowledge base
       const kbRes = await fetch(
         `${sbUrl}/rest/v1/knowledge_base_items?agent_id=eq.${agentId}&select=title,content,website_url`,
-        { headers: { apikey: sbKey, Authorization: `Bearer ${sbKey}` } }
+        { headers }
       );
       const kbItems = await kbRes.json();
       if (kbItems?.length > 0) {
@@ -118,18 +137,26 @@ Deno.serve((req) => {
         }
       }
 
+      agentLoaded = true;
       console.log("Agent loaded: model=" + model + " voice=" + voice);
     } catch (e) {
       console.error("Agent load error:", e);
+      agentLoaded = true; // proceed with defaults
     }
   }
 
   function connectGemini() {
+    if (!agentLoaded) {
+      setTimeout(connectGemini, 100);
+      return;
+    }
+
+    console.log("Connecting to Gemini: model=" + model);
     const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`;
     geminiWs = new WebSocket(geminiUrl);
 
     geminiWs.onopen = () => {
-      console.log("Gemini connected");
+      console.log("Gemini WS connected, sending setup...");
       geminiWs!.send(JSON.stringify({
         setup: {
           model: `models/${model}`,
@@ -144,25 +171,28 @@ Deno.serve((req) => {
       }));
     };
 
-    geminiWs.onmessage = (ev) => {
+    geminiWs.onmessage = async (ev) => {
       try {
-        const msg = JSON.parse(ev.data);
+        const msg = await parseWsMessage(ev.data);
 
         if (msg.setupComplete) {
-          console.log("Gemini ready");
+          console.log("Gemini setup complete - ready for audio");
           geminiReady = true;
-          // Flush buffered audio
+          const count = audioBuffer.length;
           for (const chunk of audioBuffer) {
             geminiWs!.send(JSON.stringify({
               realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: chunk }] },
             }));
           }
           audioBuffer.length = 0;
+          if (count > 0) console.log("Flushed " + count + " buffered chunks");
           return;
         }
 
-        if (msg.serverContent?.modelTurn?.parts) {
-          for (const part of msg.serverContent.modelTurn.parts) {
+        // Handle audio response
+        const parts = (msg.serverContent as any)?.modelTurn?.parts;
+        if (parts) {
+          for (const part of parts) {
             if (part.inlineData?.data && part.inlineData.mimeType?.includes("audio/pcm")) {
               const pcm = b64decode(part.inlineData.data);
               const mulaw = pcm24kToMulaw8k(pcm);
@@ -181,16 +211,16 @@ Deno.serve((req) => {
           console.error("Gemini error:", JSON.stringify(msg.error));
         }
       } catch (e) {
-        console.error("Gemini msg error:", e);
+        console.error("Gemini msg parse error:", e);
       }
     };
 
     geminiWs.onerror = (e) => console.error("Gemini WS error:", e);
 
     geminiWs.onclose = (ev) => {
-      console.log("Gemini closed: " + ev.code + " " + ev.reason);
+      console.log("Gemini closed: code=" + ev.code + " reason=" + ev.reason);
       geminiReady = false;
-      setTimeout(() => { if (socket.readyState === WebSocket.OPEN) socket.close(); }, 300);
+      setTimeout(() => { if (socket.readyState === WebSocket.OPEN) socket.close(); }, 500);
     };
   }
 
@@ -206,8 +236,7 @@ Deno.serve((req) => {
       if (msg.event === "start") {
         streamSid = msg.start?.streamSid || msg.start?.stream_id || "";
         console.log("Stream started: " + streamSid);
-        // Wait briefly for agent config, then connect
-        setTimeout(connectGemini, 200);
+        connectGemini();
       } else if (msg.event === "media") {
         const mu = b64decode(msg.media.payload);
         const pcm = mulawToPcm16k(mu);
@@ -220,7 +249,7 @@ Deno.serve((req) => {
             }));
           } else {
             audioBuffer.push(pcmB64);
-            if (audioBuffer.length > 200) audioBuffer.shift();
+            if (audioBuffer.length > 300) audioBuffer.shift();
           }
         }
       } else if (msg.event === "stop") {

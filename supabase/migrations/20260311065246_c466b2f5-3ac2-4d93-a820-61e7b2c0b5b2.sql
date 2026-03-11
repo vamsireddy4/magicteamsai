@@ -1,0 +1,1 @@
+UPDATE agents SET model = 'gemini-2.5-flash-native-audio-preview-12-2025' WHERE ai_provider = 'gemini' AND model IN ('gemini-2.0-flash-live-001', 'gemini-2.0-flash-exp');
