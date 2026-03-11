@@ -143,9 +143,9 @@ Deno.serve((req) => {
         if (rawModel.includes("gemini")) {
           model = rawModel;
         }
-        const rawVoice = agents[0].voice || "Puck";
-        voice = VALID_GEMINI_VOICES.has(rawVoice) ? rawVoice : "Puck";
-        console.log(`[BRIDGE] Agent voice: requested="${rawVoice}" using="${voice}" model="${model}"`);
+        const rawVoice = agents[0].voice || "Kore";
+        voice = rawVoice;
+        console.log(`[BRIDGE] Agent voice: using="${voice}" model="${model}"`);
       }
 
       const kbRes = await fetch(
