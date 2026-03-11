@@ -150,25 +150,7 @@ export default function OutcomesTab() {
           </Button>
         </div>
 
-        {/* Campaign Info Cards */}
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
-          <Card><CardContent className="pt-4 pb-3 text-center">
-            <p className="text-2xl font-bold">{selectedCampaign.total_contacts}</p>
-            <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><Users className="h-3 w-3" /> Contacts</p>
-          </CardContent></Card>
-          <Card><CardContent className="pt-4 pb-3 text-center">
-            <p className="text-2xl font-bold">{selectedCampaign.calls_made}</p>
-            <p className="text-xs text-muted-foreground">Calls Made</p>
-          </CardContent></Card>
-          <Card><CardContent className="pt-4 pb-3 text-center">
-            <p className="text-2xl font-bold">{campOutcomes.length}</p>
-            <p className="text-xs text-muted-foreground">Total Outcomes</p>
-          </CardContent></Card>
-          <Card><CardContent className="pt-4 pb-3 text-center">
-            <p className="text-2xl font-bold">{selectedCampaign.booking_target ?? "—"}</p>
-            <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><Target className="h-3 w-3" /> Booking Target</p>
-          </CardContent></Card>
-        </div>
+
 
         {/* Campaign Details */}
         <Card>
