@@ -64,7 +64,7 @@ export default function OutcomesTab() {
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [filterOutcome, setFilterOutcome] = useState("ALL");
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedOutcome, setSelectedOutcome] = useState<Outcome | null>(null);
+  const [selectedCallLog, setSelectedCallLog] = useState<CallLog | null>(null);
 
   // Add dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false);
