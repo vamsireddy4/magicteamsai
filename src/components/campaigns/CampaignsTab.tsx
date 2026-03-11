@@ -257,7 +257,7 @@ export default function CampaignsTab() {
           </div>
           <div className="flex gap-2">
             <Badge className={`${STATUS_COLORS[c.status] || ""} text-sm px-3 py-1`}>{c.status}</Badge>
-            <Badge variant="outline" className="text-sm px-3 py-1">Round {c.round}</Badge>
+            
           </div>
         </div>
 
@@ -544,7 +544,7 @@ export default function CampaignsTab() {
               <CardContent className="space-y-3">
                 <div className="flex gap-2 flex-wrap">
                   <Badge className={STATUS_COLORS[c.status] || ""}>{c.status}</Badge>
-                  <Badge variant="outline">Round {c.round}</Badge>
+                  
                   {c.age_range && <Badge variant="secondary">{c.age_range}</Badge>}
                 </div>
                 <div className="text-xs text-muted-foreground space-y-1">
