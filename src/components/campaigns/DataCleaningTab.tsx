@@ -28,10 +28,6 @@ export default function DataCleaningTab() {
   const [summary, setSummary] = useState("");
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [phoneConfigs, setPhoneConfigs] = useState<PhoneConfigRow[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState("");
-  const [selectedPhoneConfig, setSelectedPhoneConfig] = useState("");
-  const [delaySec, setDelaySec] = useState("30");
-  const [calling, setCalling] = useState(false);
   const [saving, setSaving] = useState(false);
   const [campaignName, setCampaignName] = useState("");
 
