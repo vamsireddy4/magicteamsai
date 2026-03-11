@@ -244,20 +244,24 @@ Deno.serve(async (req) => {
         );
       }
 
-      const medium = provider === "telnyx" ? { telnyx: {} } : { twilio: {} };
+      const ultravoxBody: any = {
+        systemPrompt,
+        model: agent.model || "fixie-ai/ultravox-v0.7",
+        voice: agent.voice,
+        temperature: Number(agent.temperature),
+        firstSpeakerSettings: { user: {} },
+        medium,
+        languageHint: agent.language_hint || "en",
+        maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
+      };
+      if (ultravoxTools.length > 0) {
+        ultravoxBody.selectedTools = ultravoxTools;
+      }
+
       const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-API-Key": ultravoxApiKey },
-        body: JSON.stringify({
-          systemPrompt,
-          model: agent.model || "fixie-ai/ultravox-v0.7",
-          voice: agent.voice,
-          temperature: Number(agent.temperature),
-          firstSpeakerSettings: { user: {} },
-          medium,
-          languageHint: agent.language_hint || "en",
-          maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
-        }),
+        body: JSON.stringify(ultravoxBody),
       });
 
       if (!ultravoxResponse.ok) {
