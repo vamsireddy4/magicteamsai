@@ -13,7 +13,8 @@ async function placeCall(
   phoneConfig: any,
   recipientNumber: string,
   userId: string,
-  kbItems: any[]
+  kbItems: any[],
+  agentTools: any[]
 ) {
   let systemPrompt = agent.system_prompt;
   if (kbItems && kbItems.length > 0) {
@@ -21,6 +22,37 @@ async function placeCall(
     for (const item of kbItems) {
       if (item.content) systemPrompt += `\n## ${item.title}\n${item.content}\n`;
       if (item.website_url) systemPrompt += `\n## ${item.title}\nRefer to: ${item.website_url}\n`;
+    }
+  }
+
+  // Build Ultravox tools from agent_tools
+  const ultravoxTools: any[] = [];
+  if (agentTools && agentTools.length > 0) {
+    for (const tool of agentTools) {
+      const params: Record<string, any> = {};
+      const required: string[] = [];
+      if (Array.isArray(tool.parameters)) {
+        for (const p of tool.parameters as any[]) {
+          params[p.name] = { type: p.type || "string", description: p.description || "" };
+          if (p.required) required.push(p.name);
+        }
+      }
+      ultravoxTools.push({
+        temporaryTool: {
+          modelToolName: tool.name,
+          description: tool.description,
+          dynamicParameters: [{
+            name: "args",
+            location: "PARAMETER_LOCATION_BODY",
+            schema: { type: "object", properties: params, required },
+            required: true,
+          }],
+          http: {
+            baseUrlPattern: tool.http_url,
+            httpMethod: tool.http_method,
+          },
+        },
+      });
     }
   }
 
@@ -63,14 +95,18 @@ async function placeCall(
   } else {
     // Ultravox path
     const medium = provider === "telnyx" ? { telnyx: {} } : { twilio: {} };
+    const ultravoxBody: any = {
+      systemPrompt, model: agent.model || "fixie-ai/ultravox-v0.7", voice: agent.voice,
+      temperature: Number(agent.temperature), firstSpeakerSettings: { user: {} }, medium,
+      languageHint: agent.language_hint || "en", maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
+    };
+    if (ultravoxTools.length > 0) {
+      ultravoxBody.selectedTools = ultravoxTools;
+    }
     const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-API-Key": ultravoxApiKey },
-      body: JSON.stringify({
-        systemPrompt, model: agent.model || "fixie-ai/ultravox-v0.7", voice: agent.voice,
-        temperature: Number(agent.temperature), firstSpeakerSettings: { user: {} }, medium,
-        languageHint: agent.language_hint || "en", maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
-      }),
+      body: JSON.stringify(ultravoxBody),
     });
     if (!ultravoxResponse.ok) throw new Error(`Ultravox error: ${await ultravoxResponse.text()}`);
     const ultravoxData = await ultravoxResponse.json();

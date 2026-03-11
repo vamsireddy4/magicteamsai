@@ -78,11 +78,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch knowledge base for this agent
-    const { data: kbItems } = await supabase
-      .from("knowledge_base_items")
-      .select("*")
-      .eq("agent_id", agent.id);
+    // Fetch knowledge base and agent tools in parallel
+    const [{ data: kbItems }, { data: agentTools }] = await Promise.all([
+      supabase.from("knowledge_base_items").select("*").eq("agent_id", agent.id),
+      supabase.from("agent_tools").select("*").eq("agent_id", agent.id).eq("is_active", true),
+    ]);
 
     let systemPrompt = agent.system_prompt;
     if (kbItems && kbItems.length > 0) {
@@ -94,6 +94,37 @@ Deno.serve(async (req) => {
         if (item.website_url) {
           systemPrompt += `\n## ${item.title}\nRefer to: ${item.website_url}\n`;
         }
+      }
+    }
+
+    // Build Ultravox tools from agent_tools
+    const ultravoxTools: any[] = [];
+    if (agentTools && agentTools.length > 0) {
+      for (const tool of agentTools) {
+        const params: Record<string, any> = {};
+        const required: string[] = [];
+        if (Array.isArray(tool.parameters)) {
+          for (const p of tool.parameters as any[]) {
+            params[p.name] = { type: p.type || "string", description: p.description || "" };
+            if (p.required) required.push(p.name);
+          }
+        }
+        ultravoxTools.push({
+          temporaryTool: {
+            modelToolName: tool.name,
+            description: tool.description,
+            dynamicParameters: [{
+              name: "args",
+              location: "PARAMETER_LOCATION_BODY",
+              schema: { type: "object", properties: params, required },
+              required: true,
+            }],
+            http: {
+              baseUrlPattern: tool.http_url,
+              httpMethod: tool.http_method,
+            },
+          },
+        });
       }
     }
 
@@ -116,24 +147,29 @@ Deno.serve(async (req) => {
       // --- ULTRAVOX PATH ---
       const medium = provider === "telnyx" ? { telnyx: {} } : { twilio: {} };
 
+      const ultravoxBody: any = {
+        systemPrompt,
+        model: agent.model || "fixie-ai/ultravox-v0.7",
+        voice: agent.voice,
+        temperature: Number(agent.temperature),
+        firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT"
+          ? { agent: {} }
+          : { user: {} },
+        medium,
+        languageHint: agent.language_hint || "en",
+        maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
+      };
+      if (ultravoxTools.length > 0) {
+        ultravoxBody.selectedTools = ultravoxTools;
+      }
+
       const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-API-Key": ultravoxApiKey,
         },
-        body: JSON.stringify({
-          systemPrompt,
-          model: agent.model || "fixie-ai/ultravox-v0.7",
-          voice: agent.voice,
-          temperature: Number(agent.temperature),
-          firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT"
-            ? { agent: {} }
-            : { user: {} },
-          medium,
-          languageHint: agent.language_hint || "en",
-          maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
-        }),
+        body: JSON.stringify(ultravoxBody),
       });
 
       if (!ultravoxResponse.ok) {
