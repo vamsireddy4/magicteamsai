@@ -287,7 +287,7 @@ export default function PhoneConfig() {
                 </div>
               ))}
               <Button type="submit" className="w-full" disabled={saving}>
-                {saving ? "Connecting..." : `Connect ${currentProviderConfig?.name}`}
+                {saving ? "Saving..." : editingConfig ? `Update ${currentProviderConfig?.name}` : `Connect ${currentProviderConfig?.name}`}
               </Button>
             </form>
           </DialogContent>
