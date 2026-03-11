@@ -1,11 +1,7 @@
 // Gemini Live API ↔ Twilio/Telnyx WebSocket bridge
 // Zero npm imports — pure Deno for edge function stability
 
-const VALID_GEMINI_VOICES = new Set([
-  "Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Vale",
-  "Zephyr", "Autonoe", "Umbriel", "Erinome", "Laomedeia", "Schedar",
-  "Achird", "Sadachbia", "Sadaltager", "Callirrhoe", "Iapetus", "Despina",
-]);
+// Voice is passed directly from agent config — no whitelist filtering
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 

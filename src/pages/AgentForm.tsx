@@ -349,25 +349,6 @@ export default function AgentForm() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {form.ai_provider === "gemini" && (
-                      <>
-                        <p className="text-xs text-muted-foreground">Gemini native voices:</p>
-                        <Select
-                          value={GEMINI_VOICES.some(v => v.value === form.voice) ? form.voice : ""}
-                          onValueChange={(val) => setForm({ ...form, voice: val })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a Gemini native voice" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {GEMINI_VOICES.map((v) => (
-                              <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground mt-2">Or choose an Ultravox voice:</p>
-                      </>
-                    )}
                     <div className="relative">
                       <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                       <Input
