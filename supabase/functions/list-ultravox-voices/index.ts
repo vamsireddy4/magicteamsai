@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         voices,
-        models: modelsData.results || modelsData,
+        models,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
