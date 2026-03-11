@@ -296,47 +296,62 @@ export default function CampaignsTab() {
         </Card>
 
         {/* Contacts Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Users className="h-4 w-4" /> Contacts ({contacts.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {contacts.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No contacts uploaded for this campaign.</p>
-            ) : (
-              <ScrollArea className="max-h-[400px]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead>Venue</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Children</TableHead>
-                      <TableHead>Age Range</TableHead>
-                      <TableHead>Language</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {contacts.map((ct) => (
-                      <TableRow key={ct.id}>
-                        <TableCell className="font-medium">{ct.first_name}</TableCell>
-                        <TableCell>{ct.phone_number}</TableCell>
-                        <TableCell>{ct.venue_name || "—"}</TableCell>
-                        <TableCell>{ct.venue_location || "—"}</TableCell>
-                        <TableCell>{ct.child_names || "—"}</TableCell>
-                        <TableCell>{ct.age_range || "—"}</TableCell>
-                        <TableCell>{ct.language || "en"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </ScrollArea>
-            )}
-          </CardContent>
-        </Card>
+        {(() => {
+          const allContactCols = [
+            { key: "first_name", label: "Name" },
+            { key: "phone_number", label: "Phone" },
+            { key: "venue_name", label: "Venue" },
+            { key: "venue_location", label: "Location" },
+            { key: "child_names", label: "Children" },
+            { key: "age_range", label: "Age Range" },
+            { key: "start_date", label: "Start Date" },
+            { key: "end_date", label: "End Date" },
+            { key: "times", label: "Times" },
+            { key: "language", label: "Language" },
+          ];
+          // Only show columns that have at least one non-empty value
+          const visibleCols = allContactCols.filter((col) =>
+            col.key === "first_name" || col.key === "phone_number" ||
+            contacts.some((ct) => ct[col.key] && ct[col.key] !== "en")
+          );
+          return (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Users className="h-4 w-4" /> Contacts ({contacts.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {contacts.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">No contacts uploaded for this campaign.</p>
+                ) : (
+                  <ScrollArea className="max-h-[400px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          {visibleCols.map((col) => (
+                            <TableHead key={col.key}>{col.label}</TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {contacts.map((ct) => (
+                          <TableRow key={ct.id}>
+                            {visibleCols.map((col) => (
+                              <TableCell key={col.key} className={col.key === "first_name" ? "font-medium" : col.key === "phone_number" ? "font-mono text-xs" : ""}>
+                                {ct[col.key] || "—"}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* Call Outcomes Table */}
         {callOutcomes.length > 0 && (
