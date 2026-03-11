@@ -547,9 +547,9 @@ export default function CampaignsTab() {
                   {c.age_range && <Badge variant="secondary">{c.age_range}</Badge>}
                 </div>
                 <div className="text-xs text-muted-foreground space-y-1">
-                  {c.start_date && <p>📅 {c.start_date} → {c.end_date || "TBD"}</p>}
-                  {c.times && <p>⏰ {c.times}</p>}
-                  {c.agent_id && <p>🤖 {getAgentName(c.agent_id)}</p>}
+                  {c.start_date && <p className="flex items-center gap-1"><CalendarDays className="h-3 w-3" /> {c.start_date} → {c.end_date || "TBD"}</p>}
+                  {c.times && <p className="flex items-center gap-1"><Clock className="h-3 w-3" /> {c.times}</p>}
+                  {c.agent_id && <p className="flex items-center gap-1"><Bot className="h-3 w-3" /> {getAgentName(c.agent_id)}</p>}
                   {c.phone_config_id && <p className="flex items-center gap-1"><Phone className="h-3 w-3" /> {getPhoneLabel(c.phone_config_id)}</p>}
                   {c.booking_target && <p className="flex items-center gap-1"><Target className="h-3 w-3" /> Target: {c.booking_target}</p>}
                 </div>
