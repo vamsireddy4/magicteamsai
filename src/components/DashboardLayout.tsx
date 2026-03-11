@@ -110,7 +110,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </aside>
 
       {/* Main */}
-      <main className="flex-1 flex flex-col min-h-screen">
+      <main className="flex-1 flex flex-col min-h-0 h-screen">
         <header className="flex h-16 items-center gap-4 border-b border-border bg-card px-6 lg:hidden">
           <button onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
