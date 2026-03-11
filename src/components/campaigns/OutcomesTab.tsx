@@ -394,7 +394,7 @@ export default function OutcomesTab() {
                       </div>
                       <div className="flex gap-1.5">
                         <Badge className={STATUS_COLORS[camp.status] || ""} variant="secondary">{camp.status}</Badge>
-                        <Badge variant="outline">R{camp.round}</Badge>
+                        
                       </div>
                     </div>
 
