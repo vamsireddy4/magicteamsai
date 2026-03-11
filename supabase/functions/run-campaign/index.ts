@@ -262,7 +262,7 @@ Deno.serve(async (req) => {
     for (let i = 0; i < eligibleContacts.length; i++) {
       const contact = eligibleContacts[i];
       try {
-        const result = await placeCall(supabase, ultravoxApiKey, agent, phoneConfig, contact.phone_number, user.id, kbItems || []);
+        const result = await placeCall(supabase, ultravoxApiKey, agent, phoneConfig, contact.phone_number, user.id, kbItems || [], agentTools || []);
         results.push({ phone: contact.phone_number, status: "initiated", ...result });
       } catch (err: any) {
         console.error(`Failed to call ${contact.phone_number}:`, err.message);
