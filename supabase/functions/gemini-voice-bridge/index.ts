@@ -305,8 +305,22 @@ Deno.serve((req) => {
         console.log("[BRIDGE] Twilio connected event received");
       } else if (msg.event === "start") {
         streamSid = msg.start?.streamSid || msg.start?.stream_id || msg.streamSid || "";
-        console.log(`[BRIDGE] Stream started: sid=${streamSid}`);
-        console.log(`[BRIDGE] Stream metadata: ${JSON.stringify(msg.start || {})}`);
+        
+        // Extract agent_id from Twilio's customParameters (since query params are stripped)
+        const customParams = msg.start?.customParameters || {};
+        if (customParams.agent_id && !agentId) {
+          agentId = customParams.agent_id;
+          console.log(`[BRIDGE] Got agent_id from customParameters: ${agentId}`);
+        }
+        
+        console.log(`[BRIDGE] Stream started: sid=${streamSid} agent_id=${agentId}`);
+        console.log(`[BRIDGE] Start event keys: ${JSON.stringify(Object.keys(msg.start || {}))}`);
+
+        if (!agentId) {
+          console.error("[BRIDGE] No agent_id available from query params or customParameters!");
+          cleanup("no_agent_id");
+          return;
+        }
 
         // Load agent THEN connect to Gemini — sequential to avoid race conditions
         try {
