@@ -252,9 +252,17 @@ Deno.serve(async (req) => {
         ? { telnyx: {} }
         : { twilio: { } };
 
-      // Telnyx outbound calls are more reliable when the callee answers first,
-      // otherwise the agent can speak during ringing and the greeting gets lost.
+      // Telnyx outbound calls should wait for the callee, but still recover
+      // with a short greeting if they answer and stay silent.
       const shouldWaitForRecipient = provider === "telnyx";
+      const telnyxFirstSpeakerSettings = {
+        user: {
+          fallback: {
+            delay: "2.5s",
+            prompt: "If the callee answers but stays silent, greet them briefly and ask how you can help.",
+          },
+        },
+      };
 
       const ultravoxBody: any = {
         systemPrompt,
@@ -262,7 +270,7 @@ Deno.serve(async (req) => {
         voice: agent.voice,
         temperature: Number(agent.temperature),
         firstSpeakerSettings: shouldWaitForRecipient
-          ? { user: {} }
+          ? telnyxFirstSpeakerSettings
           : agent.first_speaker === "FIRST_SPEAKER_AGENT"
             ? { agent: {} }
             : { user: {} },
