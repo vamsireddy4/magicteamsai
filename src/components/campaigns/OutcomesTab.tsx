@@ -17,8 +17,8 @@ import { Plus, Search, FileText } from "lucide-react";
 interface Outcome { id: string; campaign_id: string; phone_number: string; parent_name: string | null; child_names: string | null; venue_name: string | null; outcome: string; transcript: string | null; summary: string | null; attempt_number: number; call_timestamp: string; }
 interface Campaign { id: string; venue_name: string; round: number; }
 
-const OUTCOME_COLORS: Record<string, string> = { BOOKED: "bg-green-100 text-green-800", DECLINED: "bg-red-100 text-red-800", FLAGGED_REVIEW: "bg-yellow-100 text-yellow-800", VOICEMAIL: "bg-blue-100 text-blue-800", NO_ANSWER: "bg-muted text-muted-foreground", PENDING: "bg-muted text-muted-foreground" };
-const OUTCOMES = ["ALL", "BOOKED", "DECLINED", "FLAGGED_REVIEW", "VOICEMAIL", "NO_ANSWER", "PENDING"];
+const OUTCOME_COLORS: Record<string, string> = { ANSWERED: "bg-green-100 text-green-800", DECLINED: "bg-red-100 text-red-800", FLAGGED_REVIEW: "bg-yellow-100 text-yellow-800", VOICEMAIL: "bg-blue-100 text-blue-800", NO_ANSWER: "bg-muted text-muted-foreground", PENDING: "bg-muted text-muted-foreground" };
+const OUTCOMES = ["ALL", "ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"];
 
 export default function OutcomesTab() {
   const { user } = useAuth();
