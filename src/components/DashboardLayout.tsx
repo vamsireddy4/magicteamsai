@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard,
   Bot,
@@ -18,11 +17,13 @@ import {
   ClipboardList,
   RefreshCw,
   Webhook,
-  CalendarDays,
   Wrench,
   Calendar,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -36,7 +37,6 @@ const navItems = [
   { href: "/call-logs", label: "Call History", icon: History },
   { href: "/outbound-call", label: "Outbound Call", icon: PhoneCall },
   { href: "/webhooks", label: "Webhooks", icon: Webhook },
-  
   { href: "/custom-tools", label: "Custom Tools", icon: Wrench },
   { href: "/calendar-integrations", label: "Calendars", icon: Calendar },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -44,6 +44,7 @@ const navItems = [
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const { signOut } = useAuth();
 
@@ -60,51 +61,86 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-card transition-transform duration-200 lg:static lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex flex-col border-r border-border bg-card transition-all duration-200 lg:static lg:translate-x-0",
+          collapsed ? "w-16" : "w-64",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="flex h-16 items-center justify-between px-6 border-b border-border">
+        <div className={cn("flex h-16 items-center border-b border-border", collapsed ? "justify-center px-2" : "justify-between px-6")}>
           <Link to="/dashboard" className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
               <Phone className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="text-lg font-bold tracking-tight">ReceptoAI</span>
+            {!collapsed && <span className="text-lg font-bold tracking-tight">ReceptoAI</span>}
           </Link>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden">
             <X className="h-5 w-5 text-muted-foreground" />
           </button>
         </div>
 
-        <nav className="flex-1 space-y-1 p-3 overflow-y-auto">
+        <nav className="flex-1 space-y-1 p-2 overflow-y-auto">
           {navItems.map((item) => {
             const isActive = location.pathname === item.href;
-            return (
+            const linkContent = (
               <Link
                 key={item.href}
                 to={item.href}
                 onClick={() => setSidebarOpen(false)}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                  collapsed && "justify-center px-0",
                   isActive
                     ? "bg-accent text-accent-foreground"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
-                <item.icon className="h-4 w-4" />
-                {item.label}
+                <item.icon className="h-4 w-4 shrink-0" />
+                {!collapsed && item.label}
               </Link>
             );
+
+            if (collapsed) {
+              return (
+                <Tooltip key={item.href} delayDuration={0}>
+                  <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>{item.label}</TooltipContent>
+                </Tooltip>
+              );
+            }
+            return linkContent;
           })}
         </nav>
 
-        <div className="border-t border-border p-3">
+        <div className="border-t border-border p-2 space-y-1">
+          {collapsed ? (
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={signOut}
+                  className="flex w-full items-center justify-center rounded-lg py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>Sign Out</TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              onClick={signOut}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              <LogOut className="h-4 w-4" />
+              Sign Out
+            </button>
+          )}
+
+          {/* Toggle button - desktop only */}
           <button
-            onClick={signOut}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            onClick={() => setCollapsed(!collapsed)}
+            className="hidden lg:flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors justify-center"
           >
-            <LogOut className="h-4 w-4" />
-            Sign Out
+            {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            {!collapsed && <span className="flex-1 text-left">Collapse</span>}
           </button>
         </div>
       </aside>
