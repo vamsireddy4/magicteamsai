@@ -240,6 +240,21 @@ export default function OutcomesTab() {
           </Card>
         </div>
 
+        {/* Outcome Breakdown */}
+        <div className="grid gap-3 grid-cols-3 sm:grid-cols-6">
+          {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => {
+            const count = campCallLogs.filter(cl => getCallResult(cl) === (o === "NO_ANSWER" ? "NO ANSWER" : o)).length;
+            return (
+              <Card key={o}>
+                <CardContent className="pt-4 pb-3 text-center">
+                  <p className="text-2xl font-bold">{count}</p>
+                  <Badge className={`${OUTCOME_COLORS[o]} mt-1`} variant="secondary">{o.replace("_", " ")}</Badge>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
         {/* Search & Filter */}
         <div className="flex gap-3 flex-wrap items-end">
           <div className="relative flex-1 min-w-[200px]">
