@@ -72,14 +72,30 @@ function b64encode(bytes: Uint8Array): string {
 // ── Main server ──
 
 Deno.serve((req) => {
-  const upgrade = req.headers.get("upgrade") || "";
-  if (upgrade.toLowerCase() !== "websocket") {
-    return new Response("WebSocket upgrade required", { status: 426 });
+  // Log EVERY request immediately for debugging
+  const reqUrl = new URL(req.url);
+  const upgradeHeader = req.headers.get("upgrade") || "";
+  const connectionHeader = req.headers.get("connection") || "";
+  console.log(`[BRIDGE] Request received: method=${req.method} path=${reqUrl.pathname} upgrade="${upgradeHeader}" connection="${connectionHeader}"`);
+
+  // Health check endpoint (non-WebSocket)
+  if (upgradeHeader.toLowerCase() !== "websocket") {
+    console.log("[BRIDGE] Not a WebSocket request, returning health check");
+    return new Response(JSON.stringify({ 
+      status: "ok", 
+      message: "gemini-voice-bridge is running. WebSocket upgrade required for media streaming.",
+      timestamp: new Date().toISOString()
+    }), { 
+      status: 200, 
+      headers: { "Content-Type": "application/json" } 
+    });
   }
 
-  const url = new URL(req.url);
-  const agentId = url.searchParams.get("agent_id");
-  if (!agentId) return new Response("agent_id required", { status: 400 });
+  const agentId = reqUrl.searchParams.get("agent_id");
+  if (!agentId) {
+    console.log("[BRIDGE] Missing agent_id");
+    return new Response("agent_id required", { status: 400 });
+  }
 
   const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
   if (!geminiApiKey) return new Response("GEMINI_API_KEY not configured", { status: 500 });
