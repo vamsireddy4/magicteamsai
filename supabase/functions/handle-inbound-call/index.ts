@@ -202,12 +202,24 @@ Deno.serve(async (req) => {
     const isGemini = (agent as any).ai_provider === "gemini";
     const cleanStreamUrl = isGemini ? streamUrl.split('?')[0] : streamUrl;
     const paramTag = isGemini ? `<Parameter name="agent_id" value="${agent.id}"/>` : "";
-    const responseXml = `<?xml version="1.0" encoding="UTF-8"?>
+
+    let responseXml: string;
+    if (provider === "telnyx") {
+      // Telnyx TeXML requires bidirectional RTP mode and L16 codec per Ultravox docs
+      responseXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="${cleanStreamUrl}" bidirectionalMode="rtp" codec="L16" bidirectionalCodec="L16" bidirectionalSamplingRate="16000">${paramTag}</Stream>
+  </Connect>
+</Response>`;
+    } else {
+      responseXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
     <Stream url="${cleanStreamUrl}">${paramTag}</Stream>
   </Connect>
 </Response>`;
+    }
 
     return new Response(responseXml, {
       headers: { ...corsHeaders, "Content-Type": "text/xml" },
