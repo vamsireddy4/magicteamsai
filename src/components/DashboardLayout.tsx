@@ -68,23 +68,40 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         )}
       >
         <div className={cn("flex h-16 items-center border-b border-border", collapsed ? "justify-center px-2" : "justify-between px-6")}>
-          <Link to="/dashboard" className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
-              <Phone className="h-4 w-4 text-primary-foreground" />
-            </div>
-            {!collapsed && <span className="text-lg font-bold tracking-tight">ReceptoAI</span>}
-          </Link>
-          <div className="flex items-center gap-1">
+          {collapsed ? (
             <button
-              onClick={() => setCollapsed(!collapsed)}
-              className="hidden lg:flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              onClick={() => setCollapsed(false)}
+              onMouseEnter={() => setLogoHovered(true)}
+              onMouseLeave={() => setLogoHovered(false)}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary transition-all"
             >
-              {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+              {logoHovered ? (
+                <PanelLeftOpen className="h-4 w-4 text-primary-foreground" />
+              ) : (
+                <Phone className="h-4 w-4 text-primary-foreground" />
+              )}
             </button>
-            <button onClick={() => setSidebarOpen(false)} className="lg:hidden">
-              <X className="h-5 w-5 text-muted-foreground" />
-            </button>
-          </div>
+          ) : (
+            <>
+              <Link to="/dashboard" className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
+                  <Phone className="h-4 w-4 text-primary-foreground" />
+                </div>
+                <span className="text-lg font-bold tracking-tight">ReceptoAI</span>
+              </Link>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCollapsed(true)}
+                  className="hidden lg:flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  <PanelLeftClose className="h-4 w-4" />
+                </button>
+                <button onClick={() => setSidebarOpen(false)} className="lg:hidden">
+                  <X className="h-5 w-5 text-muted-foreground" />
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         <nav className="flex-1 space-y-1 p-2 overflow-y-auto">
