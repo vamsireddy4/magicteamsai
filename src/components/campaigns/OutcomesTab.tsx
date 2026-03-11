@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, FileText, RefreshCw, Loader2, ArrowLeft, MapPin, Calendar, Users, Target } from "lucide-react";
+import { Plus, Search, FileText, RefreshCw, Loader2, ArrowLeft, MapPin, Calendar, Users, Target, Phone, Clock } from "lucide-react";
 
 interface Outcome {
   id: string; campaign_id: string; phone_number: string; parent_name: string | null;
