@@ -180,17 +180,33 @@ export default function AgentForm() {
   };
 
   // Filter voices by search
+  const allVoices = useMemo(() => {
+    // Merge Gemini native voices into the Ultravox list
+    const geminiAsUltravox: UltravoxVoice[] = GEMINI_VOICES.map(v => ({
+      voiceId: v.value,
+      name: v.value,
+      description: v.label,
+      languageLabel: "Gemini Native",
+      provider: "gemini",
+    }));
+    const ultravoxNames = new Set(voices.map(v => v.name));
+    return [
+      ...geminiAsUltravox.filter(g => !ultravoxNames.has(g.name)),
+      ...voices,
+    ];
+  }, [voices]);
+
   const filteredVoices = useMemo(() => {
-    if (!voiceSearch.trim()) return voices;
+    if (!voiceSearch.trim()) return allVoices;
     const q = voiceSearch.toLowerCase();
-    return voices.filter(v =>
+    return allVoices.filter(v =>
       v.name.toLowerCase().includes(q) ||
       (v.description?.toLowerCase().includes(q)) ||
       (v.languageLabel?.toLowerCase().includes(q)) ||
       (v.primaryLanguage?.toLowerCase().includes(q)) ||
       (v.provider?.toLowerCase().includes(q))
     );
-  }, [voices, voiceSearch]);
+  }, [allVoices, voiceSearch]);
 
   // Find current voice name for display
   const currentVoiceName = useMemo(() => {
