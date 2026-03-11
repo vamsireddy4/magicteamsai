@@ -27,7 +27,6 @@ interface Campaign {
   age_range: string | null; times: string | null; start_date: string | null;
   end_date: string | null; booking_target: number | null; status: string;
   notes: string | null; calls_made: number; total_contacts: number;
-  twilio_phone_number: string | null; created_at: string;
 }
 
 interface CallLog {
@@ -87,7 +86,7 @@ export default function OutcomesTab() {
     if (!user) return;
     const [outcomesRes, campaignsRes, callLogsRes, contactsRes] = await Promise.all([
       supabase.from("call_outcomes").select("*").order("call_timestamp", { ascending: false }),
-      supabase.from("campaigns").select("id, venue_name, venue_location, round, age_range, times, start_date, end_date, booking_target, status, notes, calls_made, total_contacts, twilio_phone_number, created_at").order("created_at", { ascending: false }),
+      supabase.from("campaigns").select("id, venue_name, venue_location, round, age_range, times, start_date, end_date, booking_target, status, notes, calls_made, total_contacts").order("created_at", { ascending: false }),
       supabase.from("call_logs").select("*").order("started_at", { ascending: false }),
       supabase.from("contacts").select("campaign_id, phone_number, first_name, child_names"),
     ]);
@@ -155,59 +154,46 @@ export default function OutcomesTab() {
 
   // ─── Campaign Detail View ───
   if (selectedCampaign) {
+    // Get phone numbers for this campaign's contacts
     const campContacts = contacts.filter((c) => c.campaign_id === selectedCampaign.id);
-    const campaignOutcomes = getOutcomesForCampaign(selectedCampaign.id);
+    const campPhones = new Set(campContacts.map((c) => c.phone_number));
 
-    // For each outcome, find the closest matching call_log by phone + timestamp
-    const MATCH_WINDOW_MS = 5 * 60 * 1000; // 5 min window
-    
-    interface EnrichedOutcome {
-      outcome: Outcome;
-      callLog: CallLog | null;
-      contact: typeof campContacts[0] | undefined;
-    }
+    // Get call logs matching campaign contacts
+    const campCallLogs = callLogs.filter((cl) => cl.recipient_number && campPhones.has(cl.recipient_number));
 
-    const enrichedOutcomes: EnrichedOutcome[] = campaignOutcomes.map((outcome) => {
-      const contact = campContacts.find((c) => c.phone_number === outcome.phone_number);
-      const outcomeTs = outcome.call_timestamp ? Date.parse(outcome.call_timestamp) : NaN;
-      
-      // Find matching call log
-      let bestMatch: CallLog | null = null;
-      let bestDiff = Infinity;
-      for (const cl of callLogs) {
-        if (cl.recipient_number !== outcome.phone_number) continue;
-        if (cl.direction !== "outbound") continue;
-        const clTs = cl.started_at ? Date.parse(cl.started_at) : NaN;
-        if (Number.isNaN(clTs) || Number.isNaN(outcomeTs)) continue;
-        const diff = Math.abs(outcomeTs - clTs);
-        if (diff < bestDiff && diff <= MATCH_WINDOW_MS) {
-          bestDiff = diff;
-          bestMatch = cl;
-        }
-      }
-      return { outcome, callLog: bestMatch, contact };
-    });
-
-    // Outcome counts from call_outcomes (the source of truth)
-    const outcomeCounts = campaignOutcomes.reduce((acc, o) => {
-      acc[o.outcome] = (acc[o.outcome] || 0) + 1;
+    // Status counts
+    const statusCounts = campCallLogs.reduce((acc, cl) => {
+      acc[cl.status] = (acc[cl.status] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
-    // Search & filter
-    const filteredEnriched = enrichedOutcomes.filter((e) => {
-      if (filterOutcome !== "ALL" && e.outcome.outcome !== filterOutcome) return false;
+    // Search filter
+    const filteredLogs = campCallLogs.filter((cl) => {
+      if (filterOutcome !== "ALL") {
+        if (filterOutcome === "ANSWERED" && !(cl.status === "completed" && (cl.duration || 0) > 10)) return false;
+        if (filterOutcome === "VOICEMAIL" && !(cl.status === "completed" && (cl.duration || 0) <= 10)) return false;
+        if (filterOutcome === "NO_ANSWER" && !["no-answer", "canceled", "busy"].includes(cl.status)) return false;
+        if (filterOutcome === "DECLINED" && cl.status !== "failed") return false;
+      }
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
-        return (e.outcome.phone_number || "").toLowerCase().includes(term) ||
-          (e.outcome.parent_name || "").toLowerCase().includes(term) ||
-          (e.contact?.first_name || "").toLowerCase().includes(term) ||
-          (e.contact?.child_names || "").toLowerCase().includes(term);
+        const contact = campContacts.find((c) => c.phone_number === cl.recipient_number);
+        return (cl.recipient_number || "").toLowerCase().includes(term) ||
+          (contact?.first_name || "").toLowerCase().includes(term) ||
+          (contact?.child_names || "").toLowerCase().includes(term);
       }
       return true;
     });
 
     const getContactForLog = (cl: CallLog) => campContacts.find((c) => c.phone_number === cl.recipient_number);
+
+    const getCallResult = (cl: CallLog) => {
+      if (cl.status === "completed" && (cl.duration || 0) > 10) return "ANSWERED";
+      if (cl.status === "completed" && (cl.duration || 0) <= 10) return "VOICEMAIL";
+      if (["no-answer", "canceled", "busy"].includes(cl.status)) return "NO ANSWER";
+      if (cl.status === "failed") return "FAILED";
+      return cl.status.toUpperCase();
+    };
 
     return (
       <div className="space-y-6">
@@ -220,6 +206,7 @@ export default function OutcomesTab() {
             <div className="flex items-center gap-3">
               <h2 className="text-xl font-bold">{selectedCampaign.venue_name}</h2>
               <Badge className={STATUS_COLORS[selectedCampaign.status] || ""} variant="secondary">{selectedCampaign.status}</Badge>
+              <Badge variant="outline">Round {selectedCampaign.round}</Badge>
             </div>
             {selectedCampaign.venue_location && (
               <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1"><MapPin className="h-3 w-3" /> {selectedCampaign.venue_location}</p>
@@ -231,16 +218,26 @@ export default function OutcomesTab() {
           </Button>
         </div>
 
-        {/* Outcome Breakdown */}
+        {/* Summary Cards */}
         <div className="grid gap-3 grid-cols-3">
-          {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
-            <Card key={o}>
-              <CardContent className="pt-4 pb-3 text-center">
-                <p className="text-2xl font-bold">{outcomeCounts[o] || 0}</p>
-                <Badge className={`${OUTCOME_COLORS[o]} mt-1`} variant="secondary">{o.replace("_", " ")}</Badge>
-              </CardContent>
-            </Card>
-          ))}
+          <Card>
+            <CardContent className="pt-4 pb-3 text-center">
+              <p className="text-2xl font-bold">{campCallLogs.length}</p>
+              <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><Phone className="h-3 w-3" /> Total Calls</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 text-center">
+              <p className="text-2xl font-bold">{statusCounts["completed"] || 0}</p>
+              <p className="text-xs text-muted-foreground">Completed</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 text-center">
+              <p className="text-2xl font-bold">{campCallLogs.filter(cl => cl.status === "completed" && (cl.duration || 0) > 10).length}</p>
+              <p className="text-xs text-muted-foreground">Answered (10s+)</p>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Search & Filter */}
@@ -253,9 +250,10 @@ export default function OutcomesTab() {
             <SelectTrigger className="w-[160px]"><SelectValue placeholder="All Results" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Results</SelectItem>
-              {OUTCOMES.filter(o => o !== "ALL").map(o => (
-                <SelectItem key={o} value={o}>{o.replace("_", " ")}</SelectItem>
-              ))}
+              <SelectItem value="ANSWERED">Answered</SelectItem>
+              <SelectItem value="VOICEMAIL">Voicemail</SelectItem>
+              <SelectItem value="NO_ANSWER">No Answer</SelectItem>
+              <SelectItem value="DECLINED">Failed</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -263,7 +261,7 @@ export default function OutcomesTab() {
         {/* Call Results Table */}
         <Card>
           <CardContent className="p-0">
-            {filteredEnriched.length === 0 ? <div className="p-8 text-center text-muted-foreground">No call results for this campaign.</div> : (
+            {filteredLogs.length === 0 ? <div className="p-8 text-center text-muted-foreground">No call results for this campaign.</div> : (
               <div className="overflow-auto">
                 <Table>
                   <TableHeader>
@@ -271,25 +269,31 @@ export default function OutcomesTab() {
                       <TableHead>Time</TableHead>
                       <TableHead>Contact</TableHead>
                       <TableHead>Phone</TableHead>
+                      <TableHead>Status</TableHead>
                       <TableHead>Result</TableHead>
                       <TableHead>Duration</TableHead>
                       <TableHead></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredEnriched.slice(0, 100).map((e) => (
-                      <TableRow key={e.outcome.id} className="cursor-pointer hover:bg-muted/50" onClick={() => e.callLog && setSelectedCallLog(e.callLog)}>
-                        <TableCell className="text-xs">{new Date(e.outcome.call_timestamp).toLocaleString()}</TableCell>
-                        <TableCell className="text-sm font-medium">{e.contact?.first_name || e.outcome.parent_name || "—"}</TableCell>
-                        <TableCell className="font-mono text-xs">{e.outcome.phone_number}</TableCell>
-                        <TableCell><Badge className={OUTCOME_COLORS[e.outcome.outcome] || "bg-muted text-muted-foreground"} variant="secondary">{e.outcome.outcome}</Badge></TableCell>
-                        <TableCell className="text-sm flex items-center gap-1"><Clock className="h-3 w-3 text-muted-foreground" /> {formatDuration(e.callLog?.duration ?? null)}</TableCell>
-                        <TableCell>{(e.callLog?.transcript || e.outcome.transcript) && <FileText className="h-4 w-4 text-muted-foreground" />}</TableCell>
-                      </TableRow>
-                    ))}
+                    {filteredLogs.slice(0, 100).map((cl) => {
+                      const contact = getContactForLog(cl);
+                      const result = getCallResult(cl);
+                      return (
+                        <TableRow key={cl.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedCallLog(cl)}>
+                          <TableCell className="text-xs">{new Date(cl.started_at).toLocaleString()}</TableCell>
+                          <TableCell className="text-sm font-medium">{contact?.first_name || "—"}</TableCell>
+                          <TableCell className="font-mono text-xs">{cl.recipient_number || "—"}</TableCell>
+                          <TableCell><Badge className={CALL_STATUS_COLORS[cl.status] || "bg-muted text-muted-foreground"} variant="secondary">{cl.status}</Badge></TableCell>
+                          <TableCell><Badge className={OUTCOME_COLORS[result] || "bg-muted text-muted-foreground"} variant="secondary">{result}</Badge></TableCell>
+                          <TableCell className="text-sm flex items-center gap-1"><Clock className="h-3 w-3 text-muted-foreground" /> {formatDuration(cl.duration)}</TableCell>
+                          <TableCell>{cl.transcript && <FileText className="h-4 w-4 text-muted-foreground" />}</TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
-                {filteredEnriched.length > 100 && <p className="text-xs text-muted-foreground p-3">Showing 100 of {filteredEnriched.length}</p>}
+                {filteredLogs.length > 100 && <p className="text-xs text-muted-foreground p-3">Showing 100 of {filteredLogs.length}</p>}
               </div>
             )}
           </CardContent>
@@ -309,6 +313,7 @@ export default function OutcomesTab() {
                     <div><span className="text-muted-foreground">Phone:</span> {selectedCallLog.recipient_number || "—"}</div>
                     <div><span className="text-muted-foreground">Children:</span> {contact?.child_names || "—"}</div>
                     <div><span className="text-muted-foreground">Status:</span> <Badge className={CALL_STATUS_COLORS[selectedCallLog.status]}>{selectedCallLog.status}</Badge></div>
+                    <div><span className="text-muted-foreground">Result:</span> <Badge className={OUTCOME_COLORS[getCallResult(selectedCallLog)] || ""}>{getCallResult(selectedCallLog)}</Badge></div>
                     <div><span className="text-muted-foreground">Duration:</span> {formatDuration(selectedCallLog.duration)}</div>
                     <div><span className="text-muted-foreground">Started:</span> {new Date(selectedCallLog.started_at).toLocaleString()}</div>
                     {selectedCallLog.ended_at && <div><span className="text-muted-foreground">Ended:</span> {new Date(selectedCallLog.ended_at).toLocaleString()}</div>}
@@ -357,6 +362,17 @@ export default function OutcomesTab() {
         </Dialog>
       </div>
 
+      {/* Global Outcome Summary */}
+      <div className="grid gap-3 grid-cols-3">
+        {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
+          <Card key={o}>
+            <CardContent className="pt-4 pb-3 text-center">
+              <p className="text-2xl font-bold">{allOutcomeCounts[o] || 0}</p>
+              <Badge className={`${OUTCOME_COLORS[o]} mt-1`} variant="secondary">{o.replace("_", " ")}</Badge>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
       {/* Campaign Cards */}
       {loading ? <div className="p-8 text-center text-muted-foreground">Loading...</div>
@@ -378,7 +394,7 @@ export default function OutcomesTab() {
                       </div>
                       <div className="flex gap-1.5">
                         <Badge className={STATUS_COLORS[camp.status] || ""} variant="secondary">{camp.status}</Badge>
-                        
+                        <Badge variant="outline">R{camp.round}</Badge>
                       </div>
                     </div>
 
@@ -390,6 +406,16 @@ export default function OutcomesTab() {
                       <Progress value={progress} className="h-1.5" />
                     </div>
 
+                    <div className="flex flex-wrap gap-1.5">
+                      {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) =>
+                        (counts[o] || 0) > 0 ? (
+                          <Badge key={o} className={`${OUTCOME_COLORS[o]} text-[10px] px-1.5 py-0`} variant="secondary">
+                            {o.replace("_", " ")} {counts[o]}
+                          </Badge>
+                        ) : null
+                      )}
+                      {campOutcomes.length === 0 && <span className="text-xs text-muted-foreground">No outcomes yet</span>}
+                    </div>
 
                     <div className="flex gap-3 text-xs text-muted-foreground pt-1 border-t">
                       {camp.age_range && <span>{camp.age_range}</span>}
