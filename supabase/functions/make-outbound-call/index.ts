@@ -108,11 +108,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch knowledge base
-    const { data: kbItems } = await supabase
-      .from("knowledge_base_items")
-      .select("*")
-      .eq("agent_id", agent.id);
+    // Fetch knowledge base and agent tools in parallel
+    const [{ data: kbItems }, { data: agentTools }] = await Promise.all([
+      supabase.from("knowledge_base_items").select("*").eq("agent_id", agent.id),
+      supabase.from("agent_tools").select("*").eq("agent_id", agent.id).eq("is_active", true),
+    ]);
 
     let systemPrompt = agent.system_prompt;
     if (kbItems && kbItems.length > 0) {
@@ -124,6 +124,37 @@ Deno.serve(async (req) => {
         if (item.website_url) {
           systemPrompt += `\n## ${item.title}\nRefer to: ${item.website_url}\n`;
         }
+      }
+    }
+
+    // Build Ultravox tools from agent_tools
+    const ultravoxTools: any[] = [];
+    if (agentTools && agentTools.length > 0) {
+      for (const tool of agentTools) {
+        const params: Record<string, any> = {};
+        const required: string[] = [];
+        if (Array.isArray(tool.parameters)) {
+          for (const p of tool.parameters as any[]) {
+            params[p.name] = { type: p.type || "string", description: p.description || "" };
+            if (p.required) required.push(p.name);
+          }
+        }
+        ultravoxTools.push({
+          temporaryTool: {
+            modelToolName: tool.name,
+            description: tool.description,
+            dynamicParameters: [{
+              name: "args",
+              location: "PARAMETER_LOCATION_BODY",
+              schema: { type: "object", properties: params, required },
+              required: true,
+            }],
+            http: {
+              baseUrlPattern: tool.http_url,
+              httpMethod: tool.http_method,
+            },
+          },
+        });
       }
     }
 
