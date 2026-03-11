@@ -802,18 +802,14 @@ Deno.serve((req) => {
         const pcm = mulawToPcm16k(mu);
         const pcmB64 = b64encode(pcm);
 
-        if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-          if (geminiReady) {
-            geminiWs.send(JSON.stringify({
-              realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: pcmB64 }] },
-            }));
-          } else {
-            audioBuffer.push(pcmB64);
-            if (audioBuffer.length > 300) audioBuffer.shift();
-          }
-        } else if (!geminiWs) {
+        if (geminiWs && geminiWs.readyState === WebSocket.OPEN && geminiReady) {
+          geminiWs.send(JSON.stringify({
+            realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: pcmB64 }] },
+          }));
+        } else {
+          // Buffer audio when Gemini is connecting, not yet setup-complete, or null
           audioBuffer.push(pcmB64);
-          if (audioBuffer.length > 300) audioBuffer.shift();
+          if (audioBuffer.length > 500) audioBuffer.shift();
         }
       } else if (msg.event === "stop") {
         console.log("[BRIDGE] Telephony stream stopped");
