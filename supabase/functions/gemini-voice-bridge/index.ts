@@ -72,39 +72,32 @@ function b64encode(bytes: Uint8Array): string {
 // ── Main server ──
 
 Deno.serve((req) => {
-  // Log EVERY request immediately for debugging
-  const reqUrl = new URL(req.url);
-  const upgradeHeader = req.headers.get("upgrade") || "";
-  const connectionHeader = req.headers.get("connection") || "";
-  console.log(`[BRIDGE] Request received: method=${req.method} path=${reqUrl.pathname} upgrade="${upgradeHeader}" connection="${connectionHeader}"`);
+  console.log("[BRIDGE] === Handler invoked ===");
+  try {
+    const reqUrl = new URL(req.url);
+    const upgradeHeader = req.headers.get("upgrade") || "";
+    console.log(`[BRIDGE] method=${req.method} upgrade="${upgradeHeader}" url=${reqUrl.pathname}${reqUrl.search}`);
 
-  // Health check endpoint (non-WebSocket)
-  if (upgradeHeader.toLowerCase() !== "websocket") {
-    console.log("[BRIDGE] Not a WebSocket request, returning health check");
-    return new Response(JSON.stringify({ 
-      status: "ok", 
-      message: "gemini-voice-bridge is running. WebSocket upgrade required for media streaming.",
-      timestamp: new Date().toISOString()
-    }), { 
-      status: 200, 
-      headers: { "Content-Type": "application/json" } 
-    });
-  }
+    // Health check for non-WebSocket
+    if (upgradeHeader.toLowerCase() !== "websocket") {
+      return new Response(JSON.stringify({ status: "ok", timestamp: new Date().toISOString() }), { 
+        status: 200, headers: { "Content-Type": "application/json" } 
+      });
+    }
 
-  const agentId = reqUrl.searchParams.get("agent_id");
-  if (!agentId) {
-    console.log("[BRIDGE] Missing agent_id");
-    return new Response("agent_id required", { status: 400 });
-  }
+    console.log("[BRIDGE] WebSocket upgrade detected");
+    const agentId = reqUrl.searchParams.get("agent_id");
+    if (!agentId) return new Response("agent_id required", { status: 400 });
 
-  const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!geminiApiKey) return new Response("GEMINI_API_KEY not configured", { status: 500 });
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiApiKey) return new Response("GEMINI_API_KEY not configured", { status: 500 });
 
-  const sbUrl = Deno.env.get("SUPABASE_URL")!;
-  const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const sbUrl = Deno.env.get("SUPABASE_URL")!;
+    const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-  // Upgrade IMMEDIATELY — before any async work
-  const { socket, response } = Deno.upgradeWebSocket(req);
+    console.log("[BRIDGE] Calling Deno.upgradeWebSocket...");
+    const { socket, response } = Deno.upgradeWebSocket(req);
+    console.log("[BRIDGE] WebSocket upgrade success");
 
   let geminiWs: WebSocket | null = null;
   let streamSid = "";
