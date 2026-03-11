@@ -289,6 +289,8 @@ Deno.serve(async (req) => {
       try {
         const result = await placeCall(supabase, ultravoxApiKey, agent, phoneConfig, contact.phone_number, user.id, kbItems || [], agentTools || []);
         results.push({ phone: contact.phone_number, status: "initiated", ...result });
+        // Create a PENDING outcome for this call
+        await createOutcome(supabase, user.id, campaign_id, contact, "PENDING", campaign.round || 1);
       } catch (err: any) {
         console.error(`Failed to call ${contact.phone_number}:`, err.message);
         results.push({ phone: contact.phone_number, status: "failed", error: err.message });
