@@ -40,14 +40,26 @@ const GEMINI_MODELS: UltravoxModel[] = [
 ];
 
 const GEMINI_VOICES = [
-  { value: "Puck", label: "Puck" },
-  { value: "Charon", label: "Charon" },
-  { value: "Kore", label: "Kore" },
-  { value: "Fenrir", label: "Fenrir" },
-  { value: "Aoede", label: "Aoede" },
-  { value: "Leda", label: "Leda" },
-  { value: "Orus", label: "Orus" },
-  { value: "Zephyr", label: "Zephyr" },
+  { value: "Kore", label: "Kore (Female)" },
+  { value: "Aoede", label: "Aoede (Female)" },
+  { value: "Leda", label: "Leda (Female)" },
+  { value: "Autonoe", label: "Autonoe (Female)" },
+  { value: "Erinome", label: "Erinome (Female)" },
+  { value: "Laomedeia", label: "Laomedeia (Female)" },
+  { value: "Callirrhoe", label: "Callirrhoe (Female)" },
+  { value: "Despina", label: "Despina (Female)" },
+  { value: "Puck", label: "Puck (Male)" },
+  { value: "Charon", label: "Charon (Male)" },
+  { value: "Fenrir", label: "Fenrir (Male)" },
+  { value: "Orus", label: "Orus (Male)" },
+  { value: "Vale", label: "Vale (Male)" },
+  { value: "Zephyr", label: "Zephyr (Male)" },
+  { value: "Umbriel", label: "Umbriel (Male)" },
+  { value: "Schedar", label: "Schedar (Male)" },
+  { value: "Achird", label: "Achird (Male)" },
+  { value: "Sadachbia", label: "Sadachbia (Male)" },
+  { value: "Sadaltager", label: "Sadaltager (Male)" },
+  { value: "Iapetus", label: "Iapetus (Male)" },
 ];
 
 const AI_PROVIDERS = [

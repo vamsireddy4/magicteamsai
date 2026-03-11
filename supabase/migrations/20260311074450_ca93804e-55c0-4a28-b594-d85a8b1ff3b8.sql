@@ -1,0 +1,1 @@
+UPDATE public.agents SET voice = 'Kore' WHERE voice = 'Sindhu';
