@@ -108,7 +108,7 @@ export default function CallLogs() {
   return (
     <DashboardLayout>
       <div className="flex flex-col h-full animate-fade-in">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-6 shrink-0">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Call History</h1>
             <p className="text-muted-foreground mt-1">View all inbound and outbound calls with transcripts.</p>
