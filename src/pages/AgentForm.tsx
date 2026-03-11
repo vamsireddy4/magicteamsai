@@ -350,7 +350,7 @@ export default function AgentForm() {
                   )}
                 </div>
 
-                {useCustomVoice ? (
+                {useCustomVoice && form.ai_provider === "ultravox" ? (
                   <div className="space-y-2">
                     <Input
                       value={form.voice}
