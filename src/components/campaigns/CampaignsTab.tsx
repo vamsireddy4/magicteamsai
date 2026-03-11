@@ -353,11 +353,16 @@ export default function CampaignsTab() {
                           />
                         </TableCell>
                         <TableCell className="text-muted-foreground text-xs">{idx + 1}</TableCell>
-                        {visibleCols.map((col) => (
-                          <TableCell key={col.key} className={col.key === "first_name" ? "font-medium" : col.key === "phone_number" ? "font-mono text-xs" : ""}>
-                            {ct[col.key] || "—"}
-                          </TableCell>
-                        ))}
+                        {displayCols.map((col) => {
+                          const val = useMetadata
+                            ? (ct.metadata as Record<string, any>)?.[col.key]
+                            : ct[col.key];
+                          return (
+                            <TableCell key={col.key} className={col.key.includes("name") && !col.key.includes("child") ? "font-medium" : col.key.includes("phone") ? "font-mono text-xs" : ""}>
+                              {val || "—"}
+                            </TableCell>
+                          );
+                        })}
                       </TableRow>
                     ))}
                   </TableBody>
