@@ -241,7 +241,7 @@ export default function OutcomesTab() {
         </div>
 
         {/* Outcome Breakdown */}
-        <div className="grid gap-3 grid-cols-3 sm:grid-cols-6">
+        <div className="grid gap-3 grid-cols-3">
           {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => {
             const count = campCallLogs.filter(cl => getCallResult(cl) === (o === "NO_ANSWER" ? "NO ANSWER" : o)).length;
             return (
