@@ -436,7 +436,7 @@ export default function CampaignsTab() {
                         <TableCell className="font-medium">{co.parent_name || "—"}</TableCell>
                         <TableCell>{co.phone_number}</TableCell>
                         <TableCell>
-                          <Badge variant={co.outcome === "BOOKED" ? "default" : co.outcome === "VOICEMAIL" || co.outcome === "NO_ANSWER" ? "secondary" : "outline"}>
+                          <Badge variant={co.outcome === "ANSWERED" ? "default" : co.outcome === "VOICEMAIL" || co.outcome === "NO_ANSWER" ? "secondary" : "outline"}>
                             {co.outcome}
                           </Badge>
                         </TableCell>

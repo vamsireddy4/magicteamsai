@@ -17,8 +17,8 @@ import { Plus, Search, FileText } from "lucide-react";
 interface Outcome { id: string; campaign_id: string; phone_number: string; parent_name: string | null; child_names: string | null; venue_name: string | null; outcome: string; transcript: string | null; summary: string | null; attempt_number: number; call_timestamp: string; }
 interface Campaign { id: string; venue_name: string; round: number; }
 
-const OUTCOME_COLORS: Record<string, string> = { BOOKED: "bg-green-100 text-green-800", DECLINED: "bg-red-100 text-red-800", FLAGGED_REVIEW: "bg-yellow-100 text-yellow-800", VOICEMAIL: "bg-blue-100 text-blue-800", NO_ANSWER: "bg-muted text-muted-foreground", PENDING: "bg-muted text-muted-foreground" };
-const OUTCOMES = ["ALL", "BOOKED", "DECLINED", "FLAGGED_REVIEW", "VOICEMAIL", "NO_ANSWER", "PENDING"];
+const OUTCOME_COLORS: Record<string, string> = { ANSWERED: "bg-green-100 text-green-800", DECLINED: "bg-red-100 text-red-800", FLAGGED_REVIEW: "bg-yellow-100 text-yellow-800", VOICEMAIL: "bg-blue-100 text-blue-800", NO_ANSWER: "bg-muted text-muted-foreground", PENDING: "bg-muted text-muted-foreground" };
+const OUTCOMES = ["ALL", "ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"];
 
 export default function OutcomesTab() {
   const { user } = useAuth();
@@ -58,7 +58,7 @@ export default function OutcomesTab() {
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
     else {
       toast({ title: "Outcome added" });
-      if (addForm.outcome === "BOOKED" || addForm.outcome === "DECLINED") {
+      if (addForm.outcome === "ANSWERED" || addForm.outcome === "DECLINED") {
         await supabase.from("do_not_call").insert({ user_id: user.id, phone_number: addForm.phone_number, reason: addForm.outcome, parent_name: addForm.parent_name || null, venue_name: addForm.venue_name || null });
       }
       setAddDialogOpen(false);
@@ -102,7 +102,7 @@ export default function OutcomesTab() {
       </div>
 
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-        {["BOOKED", "DECLINED", "FLAGGED_REVIEW", "VOICEMAIL", "NO_ANSWER", "PENDING"].map((o) => (
+        {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
           <Card key={o} className="cursor-pointer hover:shadow-sm transition-shadow" onClick={() => setFilterOutcome(filterOutcome === o ? "ALL" : o)}>
             <CardContent className="pt-4 pb-3 text-center">
               <p className="text-2xl font-bold">{outcomeCounts[o] || 0}</p>
