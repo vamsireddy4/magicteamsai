@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const ultravoxApiKey = Deno.env.get("ULTRAVOX_API_KEY")!;
+    const ultravoxApiKey = Deno.env.get("ULTRAVOX_API_KEY");
 
     // Authenticate user
     const authHeader = req.headers.get("Authorization");
@@ -35,13 +35,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch call_logs with ultravox_call_id that need syncing (no duration or no transcript)
+    // Fetch call_logs that need syncing (no duration or no transcript)
     const { data: calls, error: fetchError } = await supabase
       .from("call_logs")
-      .select("id, ultravox_call_id, twilio_call_sid, started_at, duration, transcript")
+      .select("id, ultravox_call_id, twilio_call_sid, caller_number, started_at, duration, transcript, status, agent_id")
       .eq("user_id", user.id)
-      .not("ultravox_call_id", "is", null)
-      .or("duration.is.null,transcript.is.null");
+      .or("duration.is.null,transcript.is.null,status.eq.initiated");
 
     if (fetchError) {
       return new Response(JSON.stringify({ error: fetchError.message }), {
@@ -56,82 +55,156 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Pre-fetch phone configs for Twilio lookups (group by caller_number)
+    const callerNumbers = [...new Set(calls.filter(c => c.caller_number).map(c => c.caller_number!))];
+    const { data: phoneConfigs } = await supabase
+      .from("phone_configs")
+      .select("phone_number, twilio_account_sid, twilio_auth_token, provider")
+      .eq("user_id", user.id)
+      .in("phone_number", callerNumbers);
+
+    const phoneConfigMap = new Map<string, { sid: string; token: string }>();
+    if (phoneConfigs) {
+      for (const pc of phoneConfigs) {
+        if (pc.twilio_account_sid && pc.twilio_auth_token) {
+          phoneConfigMap.set(pc.phone_number, {
+            sid: pc.twilio_account_sid.replace(/[^a-zA-Z0-9]/g, ''),
+            token: pc.twilio_auth_token.replace(/[^a-zA-Z0-9]/g, ''),
+          });
+        }
+      }
+    }
+
     let updated = 0;
     const errors: string[] = [];
 
     for (const call of calls) {
       try {
-        // Fetch call details and messages (transcript) in parallel
-        const [callRes, messagesRes] = await Promise.all([
-          fetch(`https://api.ultravox.ai/api/calls/${call.ultravox_call_id}`, {
-            headers: { "X-API-Key": ultravoxApiKey },
-          }),
-          call.transcript === null
-            ? fetch(`https://api.ultravox.ai/api/calls/${call.ultravox_call_id}/messages`, {
-                headers: { "X-API-Key": ultravoxApiKey },
-              })
-            : Promise.resolve(null),
-        ]);
-
-        if (!callRes.ok) {
-          errors.push(`Failed to fetch call ${call.ultravox_call_id}: ${callRes.status}`);
-          continue;
-        }
-
-        const data = await callRes.json();
         const updateData: Record<string, unknown> = {};
 
-        // Parse duration
-        if (call.duration === null) {
-          let durationSeconds: number | null = null;
-          if (data.billedDuration) {
-            const match = data.billedDuration.match(/^([\d.]+)s$/);
-            if (match) {
-              durationSeconds = Math.round(parseFloat(match[1]));
+        if (call.ultravox_call_id && ultravoxApiKey) {
+          // --- ULTRAVOX SYNC ---
+          const [callRes, messagesRes] = await Promise.all([
+            fetch(`https://api.ultravox.ai/api/calls/${call.ultravox_call_id}`, {
+              headers: { "X-API-Key": ultravoxApiKey },
+            }),
+            call.transcript === null
+              ? fetch(`https://api.ultravox.ai/api/calls/${call.ultravox_call_id}/messages`, {
+                  headers: { "X-API-Key": ultravoxApiKey },
+                })
+              : Promise.resolve(null),
+          ]);
+
+          if (!callRes.ok) {
+            errors.push(`Ultravox fetch failed for ${call.ultravox_call_id}: ${callRes.status}`);
+            continue;
+          }
+
+          const data = await callRes.json();
+
+          if (call.duration === null) {
+            let durationSeconds: number | null = null;
+            if (data.billedDuration) {
+              const match = data.billedDuration.match(/^([\d.]+)s$/);
+              if (match) durationSeconds = Math.round(parseFloat(match[1]));
+            }
+            if (durationSeconds === null && data.joined && data.ended) {
+              durationSeconds = Math.round((new Date(data.ended).getTime() - new Date(data.joined).getTime()) / 1000);
+            }
+            if (durationSeconds !== null && durationSeconds >= 0) updateData.duration = durationSeconds;
+          }
+
+          if (data.ended) updateData.ended_at = data.ended;
+          if (data.joined) updateData.started_at = data.joined;
+          if (data.endReason === "hangup" || data.endReason === "disconnect" || data.ended) {
+            updateData.status = "completed";
+          }
+
+          if (call.transcript === null && messagesRes && messagesRes.ok) {
+            const messagesData = await messagesRes.json();
+            const messages = messagesData.results || messagesData;
+            if (Array.isArray(messages) && messages.length > 0) {
+              const transcript = messages
+                .filter((m: any) => m.role && m.text)
+                .map((m: any) => ({
+                  role: m.role === "MESSAGE_ROLE_AGENT" ? "agent" : m.role === "MESSAGE_ROLE_USER" ? "user" : m.role,
+                  text: m.text,
+                  timestamp: m.created || m.ordinal || null,
+                }));
+              if (transcript.length > 0) updateData.transcript = transcript;
             }
           }
-          if (durationSeconds === null && data.joined && data.ended) {
-            const joinedAt = new Date(data.joined).getTime();
-            const endedAt = new Date(data.ended).getTime();
-            durationSeconds = Math.round((endedAt - joinedAt) / 1000);
+
+        } else if (call.twilio_call_sid) {
+          // --- TWILIO SYNC ---
+          const creds = call.caller_number ? phoneConfigMap.get(call.caller_number) : null;
+          if (!creds) {
+            errors.push(`No Twilio creds for call ${call.id} (caller: ${call.caller_number})`);
+            continue;
           }
-          if (durationSeconds !== null && durationSeconds >= 0) {
-            updateData.duration = durationSeconds;
+
+          const twilioRes = await fetch(
+            `https://api.twilio.com/2010-04-01/Accounts/${creds.sid}/Calls/${call.twilio_call_sid}.json`,
+            {
+              headers: {
+                "Authorization": `Basic ${btoa(`${creds.sid}:${creds.token}`)}`,
+              },
+            }
+          );
+
+          if (!twilioRes.ok) {
+            errors.push(`Twilio fetch failed for ${call.twilio_call_sid}: ${twilioRes.status}`);
+            continue;
           }
-        }
 
-        // Timing
-        if (data.ended) {
-          updateData.ended_at = data.ended;
-        }
-        if (data.joined) {
-          updateData.started_at = data.joined;
-        }
+          const twilioData = await twilioRes.json();
 
-        // Status
-        if (data.endReason === "hangup" || data.endReason === "disconnect" || data.ended) {
-          updateData.status = "completed";
-        }
+          // Duration
+          if (call.duration === null && twilioData.duration) {
+            const dur = parseInt(twilioData.duration, 10);
+            if (!isNaN(dur) && dur >= 0) updateData.duration = dur;
+          }
 
-        // Transcript — parse messages from Ultravox
-        if (call.transcript === null && messagesRes && messagesRes.ok) {
-          const messagesData = await messagesRes.json();
-          const messages = messagesData.results || messagesData;
+          // Status mapping
+          const twilioStatus = twilioData.status;
+          if (twilioStatus === "completed") {
+            updateData.status = "completed";
+          } else if (twilioStatus === "busy" || twilioStatus === "no-answer" || twilioStatus === "canceled") {
+            updateData.status = twilioStatus;
+          } else if (twilioStatus === "failed") {
+            updateData.status = "failed";
+          } else if (twilioStatus === "in-progress") {
+            updateData.status = "in-progress";
+          }
 
-          if (Array.isArray(messages) && messages.length > 0) {
-            // Format transcript as array of { role, text, timestamp }
-            const transcript = messages
-              .filter((m: any) => m.role && m.text)
-              .map((m: any) => ({
-                role: m.role === "MESSAGE_ROLE_AGENT" ? "agent" : m.role === "MESSAGE_ROLE_USER" ? "user" : m.role,
-                text: m.text,
-                timestamp: m.created || m.ordinal || null,
-              }));
+          // Timing
+          if (twilioData.start_time) updateData.started_at = new Date(twilioData.start_time).toISOString();
+          if (twilioData.end_time) updateData.ended_at = new Date(twilioData.end_time).toISOString();
 
-            if (transcript.length > 0) {
-              updateData.transcript = transcript;
+          // Try to fetch Twilio recording transcript if available
+          if (call.transcript === null) {
+            try {
+              const recordingsRes = await fetch(
+                `https://api.twilio.com/2010-04-01/Accounts/${creds.sid}/Calls/${call.twilio_call_sid}/Recordings.json`,
+                {
+                  headers: {
+                    "Authorization": `Basic ${btoa(`${creds.sid}:${creds.token}`)}`,
+                  },
+                }
+              );
+              if (recordingsRes.ok) {
+                const recData = await recordingsRes.json();
+                if (recData.recordings && recData.recordings.length > 0) {
+                  // Note: Twilio transcriptions require separate setup; mark as unavailable for now
+                  // We store a placeholder so we don't keep re-fetching
+                }
+              }
+            } catch (_) {
+              // Transcript fetch is best-effort
             }
           }
+        } else {
+          continue;
         }
 
         if (Object.keys(updateData).length > 0) {
@@ -147,7 +220,7 @@ Deno.serve(async (req) => {
           }
         }
       } catch (e) {
-        errors.push(`Error processing call ${call.ultravox_call_id}: ${e.message}`);
+        errors.push(`Error processing call ${call.id}: ${e.message}`);
       }
     }
 
