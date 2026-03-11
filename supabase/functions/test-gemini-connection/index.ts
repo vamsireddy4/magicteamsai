@@ -50,8 +50,14 @@ Deno.serve(async (req) => {
         }));
       };
 
-      ws.onmessage = (ev) => {
-        const msg = JSON.parse(ev.data);
+      ws.onmessage = async (ev) => {
+        let text: string;
+        if (ev.data instanceof Blob) {
+          text = await ev.data.text();
+        } else {
+          text = ev.data;
+        }
+        const msg = JSON.parse(text);
         console.log("Gemini response keys:", Object.keys(msg));
         if (msg.setupComplete) {
           clearTimeout(timeout);
