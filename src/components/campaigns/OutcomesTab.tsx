@@ -91,7 +91,11 @@ export default function OutcomesTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline" onClick={syncCallData} disabled={syncing}>
+          {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+          Sync & Refresh
+        </Button>
         <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
           <Button onClick={() => setAddDialogOpen(true)}><Plus className="h-4 w-4 mr-2" /> Add Outcome</Button>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
