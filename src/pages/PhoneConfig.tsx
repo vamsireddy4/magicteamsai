@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Phone, Trash2, Settings, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import { Phone, Trash2, Settings, Eye, EyeOff, CheckCircle2, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import twilioLogo from "@/assets/twilio-logo.png";
 import telnyxLogo from "@/assets/telnyx-logo.png";
