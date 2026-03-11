@@ -9,7 +9,7 @@ import OutcomesTab from "@/components/campaigns/OutcomesTab";
 import RetryCSVTab from "@/components/campaigns/RetryCSVTab";
 
 export default function Campaigns() {
-  const [activeTab, setActiveTab] = useState("campaigns");
+  const [activeTab, setActiveTab] = useState("data-cleaning");
 
   return (
     <DashboardLayout>
@@ -21,11 +21,11 @@ export default function Campaigns() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="campaigns" className="flex items-center gap-2">
-              <Megaphone className="h-4 w-4" /> Campaigns
-            </TabsTrigger>
             <TabsTrigger value="data-cleaning" className="flex items-center gap-2">
               <FileSpreadsheet className="h-4 w-4" /> Data Cleaning
+            </TabsTrigger>
+            <TabsTrigger value="campaigns" className="flex items-center gap-2">
+              <Megaphone className="h-4 w-4" /> Campaigns
             </TabsTrigger>
             <TabsTrigger value="outcomes" className="flex items-center gap-2">
               <ClipboardList className="h-4 w-4" /> Outcomes
@@ -35,8 +35,8 @@ export default function Campaigns() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="campaigns"><CampaignsTab /></TabsContent>
           <TabsContent value="data-cleaning"><DataCleaningTab /></TabsContent>
+          <TabsContent value="campaigns"><CampaignsTab /></TabsContent>
           <TabsContent value="outcomes"><OutcomesTab /></TabsContent>
           <TabsContent value="retry-csv"><RetryCSVTab /></TabsContent>
         </Tabs>
