@@ -27,6 +27,7 @@ interface Campaign {
   age_range: string | null; times: string | null; start_date: string | null;
   end_date: string | null; booking_target: number | null; status: string;
   notes: string | null; calls_made: number; total_contacts: number;
+  twilio_phone_number: string | null; created_at: string;
 }
 
 interface CallLog {
