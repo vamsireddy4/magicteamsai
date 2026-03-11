@@ -356,4 +356,8 @@ Deno.serve((req) => {
   };
 
   return response;
+  } catch (e) {
+    console.error("[BRIDGE] FATAL handler error:", e);
+    return new Response(JSON.stringify({ error: "Bridge handler crashed", details: String(e) }), { status: 500 });
+  }
 });
