@@ -208,7 +208,17 @@ export default function CampaignsTab() {
     const c = selectedCampaign;
     const totalOutcomes = Object.values(outcomeCounts).reduce((a, b) => a + b, 0);
 
-    const allContactCols = [
+    // Build dynamic columns from metadata if available
+    const metadataCols: { key: string; label: string }[] = [];
+    if (contacts.length > 0 && contacts[0]?.metadata && typeof contacts[0].metadata === "object") {
+      const meta = contacts[0].metadata as Record<string, any>;
+      Object.keys(meta).forEach((key) => {
+        metadataCols.push({ key, label: key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()) });
+      });
+    }
+
+    // Use metadata columns if available, otherwise fall back to fixed columns
+    const fixedCols = [
       { key: "first_name", label: "Name" },
       { key: "phone_number", label: "Phone" },
       { key: "venue_name", label: "Venue" },
@@ -220,10 +230,19 @@ export default function CampaignsTab() {
       { key: "times", label: "Times" },
       { key: "language", label: "Language" },
     ];
-    const visibleCols = allContactCols.filter((col) =>
-      col.key === "first_name" || col.key === "phone_number" ||
-      contacts.some((ct) => ct[col.key] && ct[col.key] !== "en")
-    );
+
+    const useMetadata = metadataCols.length > 0;
+    const displayCols = useMetadata
+      ? metadataCols.filter((col) =>
+          contacts.some((ct) => {
+            const val = (ct.metadata as Record<string, any>)?.[col.key];
+            return val && val !== "" && val !== "en";
+          })
+        )
+      : fixedCols.filter((col) =>
+          col.key === "first_name" || col.key === "phone_number" ||
+          contacts.some((ct) => ct[col.key] && ct[col.key] !== "en")
+        );
 
     return (
       <div className="space-y-6">

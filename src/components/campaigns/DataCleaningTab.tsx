@@ -66,6 +66,7 @@ export default function DataCleaningTab() {
         first_name: row[nameCol] || row[Object.keys(row)[0]] || "", child_names: row.child_names || row.child_name || row.children || null,
         venue_name: row.venue_name || row.venue || null, venue_location: row.venue_location || row.location || null,
         start_date: row.start_date || null, end_date: row.end_date || null, times: row.times || row.time || null, age_range: row.age_range || null,
+        metadata: row,
       }));
       const { error: contactErr } = await supabase.from("contacts").insert(contactRows as any);
       if (contactErr) throw contactErr;
