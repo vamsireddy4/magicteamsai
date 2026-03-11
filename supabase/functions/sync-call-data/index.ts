@@ -35,14 +35,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch call_logs that need syncing (no duration or no transcript)
+    // Fetch call_logs that need syncing — include any call that isn't fully resolved
     const { data: calls, error: fetchError } = await supabase
       .from("call_logs")
       .select("id, ultravox_call_id, twilio_call_sid, caller_number, recipient_number, started_at, duration, transcript, status, agent_id")
       .eq("user_id", user.id)
-      .or("duration.is.null,transcript.is.null,status.eq.initiated");
+      .or("duration.is.null,transcript.is.null,status.eq.initiated,status.eq.in-progress");
+
+    console.log(`Found ${calls?.length || 0} calls to sync`);
 
     if (fetchError) {
+      console.error("Fetch error:", fetchError.message);
       return new Response(JSON.stringify({ error: fetchError.message }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
