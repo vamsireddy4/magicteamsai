@@ -231,18 +231,6 @@ export default function OutcomesTab() {
           </Button>
         </div>
 
-        {/* Outcome Breakdown */}
-        <div className="grid gap-3 grid-cols-3">
-          {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
-            <Card key={o}>
-              <CardContent className="pt-4 pb-3 text-center">
-                <p className="text-2xl font-bold">{outcomeCounts[o] || 0}</p>
-                <Badge className={`${OUTCOME_COLORS[o]} mt-1`} variant="secondary">{o.replace("_", " ")}</Badge>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
         {/* Search & Filter */}
         <div className="flex gap-3 flex-wrap items-end">
           <div className="relative flex-1 min-w-[200px]">
