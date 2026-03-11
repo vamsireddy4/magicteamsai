@@ -159,8 +159,15 @@ export default function OutcomesTab() {
     const campContacts = contacts.filter((c) => c.campaign_id === selectedCampaign.id);
     const campPhones = new Set(campContacts.map((c) => c.phone_number));
 
-    // Get call logs matching campaign contacts
-    const campCallLogs = callLogs.filter((cl) => cl.recipient_number && campPhones.has(cl.recipient_number));
+    // Get call logs matching campaign contacts AND campaign's caller number
+    const campCallLogs = callLogs.filter((cl) => {
+      if (!cl.recipient_number || !campPhones.has(cl.recipient_number)) return false;
+      // If campaign has a specific phone number, only match calls from that number
+      if (selectedCampaign.twilio_phone_number && cl.caller_number) {
+        return cl.caller_number === selectedCampaign.twilio_phone_number;
+      }
+      return true;
+    });
 
     // Status counts
     const statusCounts = campCallLogs.reduce((acc, cl) => {
