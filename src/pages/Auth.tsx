@@ -116,7 +116,7 @@ export default function Auth() {
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
                 <Phone className="h-4 w-4 text-primary-foreground" />
               </div>
-              <span className="text-lg font-bold">ReceptoAI</span>
+              <span className="text-lg font-bold">MagicTeams</span>
             </div>
             <CardTitle className="text-2xl font-bold">
               {isLogin ? "Welcome back" : "Create an account"}

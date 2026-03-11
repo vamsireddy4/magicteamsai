@@ -167,7 +167,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
               <Phone className="h-3.5 w-3.5 text-primary-foreground" />
             </div>
-            <span className="font-bold">ReceptoAI</span>
+            <span className="font-bold">MagicTeams</span>
           </div>
         </header>
         <div className="flex-1 p-6 lg:p-8 overflow-auto">
