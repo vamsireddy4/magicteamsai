@@ -119,7 +119,7 @@ export default function CallLogs() {
           </Button>
         </div>
 
-        <Card>
+        <Card className="flex-1 min-h-0 flex flex-col">
           {loading ? (
             <CardContent className="p-6">
               <div className="animate-pulse space-y-3">
