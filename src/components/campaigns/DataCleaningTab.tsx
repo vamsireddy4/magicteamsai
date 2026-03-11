@@ -31,16 +31,6 @@ export default function DataCleaningTab() {
   const [saving, setSaving] = useState(false);
   const [campaignName, setCampaignName] = useState("");
 
-  useEffect(() => {
-    if (!user) return;
-    Promise.all([
-      supabase.from("agents").select("id, name").eq("is_active", true),
-      supabase.from("phone_configs").select("id, phone_number, friendly_name, provider").eq("is_active", true),
-    ]).then(([{ data: ag }, { data: pc }]) => {
-      setAgents(ag || []);
-      setPhoneConfigs((pc as PhoneConfigRow[]) || []);
-    });
-  }, [user]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) setCustomerFile(file); };
 
