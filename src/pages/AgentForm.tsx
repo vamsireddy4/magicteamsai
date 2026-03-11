@@ -151,9 +151,10 @@ export default function AgentForm() {
 
   // Check if the current voice is a custom one (not in Ultravox list)
   useEffect(() => {
-    if (voices.length > 0 && form.voice) {
-      const isUltravoxVoice = voices.some(v => v.voiceId === form.voice || v.name === form.voice);
-      if (!isUltravoxVoice && form.voice !== "terrence") {
+    if ((voices.length > 0 || GEMINI_VOICES.length > 0) && form.voice) {
+      const isKnownVoice = voices.some(v => v.voiceId === form.voice || v.name === form.voice)
+        || GEMINI_VOICES.some(v => v.value === form.voice);
+      if (!isKnownVoice && form.voice !== "terrence") {
         setUseCustomVoice(true);
       }
     }
