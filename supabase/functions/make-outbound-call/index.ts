@@ -242,6 +242,11 @@ Deno.serve(async (req) => {
         );
       }
 
+      // Build Ultravox medium based on telephony provider
+      const medium: any = provider === "telnyx"
+        ? { telnyx: {} }
+        : { twilio: { } };
+
       const ultravoxBody: any = {
         systemPrompt,
         model: agent.model || "fixie-ai/ultravox-v0.7",
