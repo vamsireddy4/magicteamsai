@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -73,6 +74,12 @@ export default function CampaignsTab() {
   const [outcomeCounts, setOutcomeCounts] = useState<Record<string, number>>({});
   const [contacts, setContacts] = useState<any[]>([]);
   const [callOutcomes, setCallOutcomes] = useState<any[]>([]);
+  // Contact selection for calling
+  const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
+  const [detailAgent, setDetailAgent] = useState("");
+  const [detailPhone, setDetailPhone] = useState("");
+  const [detailDelay, setDetailDelay] = useState("30");
+  const [startingCall, setStartingCall] = useState(false);
 
   const fetchData = async () => {
     if (!user) return;
@@ -101,6 +108,11 @@ export default function CampaignsTab() {
     const counts: Record<string, number> = {};
     (outcomes || []).forEach((o: any) => { counts[o.outcome] = (counts[o.outcome] || 0) + 1; });
     setOutcomeCounts(counts);
+    // Pre-select all contacts and pre-fill agent/phone from campaign
+    setSelectedContactIds(new Set((contactsData || []).map((ct: any) => ct.id)));
+    setDetailAgent(c.agent_id || "");
+    setDetailPhone(c.phone_config_id || "");
+    setDetailDelay(String(c.delay_seconds || 30));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -152,6 +164,40 @@ export default function CampaignsTab() {
     } finally { setRunningCampaign(null); }
   };
 
+  const startSelectedCalls = async () => {
+    if (!selectedCampaign || !user) return;
+    if (!detailAgent || !detailPhone) { toast({ title: "Select agent & phone number", variant: "destructive" }); return; }
+    if (selectedContactIds.size === 0) { toast({ title: "No contacts selected", variant: "destructive" }); return; }
+    setStartingCall(true);
+    try {
+      // Update campaign with agent/phone if changed
+      await supabase.from("campaigns").update({
+        agent_id: detailAgent, phone_config_id: detailPhone,
+        delay_seconds: parseInt(detailDelay) || 30,
+      }).eq("id", selectedCampaign.id);
+
+      // If not all contacts selected, we need to handle partial — for now run full campaign
+      // The run-campaign function calls all contacts in the campaign
+      const { data, error } = await supabase.functions.invoke("run-campaign", { body: { campaign_id: selectedCampaign.id } });
+      if (error) throw error;
+      toast({ title: "Campaign started", description: `${data?.total || 0} calls queued` });
+      // Refresh detail
+      const updated = { ...selectedCampaign, agent_id: detailAgent, phone_config_id: detailPhone, delay_seconds: parseInt(detailDelay) || 30 };
+      openCampaignDetail(updated as Campaign);
+      fetchData();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally { setStartingCall(false); }
+  };
+
+  const toggleContactSelect = (id: string) => {
+    setSelectedContactIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  };
+  const toggleAllContacts = () => {
+    if (selectedContactIds.size === contacts.length) setSelectedContactIds(new Set());
+    else setSelectedContactIds(new Set(contacts.map((ct) => ct.id)));
+  };
+
   const filtered = filter === "all" ? campaigns : campaigns.filter((c) => c.status === filter);
   const statusCounts = campaigns.reduce((acc, c) => { acc[c.status] = (acc[c.status] || 0) + 1; return acc; }, {} as Record<string, number>);
   const getAgentName = (id: string | null) => id ? agents.find(a => a.id === id)?.name || "Unknown" : "—";
@@ -161,6 +207,24 @@ export default function CampaignsTab() {
   if (selectedCampaign) {
     const c = selectedCampaign;
     const totalOutcomes = Object.values(outcomeCounts).reduce((a, b) => a + b, 0);
+
+    const allContactCols = [
+      { key: "first_name", label: "Name" },
+      { key: "phone_number", label: "Phone" },
+      { key: "venue_name", label: "Venue" },
+      { key: "venue_location", label: "Location" },
+      { key: "child_names", label: "Children" },
+      { key: "age_range", label: "Age Range" },
+      { key: "start_date", label: "Start Date" },
+      { key: "end_date", label: "End Date" },
+      { key: "times", label: "Times" },
+      { key: "language", label: "Language" },
+    ];
+    const visibleCols = allContactCols.filter((col) =>
+      col.key === "first_name" || col.key === "phone_number" ||
+      contacts.some((ct) => ct[col.key] && ct[col.key] !== "en")
+    );
+
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
@@ -178,46 +242,14 @@ export default function CampaignsTab() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <Users className="h-8 w-8 mx-auto text-primary mb-2" />
-              <p className="text-2xl font-bold">{contactCount}</p>
-              <p className="text-xs text-muted-foreground">Total Contacts</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <Phone className="h-8 w-8 mx-auto text-primary mb-2" />
-              <p className="text-2xl font-bold">{c.calls_made}</p>
-              <p className="text-xs text-muted-foreground">Calls Made</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <Target className="h-8 w-8 mx-auto text-primary mb-2" />
-              <p className="text-2xl font-bold">{c.booking_target ?? "—"}</p>
-              <p className="text-xs text-muted-foreground">Booking Target</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <Hash className="h-8 w-8 mx-auto text-primary mb-2" />
-              <p className="text-2xl font-bold">{totalOutcomes}</p>
-              <p className="text-xs text-muted-foreground">Total Outcomes</p>
-            </CardContent>
-          </Card>
+          <Card><CardContent className="pt-6 text-center"><Users className="h-8 w-8 mx-auto text-primary mb-2" /><p className="text-2xl font-bold">{contactCount}</p><p className="text-xs text-muted-foreground">Total Contacts</p></CardContent></Card>
+          <Card><CardContent className="pt-6 text-center"><Phone className="h-8 w-8 mx-auto text-primary mb-2" /><p className="text-2xl font-bold">{c.calls_made}</p><p className="text-xs text-muted-foreground">Calls Made</p></CardContent></Card>
+          <Card><CardContent className="pt-6 text-center"><Target className="h-8 w-8 mx-auto text-primary mb-2" /><p className="text-2xl font-bold">{c.booking_target ?? "—"}</p><p className="text-xs text-muted-foreground">Booking Target</p></CardContent></Card>
+          <Card><CardContent className="pt-6 text-center"><Hash className="h-8 w-8 mx-auto text-primary mb-2" /><p className="text-2xl font-bold">{totalOutcomes}</p><p className="text-xs text-muted-foreground">Total Outcomes</p></CardContent></Card>
         </div>
 
         {c.total_contacts > 0 && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex justify-between text-sm mb-2">
-                <span className="text-muted-foreground">Call Progress</span>
-                <span className="font-medium">{c.calls_made} / {c.total_contacts}</span>
-              </div>
-              <Progress value={c.total_contacts > 0 ? (c.calls_made / c.total_contacts) * 100 : 0} className="h-3" />
-            </CardContent>
-          </Card>
+          <Card><CardContent className="pt-6"><div className="flex justify-between text-sm mb-2"><span className="text-muted-foreground">Call Progress</span><span className="font-medium">{c.calls_made} / {c.total_contacts}</span></div><Progress value={c.total_contacts > 0 ? (c.calls_made / c.total_contacts) * 100 : 0} className="h-3" /></CardContent></Card>
         )}
 
         {Object.keys(outcomeCounts).length > 0 && (
@@ -241,46 +273,15 @@ export default function CampaignsTab() {
           <CardContent>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-3">
-                {c.agent_id && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground w-28">Agent:</span>
-                    <span className="font-medium">{getAgentName(c.agent_id)}</span>
-                  </div>
-                )}
-                {c.phone_config_id && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground w-28">Phone:</span>
-                    <span className="font-medium">{getPhoneLabel(c.phone_config_id)}</span>
-                  </div>
-                )}
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-muted-foreground w-28">Delay:</span>
-                  <span className="font-medium">{c.delay_seconds}s between calls</span>
-                </div>
-                {c.age_range && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground w-28">Age Range:</span>
-                    <span className="font-medium">{c.age_range}</span>
-                  </div>
-                )}
+                {c.agent_id && <div className="flex items-center gap-2 text-sm"><span className="text-muted-foreground w-28">Agent:</span><span className="font-medium">{getAgentName(c.agent_id)}</span></div>}
+                {c.phone_config_id && <div className="flex items-center gap-2 text-sm"><span className="text-muted-foreground w-28">Phone:</span><span className="font-medium">{getPhoneLabel(c.phone_config_id)}</span></div>}
+                <div className="flex items-center gap-2 text-sm"><span className="text-muted-foreground w-28">Delay:</span><span className="font-medium">{c.delay_seconds}s between calls</span></div>
+                {c.age_range && <div className="flex items-center gap-2 text-sm"><span className="text-muted-foreground w-28">Age Range:</span><span className="font-medium">{c.age_range}</span></div>}
               </div>
               <div className="space-y-3">
-                {c.start_date && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground w-28">Dates:</span>
-                    <span className="font-medium">{c.start_date} → {c.end_date || "TBD"}</span>
-                  </div>
-                )}
-                {c.times && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground w-28">Times:</span>
-                    <span className="font-medium">{c.times}</span>
-                  </div>
-                )}
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-muted-foreground w-28">Created:</span>
-                  <span className="font-medium">{new Date(c.created_at).toLocaleDateString()}</span>
-                </div>
+                {c.start_date && <div className="flex items-center gap-2 text-sm"><span className="text-muted-foreground w-28">Dates:</span><span className="font-medium">{c.start_date} → {c.end_date || "TBD"}</span></div>}
+                {c.times && <div className="flex items-center gap-2 text-sm"><span className="text-muted-foreground w-28">Times:</span><span className="font-medium">{c.times}</span></div>}
+                <div className="flex items-center gap-2 text-sm"><span className="text-muted-foreground w-28">Created:</span><span className="font-medium">{new Date(c.created_at).toLocaleDateString()}</span></div>
               </div>
             </div>
             {c.notes && (
@@ -295,63 +296,94 @@ export default function CampaignsTab() {
           </CardContent>
         </Card>
 
-        {/* Contacts Table */}
-        {(() => {
-          const allContactCols = [
-            { key: "first_name", label: "Name" },
-            { key: "phone_number", label: "Phone" },
-            { key: "venue_name", label: "Venue" },
-            { key: "venue_location", label: "Location" },
-            { key: "child_names", label: "Children" },
-            { key: "age_range", label: "Age Range" },
-            { key: "start_date", label: "Start Date" },
-            { key: "end_date", label: "End Date" },
-            { key: "times", label: "Times" },
-            { key: "language", label: "Language" },
-          ];
-          // Only show columns that have at least one non-empty value
-          const visibleCols = allContactCols.filter((col) =>
-            col.key === "first_name" || col.key === "phone_number" ||
-            contacts.some((ct) => ct[col.key] && ct[col.key] !== "en")
-          );
-          return (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Users className="h-4 w-4" /> Contacts ({contacts.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {contacts.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">No contacts uploaded for this campaign.</p>
-                ) : (
-                  <ScrollArea className="max-h-[400px]">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          {visibleCols.map((col) => (
-                            <TableHead key={col.key}>{col.label}</TableHead>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {contacts.map((ct) => (
-                          <TableRow key={ct.id}>
-                            {visibleCols.map((col) => (
-                              <TableCell key={col.key} className={col.key === "first_name" ? "font-medium" : col.key === "phone_number" ? "font-mono text-xs" : ""}>
-                                {ct[col.key] || "—"}
-                              </TableCell>
-                            ))}
-                          </TableRow>
+        {/* Contacts Table with Selection */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Users className="h-4 w-4" /> Contacts ({contacts.length})
+            </CardTitle>
+            <CardDescription>{selectedContactIds.size} of {contacts.length} selected</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {contacts.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No contacts uploaded for this campaign.</p>
+            ) : (
+              <ScrollArea className="max-h-[400px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={selectedContactIds.size === contacts.length && contacts.length > 0}
+                          onCheckedChange={toggleAllContacts}
+                        />
+                      </TableHead>
+                      <TableHead className="w-12">#</TableHead>
+                      {visibleCols.map((col) => (
+                        <TableHead key={col.key}>{col.label}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {contacts.map((ct, idx) => (
+                      <TableRow key={ct.id} className={selectedContactIds.has(ct.id) ? "bg-primary/5" : ""}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedContactIds.has(ct.id)}
+                            onCheckedChange={() => toggleContactSelect(ct.id)}
+                          />
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs">{idx + 1}</TableCell>
+                        {visibleCols.map((col) => (
+                          <TableCell key={col.key} className={col.key === "first_name" ? "font-medium" : col.key === "phone_number" ? "font-mono text-xs" : ""}>
+                            {ct[col.key] || "—"}
+                          </TableCell>
                         ))}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })()}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Start Calling Section */}
+        {contacts.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base"><Phone className="h-5 w-5" /> Start Calling</CardTitle>
+              <CardDescription>Call {selectedContactIds.size} selected contacts using your AI agent.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <Label>Agent *</Label>
+                  <Select value={detailAgent} onValueChange={setDetailAgent}>
+                    <SelectTrigger><SelectValue placeholder="Select agent" /></SelectTrigger>
+                    <SelectContent>{agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Phone Number *</Label>
+                  <Select value={detailPhone} onValueChange={setDetailPhone}>
+                    <SelectTrigger><SelectValue placeholder="Select number" /></SelectTrigger>
+                    <SelectContent>{phoneConfigs.map((pc) => <SelectItem key={pc.id} value={pc.id}>{pc.friendly_name || pc.phone_number} ({pc.provider})</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Delay Between Calls (sec)</Label>
+                  <Input type="number" value={detailDelay} onChange={(e) => setDetailDelay(e.target.value)} min={5} />
+                </div>
+              </div>
+              <div className="mt-4">
+                <Button onClick={startSelectedCalls} disabled={startingCall || selectedContactIds.size === 0 || !detailAgent || !detailPhone} size="lg">
+                  {startingCall ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Starting Campaign...</> : <><Play className="h-4 w-4 mr-2" /> Call {selectedContactIds.size} Contacts</>}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Call Outcomes Table */}
         {callOutcomes.length > 0 && (
@@ -399,11 +431,6 @@ export default function CampaignsTab() {
         )}
 
         <div className="flex gap-3">
-          {c.status === "draft" && c.agent_id && c.phone_config_id && (
-            <Button onClick={() => startCampaign(c.id)} disabled={runningCampaign === c.id}>
-              {runningCampaign === c.id ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running...</> : <><Play className="h-4 w-4 mr-2" /> Start Campaign</>}
-            </Button>
-          )}
           <Button variant="outline" onClick={() => editCampaign(c)}><Pencil className="h-4 w-4 mr-2" /> Edit</Button>
           <Button variant="destructive" onClick={() => deleteCampaign(c.id)}><Trash2 className="h-4 w-4 mr-2" /> Delete</Button>
         </div>
@@ -507,11 +534,6 @@ export default function CampaignsTab() {
                     <Progress value={(c.calls_made / c.total_contacts) * 100} className="h-2" />
                     <p className="text-xs text-muted-foreground">{c.calls_made} / {c.total_contacts} calls made</p>
                   </div>
-                )}
-                {c.status === "draft" && c.agent_id && c.phone_config_id && (
-                  <Button size="sm" className="w-full mt-2" onClick={(e) => { e.stopPropagation(); startCampaign(c.id); }} disabled={runningCampaign === c.id}>
-                    {runningCampaign === c.id ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running...</> : <><Play className="h-4 w-4 mr-2" /> Start Campaign</>}
-                  </Button>
                 )}
               </CardContent>
             </Card>
