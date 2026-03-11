@@ -1,0 +1,1 @@
+UPDATE agents SET model = 'gemini-2.5-flash-preview-native-audio-dialog' WHERE ai_provider = 'gemini';
