@@ -223,25 +223,26 @@ Deno.serve(async (req) => {
 
             // Update corresponding call_outcome based on call status
             const finalStatus = (updateData.status as string) || call.status;
-            if (finalStatus && finalStatus !== "initiated" && call.caller_number) {
+            const duration = (updateData.duration as number) ?? call.duration;
+            console.log(`Call ${call.id}: finalStatus=${finalStatus}, duration=${duration}, recipient=${call.recipient_number}`);
+            
+            if (finalStatus && finalStatus !== "initiated") {
               // Map call status to outcome
               let outcome: string | null = null;
-              const duration = (updateData.duration as number) ?? call.duration;
               if (finalStatus === "completed" && duration && duration > 10) {
                 outcome = "ANSWERED";
               } else if (finalStatus === "completed" && (!duration || duration <= 10)) {
                 outcome = "VOICEMAIL";
-              } else if (finalStatus === "no-answer" || finalStatus === "canceled") {
-                outcome = "NO_ANSWER";
-              } else if (finalStatus === "busy") {
+              } else if (finalStatus === "no-answer" || finalStatus === "canceled" || finalStatus === "busy") {
                 outcome = "NO_ANSWER";
               } else if (finalStatus === "failed") {
                 outcome = "DECLINED";
               }
 
+              console.log(`Mapped outcome: ${outcome} for recipient: ${call.recipient_number}`);
+
               if (outcome && call.recipient_number) {
-                // Update the most recent PENDING outcome for this phone number
-                const { data: pendingOutcomes } = await supabase
+                const { data: pendingOutcomes, error: poErr } = await supabase
                   .from("call_outcomes")
                   .select("id")
                   .eq("user_id", user.id)
@@ -250,11 +251,14 @@ Deno.serve(async (req) => {
                   .order("created_at", { ascending: false })
                   .limit(1);
 
+                console.log(`Found ${pendingOutcomes?.length || 0} pending outcomes for ${call.recipient_number}`, poErr?.message || "");
+
                 if (pendingOutcomes && pendingOutcomes.length > 0) {
-                  await supabase
+                  const { error: upErr } = await supabase
                     .from("call_outcomes")
                     .update({ outcome })
                     .eq("id", pendingOutcomes[0].id);
+                  console.log(`Updated outcome ${pendingOutcomes[0].id} to ${outcome}`, upErr?.message || "ok");
                 }
               }
             }
