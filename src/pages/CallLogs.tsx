@@ -217,7 +217,7 @@ export default function CallLogs() {
                         className="text-muted-foreground hover:text-foreground"
                       >
                         {copiedId === getCallId(selectedCall) ? (
-                          <Check className="h-3 w-3 text-green-500" />
+                          <Check className="h-3 w-3 text-primary" />
                         ) : (
                           <Copy className="h-3 w-3" />
                         )}
