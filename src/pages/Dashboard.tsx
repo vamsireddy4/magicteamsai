@@ -49,7 +49,9 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    fetchData();
+    if (!user) return;
+    // Auto-sync on load
+    syncCallData();
   }, [user]);
 
   const formatDuration = (seconds: number) => {
