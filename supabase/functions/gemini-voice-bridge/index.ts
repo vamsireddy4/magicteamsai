@@ -206,12 +206,22 @@ Deno.serve((req) => {
       }
     };
 
-    geminiWs.onmessage = (ev) => {
+    geminiWs.onmessage = async (ev) => {
       try {
-        // Gemini sends text frames (JSON)
-        const text = typeof ev.data === "string" ? ev.data : "";
+        // Gemini can send text or binary (Blob/ArrayBuffer) frames
+        let text: string;
+        if (typeof ev.data === "string") {
+          text = ev.data;
+        } else if (ev.data instanceof Blob) {
+          text = await ev.data.text();
+        } else if (ev.data instanceof ArrayBuffer) {
+          text = new TextDecoder().decode(ev.data);
+        } else {
+          console.log("[BRIDGE] Gemini sent unknown data type, skipping");
+          return;
+        }
         if (!text) {
-          console.log("[BRIDGE] Gemini sent non-text message, skipping");
+          console.log("[BRIDGE] Gemini sent empty message, skipping");
           return;
         }
         const msg = JSON.parse(text);
