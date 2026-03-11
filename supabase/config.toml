@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.gemini-voice-bridge]
 verify_jwt = false
+
+[functions.summarize-call]
+verify_jwt = false
