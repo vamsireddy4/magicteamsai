@@ -257,7 +257,7 @@ export default function CampaignsTab() {
           </div>
           <div className="flex gap-2">
             <Badge className={`${STATUS_COLORS[c.status] || ""} text-sm px-3 py-1`}>{c.status}</Badge>
-            <Badge variant="outline" className="text-sm px-3 py-1">Round {c.round}</Badge>
+            
           </div>
         </div>
 
