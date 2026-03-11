@@ -7,7 +7,9 @@ const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 
 // Voices supported by Gemini native audio models
 const GEMINI_SUPPORTED_VOICES = new Set([
-  "Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr",
+  "Kore", "Aoede", "Leda", "Autonoe", "Erinome", "Laomedeia", "Callirrhoe", "Despina",
+  "Puck", "Charon", "Fenrir", "Orus", "Vale", "Zephyr", "Umbriel",
+  "Schedar", "Achird", "Sadachbia", "Sadaltager", "Iapetus",
 ]);
 const DEFAULT_GEMINI_VOICE = "Kore";
 

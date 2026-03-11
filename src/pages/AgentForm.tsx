@@ -334,18 +334,20 @@ export default function AgentForm() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Voice</Label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Custom (ElevenLabs)</span>
-                    <Switch
-                      checked={useCustomVoice}
-                      onCheckedChange={(val) => {
-                        setUseCustomVoice(val);
-                        if (!val && voices.length > 0) {
-                          setForm({ ...form, voice: voices[0].name });
-                        }
-                      }}
-                    />
-                  </div>
+                  {form.ai_provider === "ultravox" && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Custom (ElevenLabs)</span>
+                      <Switch
+                        checked={useCustomVoice}
+                        onCheckedChange={(val) => {
+                          setUseCustomVoice(val);
+                          if (!val && voices.length > 0) {
+                            setForm({ ...form, voice: voices[0].name });
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {useCustomVoice ? (
