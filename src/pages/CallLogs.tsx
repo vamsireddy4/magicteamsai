@@ -328,6 +328,36 @@ export default function CallLogs() {
                     </p>
                   </div>
                 )}
+
+                {/* AI Summary */}
+                {selectedCall.transcript && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium flex items-center gap-1.5">
+                        <Sparkles className="h-4 w-4 text-primary" /> AI Summary
+                      </p>
+                      {!callSummary && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => summarizeCall(selectedCall.id)}
+                          disabled={summarizing}
+                        >
+                          {summarizing ? (
+                            <><Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> Analyzing...</>
+                          ) : (
+                            <><Sparkles className="h-3 w-3 mr-1.5" /> Generate Summary</>
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                    {callSummary && (
+                      <div className="rounded-lg bg-primary/5 border border-primary/20 p-4 text-sm whitespace-pre-wrap">
+                        {callSummary}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </DialogContent>
