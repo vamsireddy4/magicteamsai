@@ -303,7 +303,12 @@ Deno.serve(async (req) => {
             to: recipient_number,
             from: phoneConfig.phone_number,
             stream_url: joinUrl,
-            stream_track: "both_tracks",
+            stream_track: "inbound_track",
+            stream_bidirectional_mode: "rtp",
+            stream_codec: "L16",
+            stream_bidirectional_codec: "L16",
+            stream_bidirectional_sampling_rate: 16000,
+            stream_bidirectional_target_legs: "opposite",
           }),
         });
         if (!telnyxResponse.ok) {
