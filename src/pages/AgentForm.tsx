@@ -210,9 +210,9 @@ export default function AgentForm() {
 
   // Find current voice name for display
   const currentVoiceName = useMemo(() => {
-    const found = voices.find(v => v.voiceId === form.voice || v.name === form.voice);
+    const found = allVoices.find(v => v.voiceId === form.voice || v.name === form.voice);
     return found ? `${found.name} ${found.languageLabel || ""}` : form.voice;
-  }, [voices, form.voice]);
+  }, [allVoices, form.voice]);
 
   return (
     <DashboardLayout>
