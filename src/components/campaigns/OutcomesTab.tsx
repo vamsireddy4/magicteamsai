@@ -84,12 +84,16 @@ export default function OutcomesTab() {
 
   const fetchData = async () => {
     if (!user) return;
-    const [outcomesRes, campaignsRes] = await Promise.all([
+    const [outcomesRes, campaignsRes, callLogsRes, contactsRes] = await Promise.all([
       supabase.from("call_outcomes").select("*").order("call_timestamp", { ascending: false }),
       supabase.from("campaigns").select("id, venue_name, venue_location, round, age_range, times, start_date, end_date, booking_target, status, notes, calls_made, total_contacts").order("created_at", { ascending: false }),
+      supabase.from("call_logs").select("*").order("started_at", { ascending: false }),
+      supabase.from("contacts").select("campaign_id, phone_number, first_name, child_names"),
     ]);
     setOutcomes((outcomesRes.data as Outcome[]) || []);
     setCampaigns((campaignsRes.data as Campaign[]) || []);
+    setCallLogs((callLogsRes.data as CallLog[]) || []);
+    setContacts(contactsRes.data || []);
     setLoading(false);
   };
 
