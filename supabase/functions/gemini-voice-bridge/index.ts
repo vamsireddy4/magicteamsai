@@ -7,7 +7,7 @@ const VALID_GEMINI_VOICES = new Set([
   "Achird", "Sadachbia", "Sadaltager", "Callirrhoe", "Iapetus", "Despina",
 ]);
 
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-preview-native-audio-dialog";
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 
 // ── μ-law codec ──
 
