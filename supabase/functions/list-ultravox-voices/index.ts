@@ -62,12 +62,23 @@ Deno.serve(async (req) => {
       return allVoices;
     };
 
-    const [voices, modelsRes] = await Promise.all([
-      fetchAllVoices(),
-      fetch("https://api.ultravox.ai/api/models", { headers }),
-    ]);
+    const fetchAllModels = async () => {
+      const allModels: any[] = [];
+      let url: string | null = "https://api.ultravox.ai/api/models?pageSize=100";
+      while (url) {
+        const res = await fetch(url, { headers });
+        if (!res.ok) break;
+        const data = await res.json();
+        allModels.push(...(data.results || []));
+        url = data.next || null;
+      }
+      return allModels;
+    };
 
-    const modelsData = modelsRes.ok ? await modelsRes.json() : { results: [] };
+    const [voices, models] = await Promise.all([
+      fetchAllVoices(),
+      fetchAllModels(),
+    ]);
 
     return new Response(
       JSON.stringify({
