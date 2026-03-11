@@ -88,38 +88,60 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: "GEMINI_API_KEY not configured" }), { status: 500 });
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-  const { data: agent } = await supabase.from("agents").select("*").eq("id", agentId).single();
-  if (!agent) {
-    return new Response(JSON.stringify({ error: "Agent not found" }), { status: 404 });
-  }
-
-  const { data: kbItems } = await supabase.from("knowledge_base_items").select("*").eq("agent_id", agent.id);
-  let systemPrompt = agent.system_prompt;
-  if (kbItems && kbItems.length > 0) {
-    systemPrompt += "\n\n--- KNOWLEDGE BASE ---\n";
-    for (const item of kbItems) {
-      if (item.content) systemPrompt += `\n## ${item.title}\n${item.content}\n`;
-      if (item.website_url) systemPrompt += `\n## ${item.title}\nRefer to: ${item.website_url}\n`;
-    }
-  }
-
-  const geminiModel = agent.model || "gemini-2.0-flash-live-001";
-  const geminiVoice = agent.voice || "Puck";
-
+  // CRITICAL: Upgrade WebSocket IMMEDIATELY — before any DB queries
+  // Twilio/Telnyx will timeout if the upgrade is delayed
   const { socket: twilioWs, response } = Deno.upgradeWebSocket(req);
 
   let geminiWs: WebSocket | null = null;
   let streamSid = "";
   let geminiReady = false;
-  // Buffer to queue audio chunks received before Gemini is ready
   const pendingAudioChunks: string[] = [];
+
+  // Agent config will be loaded asynchronously after WS connects
+  let systemPrompt = "";
+  let geminiModel = "gemini-2.0-flash-live-001";
+  let geminiVoice = "Puck";
+  let agentConfigLoaded = false;
+
+  // Load agent config in background (non-blocking)
+  async function loadAgentConfig() {
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+      const { data: agent } = await supabase.from("agents").select("*").eq("id", agentId).single();
+      if (!agent) {
+        console.error("Agent not found:", agentId);
+        twilioWs.close();
+        return;
+      }
+
+      systemPrompt = agent.system_prompt;
+      geminiModel = agent.model || "gemini-2.0-flash-live-001";
+      geminiVoice = agent.voice || "Puck";
+
+      const { data: kbItems } = await supabase.from("knowledge_base_items").select("*").eq("agent_id", agent.id);
+      if (kbItems && kbItems.length > 0) {
+        systemPrompt += "\n\n--- KNOWLEDGE BASE ---\n";
+        for (const item of kbItems) {
+          if (item.content) systemPrompt += `\n## ${item.title}\n${item.content}\n`;
+          if (item.website_url) systemPrompt += `\n## ${item.title}\nRefer to: ${item.website_url}\n`;
+        }
+      }
+
+      agentConfigLoaded = true;
+      console.log(`Agent config loaded: model=${geminiModel}, voice=${geminiVoice}`);
+    } catch (err) {
+      console.error("Error loading agent config:", err);
+      twilioWs.close();
+    }
+  }
 
   twilioWs.onopen = () => {
     console.log("Twilio/Telnyx WebSocket connected");
+    // Start loading agent config immediately
+    loadAgentConfig();
   };
 
   twilioWs.onmessage = (event) => {
@@ -130,107 +152,115 @@ Deno.serve(async (req) => {
         streamSid = msg.start?.streamSid || msg.start?.stream_id || "";
         console.log(`Stream started: ${streamSid}`);
 
-        // Connect to Gemini Live API
-        const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`;
-        geminiWs = new WebSocket(geminiUrl);
+        // Wait for agent config before connecting to Gemini
+        function connectGemini() {
+          if (!agentConfigLoaded) {
+            setTimeout(connectGemini, 50);
+            return;
+          }
 
-        geminiWs.onopen = () => {
-          console.log("Gemini WebSocket connected, sending setup...");
-          const setup = {
-            setup: {
-              model: `models/${geminiModel}`,
-              generationConfig: {
-                responseModalities: ["AUDIO"],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: {
-                      voiceName: geminiVoice,
+          console.log("Connecting to Gemini Live API...");
+          const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`;
+          geminiWs = new WebSocket(geminiUrl);
+
+          geminiWs.onopen = () => {
+            console.log("Gemini WebSocket connected, sending setup...");
+            const setup = {
+              setup: {
+                model: `models/${geminiModel}`,
+                generationConfig: {
+                  responseModalities: ["AUDIO"],
+                  speechConfig: {
+                    voiceConfig: {
+                      prebuiltVoiceConfig: {
+                        voiceName: geminiVoice,
+                      },
                     },
                   },
                 },
+                systemInstruction: {
+                  parts: [{ text: systemPrompt }],
+                },
               },
-              systemInstruction: {
-                parts: [{ text: systemPrompt }],
-              },
-            },
+            };
+            geminiWs!.send(JSON.stringify(setup));
           };
-          geminiWs!.send(JSON.stringify(setup));
-        };
 
-        geminiWs.onmessage = (geminiEvent) => {
-          try {
-            const geminiMsg = JSON.parse(geminiEvent.data);
+          geminiWs.onmessage = (geminiEvent) => {
+            try {
+              const geminiMsg = JSON.parse(geminiEvent.data);
 
-            // Handle setupComplete - Gemini is now ready to receive audio
-            if (geminiMsg.setupComplete) {
-              console.log("Gemini setup complete - ready for audio");
-              geminiReady = true;
+              if (geminiMsg.setupComplete) {
+                console.log("Gemini setup complete - ready for audio");
+                geminiReady = true;
 
-              // Flush any buffered audio chunks
-              for (const chunk of pendingAudioChunks) {
-                geminiWs!.send(JSON.stringify({
-                  realtimeInput: {
-                    mediaChunks: [{
-                      mimeType: "audio/pcm;rate=16000",
-                      data: chunk,
-                    }],
-                  },
-                }));
+                // Flush buffered audio
+                const bufferedCount = pendingAudioChunks.length;
+                for (const chunk of pendingAudioChunks) {
+                  geminiWs!.send(JSON.stringify({
+                    realtimeInput: {
+                      mediaChunks: [{
+                        mimeType: "audio/pcm;rate=16000",
+                        data: chunk,
+                      }],
+                    },
+                  }));
+                }
+                pendingAudioChunks.length = 0;
+                if (bufferedCount > 0) {
+                  console.log(`Flushed ${bufferedCount} buffered audio chunks`);
+                }
+                return;
               }
-              pendingAudioChunks.length = 0;
-              console.log(`Flushed ${pendingAudioChunks.length} buffered audio chunks`);
-              return;
-            }
 
-            // Handle audio response from Gemini
-            if (geminiMsg.serverContent?.modelTurn?.parts) {
-              for (const part of geminiMsg.serverContent.modelTurn.parts) {
-                if (part.inlineData?.data && part.inlineData.mimeType?.includes("audio/pcm")) {
-                  const pcmBytes = base64ToUint8Array(part.inlineData.data);
-                  const mulawBytes = pcm24kToMulaw8k(pcmBytes);
-                  const payload = uint8ArrayToBase64(mulawBytes);
+              if (geminiMsg.serverContent?.modelTurn?.parts) {
+                for (const part of geminiMsg.serverContent.modelTurn.parts) {
+                  if (part.inlineData?.data && part.inlineData.mimeType?.includes("audio/pcm")) {
+                    const pcmBytes = base64ToUint8Array(part.inlineData.data);
+                    const mulawBytes = pcm24kToMulaw8k(pcmBytes);
+                    const payload = uint8ArrayToBase64(mulawBytes);
 
-                  if (twilioWs.readyState === WebSocket.OPEN) {
-                    twilioWs.send(JSON.stringify({
-                      event: "media",
-                      streamSid,
-                      media: { payload },
-                    }));
+                    if (twilioWs.readyState === WebSocket.OPEN) {
+                      twilioWs.send(JSON.stringify({
+                        event: "media",
+                        streamSid,
+                        media: { payload },
+                      }));
+                    }
                   }
                 }
               }
-            }
 
-            // Handle turn complete
-            if (geminiMsg.serverContent?.turnComplete) {
-              console.log("Gemini turn complete");
-            }
+              if (geminiMsg.serverContent?.turnComplete) {
+                console.log("Gemini turn complete");
+              }
 
-            // Handle errors from Gemini
-            if (geminiMsg.error) {
-              console.error("Gemini error:", JSON.stringify(geminiMsg.error));
+              if (geminiMsg.error) {
+                console.error("Gemini error:", JSON.stringify(geminiMsg.error));
+              }
+            } catch (err) {
+              console.error("Error processing Gemini message:", err);
             }
-          } catch (err) {
-            console.error("Error processing Gemini message:", err);
-          }
-        };
+          };
 
-        geminiWs.onerror = (err) => {
-          console.error("Gemini WebSocket error:", err);
-        };
+          geminiWs.onerror = (err) => {
+            console.error("Gemini WebSocket error:", err);
+          };
 
-        geminiWs.onclose = (closeEvent) => {
-          console.log(`Gemini WebSocket closed: code=${closeEvent.code}, reason=${closeEvent.reason}`);
-          geminiReady = false;
-          // Don't immediately close Twilio - give a moment for any final audio
-          setTimeout(() => {
-            if (twilioWs.readyState === WebSocket.OPEN) {
-              twilioWs.close();
-            }
-          }, 500);
-        };
+          geminiWs.onclose = (closeEvent) => {
+            console.log(`Gemini WebSocket closed: code=${closeEvent.code}, reason=${closeEvent.reason}`);
+            geminiReady = false;
+            setTimeout(() => {
+              if (twilioWs.readyState === WebSocket.OPEN) {
+                twilioWs.close();
+              }
+            }, 500);
+          };
+        }
+
+        connectGemini();
+
       } else if (msg.event === "media") {
-        // Convert and forward audio to Gemini
         const mulawBytes = base64ToUint8Array(msg.media.payload);
         const pcmBytes = mulawToPcm16k(mulawBytes);
         const pcmBase64 = uint8ArrayToBase64(pcmBytes);
@@ -246,16 +276,14 @@ Deno.serve(async (req) => {
               },
             }));
           } else {
-            // Buffer audio until Gemini setup is complete
             pendingAudioChunks.push(pcmBase64);
-            // Limit buffer size to prevent memory issues
-            if (pendingAudioChunks.length > 100) {
+            if (pendingAudioChunks.length > 200) {
               pendingAudioChunks.shift();
             }
           }
         }
       } else if (msg.event === "stop") {
-        console.log("Twilio/Telnyx stream stopped");
+        console.log("Stream stopped");
         if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
           geminiWs.close();
         }
