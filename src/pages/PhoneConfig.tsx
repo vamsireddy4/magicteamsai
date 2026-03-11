@@ -75,10 +75,24 @@ export default function PhoneConfig() {
 
   useEffect(() => { fetchConfigs(); }, [user]);
 
-  const openConnectDialog = (providerId: string) => {
+  const openConnectDialog = (providerId: string, config?: PhoneConfig) => {
     setSelectedProvider(providerId);
-    setForm({});
     setShowSecrets({});
+    if (config) {
+      setEditingConfig(config);
+      const formData: Record<string, string> = { phone_number: config.phone_number };
+      if (providerId === "twilio") {
+        formData.twilio_account_sid = config.twilio_account_sid || "";
+        formData.twilio_auth_token = config.twilio_auth_token || "";
+      } else if (providerId === "telnyx") {
+        formData.telnyx_api_key = config.telnyx_api_key || "";
+        formData.telnyx_connection_id = config.telnyx_connection_id || "";
+      }
+      setForm(formData);
+    } else {
+      setEditingConfig(null);
+      setForm({});
+    }
     setDialogOpen(true);
   };
 
