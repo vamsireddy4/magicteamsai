@@ -131,24 +131,22 @@ Deno.serve(async (req) => {
     const ultravoxTools: any[] = [];
     if (agentTools && agentTools.length > 0) {
       for (const tool of agentTools) {
-        const params: Record<string, any> = {};
-        const required: string[] = [];
+        const dynamicParameters: any[] = [];
         if (Array.isArray(tool.parameters)) {
           for (const p of tool.parameters as any[]) {
-            params[p.name] = { type: p.type || "string", description: p.description || "" };
-            if (p.required) required.push(p.name);
+            dynamicParameters.push({
+              name: p.name,
+              location: "PARAMETER_LOCATION_BODY",
+              schema: { type: p.type || "string", description: p.description || "" },
+              required: !!p.required,
+            });
           }
         }
         ultravoxTools.push({
           temporaryTool: {
             modelToolName: tool.name,
             description: tool.description,
-            dynamicParameters: [{
-              name: "args",
-              location: "PARAMETER_LOCATION_BODY",
-              schema: { type: "object", properties: params, required },
-              required: true,
-            }],
+            dynamicParameters,
             http: {
               baseUrlPattern: tool.http_url,
               httpMethod: tool.http_method,
