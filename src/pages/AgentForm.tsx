@@ -285,7 +285,9 @@ export default function AgentForm() {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {AI_PROVIDERS.map((p) => (
-                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                      <SelectItem key={p.value} value={p.value} disabled={(p as any).disabled}>
+                        {p.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
