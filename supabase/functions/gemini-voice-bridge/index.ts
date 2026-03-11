@@ -29,38 +29,31 @@ function mulawEncode(sample: number): number {
   return ~(sign | (exponent << 4) | mantissa) & 0xFF;
 }
 
-// Convert mulaw 8kHz buffer to PCM 16-bit 16kHz (upsample 2x with interpolation)
 function mulawToPcm16k(mulawBytes: Uint8Array): Uint8Array {
-  const pcmSamples = mulawBytes.length * 2; // 2x upsample
-  const buffer = new ArrayBuffer(pcmSamples * 2); // 16-bit = 2 bytes
+  const pcmSamples = mulawBytes.length * 2;
+  const buffer = new ArrayBuffer(pcmSamples * 2);
   const view = new DataView(buffer);
-
   for (let i = 0; i < mulawBytes.length; i++) {
     const sample = MULAW_DECODE_TABLE[mulawBytes[i]];
     const nextSample = i + 1 < mulawBytes.length
       ? MULAW_DECODE_TABLE[mulawBytes[i + 1]]
       : sample;
     const interpolated = Math.round((sample + nextSample) / 2);
-
     view.setInt16(i * 4, sample, true);
     view.setInt16(i * 4 + 2, interpolated, true);
   }
-
   return new Uint8Array(buffer);
 }
 
-// Convert PCM 16-bit 24kHz to mulaw 8kHz (downsample 3x)
 function pcm24kToMulaw8k(pcmBytes: Uint8Array): Uint8Array {
   const view = new DataView(pcmBytes.buffer, pcmBytes.byteOffset, pcmBytes.byteLength);
   const totalSamples = Math.floor(pcmBytes.length / 2);
   const outputLength = Math.floor(totalSamples / 3);
   const output = new Uint8Array(outputLength);
-
   for (let i = 0; i < outputLength; i++) {
-    const sample = view.getInt16(i * 6, true); // every 3rd sample, 2 bytes each
+    const sample = view.getInt16(i * 6, true);
     output[i] = mulawEncode(sample);
   }
-
   return output;
 }
 
@@ -99,13 +92,11 @@ Deno.serve(async (req) => {
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-  // Fetch agent config
   const { data: agent } = await supabase.from("agents").select("*").eq("id", agentId).single();
   if (!agent) {
     return new Response(JSON.stringify({ error: "Agent not found" }), { status: 404 });
   }
 
-  // Fetch knowledge base
   const { data: kbItems } = await supabase.from("knowledge_base_items").select("*").eq("agent_id", agent.id);
   let systemPrompt = agent.system_prompt;
   if (kbItems && kbItems.length > 0) {
@@ -116,37 +107,35 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Determine Gemini model
   const geminiModel = agent.model || "gemini-2.0-flash-live-001";
-
-  // Gemini voice mapping
   const geminiVoice = agent.voice || "Puck";
 
-  // Upgrade Twilio/Telnyx WebSocket
   const { socket: twilioWs, response } = Deno.upgradeWebSocket(req);
 
   let geminiWs: WebSocket | null = null;
   let streamSid = "";
+  let geminiReady = false;
+  // Buffer to queue audio chunks received before Gemini is ready
+  const pendingAudioChunks: string[] = [];
 
   twilioWs.onopen = () => {
-    console.log("Twilio WebSocket connected");
+    console.log("Twilio/Telnyx WebSocket connected");
   };
 
-  twilioWs.onmessage = async (event) => {
+  twilioWs.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);
 
       if (msg.event === "start") {
-        streamSid = msg.start?.streamSid || "";
-        console.log(`Twilio stream started: ${streamSid}`);
+        streamSid = msg.start?.streamSid || msg.start?.stream_id || "";
+        console.log(`Stream started: ${streamSid}`);
 
         // Connect to Gemini Live API
         const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`;
         geminiWs = new WebSocket(geminiUrl);
 
         geminiWs.onopen = () => {
-          console.log("Gemini WebSocket connected");
-          // Send setup message
+          console.log("Gemini WebSocket connected, sending setup...");
           const setup = {
             setup: {
               model: `models/${geminiModel}`,
@@ -172,6 +161,27 @@ Deno.serve(async (req) => {
           try {
             const geminiMsg = JSON.parse(geminiEvent.data);
 
+            // Handle setupComplete - Gemini is now ready to receive audio
+            if (geminiMsg.setupComplete) {
+              console.log("Gemini setup complete - ready for audio");
+              geminiReady = true;
+
+              // Flush any buffered audio chunks
+              for (const chunk of pendingAudioChunks) {
+                geminiWs!.send(JSON.stringify({
+                  realtimeInput: {
+                    mediaChunks: [{
+                      mimeType: "audio/pcm;rate=16000",
+                      data: chunk,
+                    }],
+                  },
+                }));
+              }
+              pendingAudioChunks.length = 0;
+              console.log(`Flushed ${pendingAudioChunks.length} buffered audio chunks`);
+              return;
+            }
+
             // Handle audio response from Gemini
             if (geminiMsg.serverContent?.modelTurn?.parts) {
               for (const part of geminiMsg.serverContent.modelTurn.parts) {
@@ -180,7 +190,6 @@ Deno.serve(async (req) => {
                   const mulawBytes = pcm24kToMulaw8k(pcmBytes);
                   const payload = uint8ArrayToBase64(mulawBytes);
 
-                  // Send back to Twilio
                   if (twilioWs.readyState === WebSocket.OPEN) {
                     twilioWs.send(JSON.stringify({
                       event: "media",
@@ -191,6 +200,16 @@ Deno.serve(async (req) => {
                 }
               }
             }
+
+            // Handle turn complete
+            if (geminiMsg.serverContent?.turnComplete) {
+              console.log("Gemini turn complete");
+            }
+
+            // Handle errors from Gemini
+            if (geminiMsg.error) {
+              console.error("Gemini error:", JSON.stringify(geminiMsg.error));
+            }
           } catch (err) {
             console.error("Error processing Gemini message:", err);
           }
@@ -200,30 +219,43 @@ Deno.serve(async (req) => {
           console.error("Gemini WebSocket error:", err);
         };
 
-        geminiWs.onclose = () => {
-          console.log("Gemini WebSocket closed");
-          if (twilioWs.readyState === WebSocket.OPEN) {
-            twilioWs.close();
-          }
+        geminiWs.onclose = (closeEvent) => {
+          console.log(`Gemini WebSocket closed: code=${closeEvent.code}, reason=${closeEvent.reason}`);
+          geminiReady = false;
+          // Don't immediately close Twilio - give a moment for any final audio
+          setTimeout(() => {
+            if (twilioWs.readyState === WebSocket.OPEN) {
+              twilioWs.close();
+            }
+          }, 500);
         };
       } else if (msg.event === "media") {
-        // Forward audio to Gemini
-        if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-          const mulawBytes = base64ToUint8Array(msg.media.payload);
-          const pcmBytes = mulawToPcm16k(mulawBytes);
-          const pcmBase64 = uint8ArrayToBase64(pcmBytes);
+        // Convert and forward audio to Gemini
+        const mulawBytes = base64ToUint8Array(msg.media.payload);
+        const pcmBytes = mulawToPcm16k(mulawBytes);
+        const pcmBase64 = uint8ArrayToBase64(pcmBytes);
 
-          geminiWs.send(JSON.stringify({
-            realtimeInput: {
-              mediaChunks: [{
-                mimeType: "audio/pcm;rate=16000",
-                data: pcmBase64,
-              }],
-            },
-          }));
+        if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+          if (geminiReady) {
+            geminiWs.send(JSON.stringify({
+              realtimeInput: {
+                mediaChunks: [{
+                  mimeType: "audio/pcm;rate=16000",
+                  data: pcmBase64,
+                }],
+              },
+            }));
+          } else {
+            // Buffer audio until Gemini setup is complete
+            pendingAudioChunks.push(pcmBase64);
+            // Limit buffer size to prevent memory issues
+            if (pendingAudioChunks.length > 100) {
+              pendingAudioChunks.shift();
+            }
+          }
         }
       } else if (msg.event === "stop") {
-        console.log("Twilio stream stopped");
+        console.log("Twilio/Telnyx stream stopped");
         if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
           geminiWs.close();
         }
@@ -234,14 +266,15 @@ Deno.serve(async (req) => {
   };
 
   twilioWs.onclose = () => {
-    console.log("Twilio WebSocket closed");
+    console.log("Twilio/Telnyx WebSocket closed");
+    geminiReady = false;
     if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
       geminiWs.close();
     }
   };
 
   twilioWs.onerror = (err) => {
-    console.error("Twilio WebSocket error:", err);
+    console.error("Twilio/Telnyx WebSocket error:", err);
   };
 
   return response;
