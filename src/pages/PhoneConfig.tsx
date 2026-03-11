@@ -198,6 +198,9 @@ export default function PhoneConfig() {
                             checked={config.is_active}
                             onCheckedChange={() => toggleActive(config.id, config.is_active)}
                           />
+                          <Button variant="ghost" size="icon" onClick={() => openConnectDialog(config.provider, config)}>
+                            <Pencil className="h-4 w-4 text-muted-foreground" />
+                          </Button>
                           <Button variant="ghost" size="icon" onClick={() => deleteConfig(config.id)}>
                             <Trash2 className="h-4 w-4 text-muted-foreground" />
                           </Button>
