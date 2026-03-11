@@ -154,6 +154,27 @@ async function placeCall(
   return { ultravoxCallId, callSid };
 }
 
+async function createOutcome(
+  supabase: any,
+  userId: string,
+  campaignId: string,
+  contact: any,
+  status: string,
+  attemptNumber: number
+) {
+  await supabase.from("call_outcomes").insert({
+    user_id: userId,
+    campaign_id: campaignId,
+    phone_number: contact.phone_number,
+    parent_name: contact.first_name || null,
+    child_names: contact.child_names || null,
+    venue_name: contact.venue_name || null,
+    contact_id: contact.id || null,
+    outcome: status,
+    attempt_number: attemptNumber,
+  });
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
