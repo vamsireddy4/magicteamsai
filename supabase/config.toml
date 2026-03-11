@@ -20,3 +20,15 @@ verify_jwt = false
 
 [functions.summarize-call]
 verify_jwt = false
+
+[functions.run-campaign]
+verify_jwt = false
+
+[functions.sync-call-data]
+verify_jwt = false
+
+[functions.process-scheduled-calls]
+verify_jwt = false
+
+[functions.analyze-csv]
+verify_jwt = false
