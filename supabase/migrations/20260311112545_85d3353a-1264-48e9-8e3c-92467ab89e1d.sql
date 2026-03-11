@@ -1,0 +1,1 @@
+ALTER TABLE public.contacts ADD COLUMN metadata jsonb DEFAULT '{}'::jsonb;
