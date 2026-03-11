@@ -377,17 +377,6 @@ export default function OutcomesTab() {
         </Dialog>
       </div>
 
-      {/* Global Outcome Summary */}
-      <div className="grid gap-3 grid-cols-3">
-        {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
-          <Card key={o}>
-            <CardContent className="pt-4 pb-3 text-center">
-              <p className="text-2xl font-bold">{allOutcomeCounts[o] || 0}</p>
-              <Badge className={`${OUTCOME_COLORS[o]} mt-1`} variant="secondary">{o.replace("_", " ")}</Badge>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
 
       {/* Campaign Cards */}
       {loading ? <div className="p-8 text-center text-muted-foreground">Loading...</div>
