@@ -231,18 +231,6 @@ export default function OutcomesTab() {
           </Button>
         </div>
 
-        {/* Outcome Breakdown */}
-        <div className="grid gap-3 grid-cols-3">
-          {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
-            <Card key={o}>
-              <CardContent className="pt-4 pb-3 text-center">
-                <p className="text-2xl font-bold">{outcomeCounts[o] || 0}</p>
-                <Badge className={`${OUTCOME_COLORS[o]} mt-1`} variant="secondary">{o.replace("_", " ")}</Badge>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
         {/* Search & Filter */}
         <div className="flex gap-3 flex-wrap items-end">
           <div className="relative flex-1 min-w-[200px]">
@@ -260,40 +248,6 @@ export default function OutcomesTab() {
           </Select>
         </div>
 
-        {/* Call Results Table */}
-        <Card>
-          <CardContent className="p-0">
-            {filteredEnriched.length === 0 ? <div className="p-8 text-center text-muted-foreground">No call results for this campaign.</div> : (
-              <div className="overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Contact</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead>Result</TableHead>
-                      <TableHead>Duration</TableHead>
-                      <TableHead></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredEnriched.slice(0, 100).map((e) => (
-                      <TableRow key={e.outcome.id} className="cursor-pointer hover:bg-muted/50" onClick={() => e.callLog && setSelectedCallLog(e.callLog)}>
-                        <TableCell className="text-xs">{new Date(e.outcome.call_timestamp).toLocaleString()}</TableCell>
-                        <TableCell className="text-sm font-medium">{e.contact?.first_name || e.outcome.parent_name || "—"}</TableCell>
-                        <TableCell className="font-mono text-xs">{e.outcome.phone_number}</TableCell>
-                        <TableCell><Badge className={OUTCOME_COLORS[e.outcome.outcome] || "bg-muted text-muted-foreground"} variant="secondary">{e.outcome.outcome}</Badge></TableCell>
-                        <TableCell className="text-sm flex items-center gap-1"><Clock className="h-3 w-3 text-muted-foreground" /> {formatDuration(e.callLog?.duration ?? null)}</TableCell>
-                        <TableCell>{(e.callLog?.transcript || e.outcome.transcript) && <FileText className="h-4 w-4 text-muted-foreground" />}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                {filteredEnriched.length > 100 && <p className="text-xs text-muted-foreground p-3">Showing 100 of {filteredEnriched.length}</p>}
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
         {/* Call Detail Dialog */}
         <Dialog open={!!selectedCallLog} onOpenChange={(open) => !open && setSelectedCallLog(null)}>
