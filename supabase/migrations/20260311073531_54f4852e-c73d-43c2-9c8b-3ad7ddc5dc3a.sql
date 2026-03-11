@@ -1,0 +1,1 @@
+UPDATE public.agents SET model = 'gemini-2.5-flash-native-audio-preview-12-2025' WHERE model IN ('gemini-2.5-flash-preview-native-audio-dialog', 'gemini-2.0-flash-live-001');

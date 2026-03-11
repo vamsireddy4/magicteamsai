@@ -35,7 +35,6 @@ const FALLBACK_MODELS: UltravoxModel[] = [
 ];
 
 const GEMINI_MODELS: UltravoxModel[] = [
-  { name: "gemini-2.5-flash-preview-native-audio-dialog" },
   { name: "gemini-2.5-flash-native-audio-preview-12-2025" },
   { name: "gemini-2.5-flash-native-audio-preview-09-2025" },
 ];
