@@ -250,33 +250,18 @@ Deno.serve(async (req) => {
       // Build Ultravox medium based on telephony provider
       const medium: any = provider === "telnyx"
         ? { telnyx: {} }
-        : { twilio: { } };
-
-      // Telnyx outbound calls should wait for the callee, but still recover
-      // with a short greeting if they answer and stay silent.
-      const shouldWaitForRecipient = provider === "telnyx";
-      const telnyxFirstSpeakerSettings = {
-        user: {
-          fallback: {
-            delay: "2.5s",
-            prompt: "If the callee answers but stays silent, greet them briefly and ask how you can help.",
-          },
-        },
-      };
+        : { twilio: {} };
 
       const ultravoxBody: any = {
         systemPrompt,
         model: agent.model || "fixie-ai/ultravox-v0.7",
         voice: agent.voice,
         temperature: Number(agent.temperature),
-        firstSpeakerSettings: shouldWaitForRecipient
-          ? telnyxFirstSpeakerSettings
-          : agent.first_speaker === "FIRST_SPEAKER_AGENT"
-            ? { agent: {} }
-            : { user: {} },
+        firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT"
+          ? { agent: {} }
+          : { user: {} },
         medium,
         languageHint: agent.language_hint || "en",
-        joinTimeout: shouldWaitForRecipient ? "90s" : "30s",
         maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
       };
       if (ultravoxTools.length > 0) {
