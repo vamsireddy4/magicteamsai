@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Phone, Trash2, Settings, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import { Phone, Trash2, Settings, Eye, EyeOff, CheckCircle2, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import twilioLogo from "@/assets/twilio-logo.png";
 import telnyxLogo from "@/assets/telnyx-logo.png";
@@ -64,6 +64,7 @@ export default function PhoneConfig() {
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<PhoneConfig | null>(null);
 
   const fetchConfigs = async () => {
     if (!user) return;
@@ -74,10 +75,24 @@ export default function PhoneConfig() {
 
   useEffect(() => { fetchConfigs(); }, [user]);
 
-  const openConnectDialog = (providerId: string) => {
+  const openConnectDialog = (providerId: string, config?: PhoneConfig) => {
     setSelectedProvider(providerId);
-    setForm({});
     setShowSecrets({});
+    if (config) {
+      setEditingConfig(config);
+      const formData: Record<string, string> = { phone_number: config.phone_number };
+      if (providerId === "twilio") {
+        formData.twilio_account_sid = config.twilio_account_sid || "";
+        formData.twilio_auth_token = config.twilio_auth_token || "";
+      } else if (providerId === "telnyx") {
+        formData.telnyx_api_key = config.telnyx_api_key || "";
+        formData.telnyx_connection_id = config.telnyx_connection_id || "";
+      }
+      setForm(formData);
+    } else {
+      setEditingConfig(null);
+      setForm({});
+    }
     setDialogOpen(true);
   };
 
@@ -86,30 +101,36 @@ export default function PhoneConfig() {
     if (!user || !selectedProvider) return;
     setSaving(true);
 
-    const insertData: Record<string, any> = {
+    const data: Record<string, any> = {
       user_id: user.id,
       provider: selectedProvider,
       phone_number: form.phone_number,
     };
 
     if (selectedProvider === "twilio") {
-      insertData.twilio_account_sid = form.twilio_account_sid;
-      insertData.twilio_auth_token = form.twilio_auth_token;
+      data.twilio_account_sid = form.twilio_account_sid;
+      data.twilio_auth_token = form.twilio_auth_token;
     } else if (selectedProvider === "telnyx") {
-      insertData.telnyx_api_key = form.telnyx_api_key;
-      insertData.telnyx_connection_id = form.telnyx_connection_id;
+      data.telnyx_api_key = form.telnyx_api_key;
+      data.telnyx_connection_id = form.telnyx_connection_id;
     }
 
-    const { error } = await supabase.from("phone_configs").insert(insertData as any);
+    let error;
+    if (editingConfig) {
+      ({ error } = await supabase.from("phone_configs").update(data as any).eq("id", editingConfig.id));
+    } else {
+      ({ error } = await supabase.from("phone_configs").insert(data as any));
+    }
 
     setSaving(false);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
       const provider = PROVIDERS.find(p => p.id === selectedProvider);
-      toast({ title: `${provider?.name} phone number added successfully` });
+      toast({ title: editingConfig ? `${provider?.name} config updated` : `${provider?.name} phone number added successfully` });
       setDialogOpen(false);
       setSelectedProvider(null);
+      setEditingConfig(null);
       setForm({});
       fetchConfigs();
     }
@@ -177,6 +198,9 @@ export default function PhoneConfig() {
                             checked={config.is_active}
                             onCheckedChange={() => toggleActive(config.id, config.is_active)}
                           />
+                          <Button variant="ghost" size="icon" onClick={() => openConnectDialog(config.provider, config)}>
+                            <Pencil className="h-4 w-4 text-muted-foreground" />
+                          </Button>
                           <Button variant="ghost" size="icon" onClick={() => deleteConfig(config.id)}>
                             <Trash2 className="h-4 w-4 text-muted-foreground" />
                           </Button>
@@ -219,7 +243,7 @@ export default function PhoneConfig() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 {currentProviderConfig && <img src={currentProviderConfig.logo} alt={currentProviderConfig.name} className="h-6 w-6 rounded object-contain" />}
-                Connect {currentProviderConfig?.name}
+                {editingConfig ? "Edit" : "Connect"} {currentProviderConfig?.name}
               </DialogTitle>
               <DialogDescription>
                 Enter your {currentProviderConfig?.name} credentials to enable phone calls.
@@ -263,7 +287,7 @@ export default function PhoneConfig() {
                 </div>
               ))}
               <Button type="submit" className="w-full" disabled={saving}>
-                {saving ? "Connecting..." : `Connect ${currentProviderConfig?.name}`}
+                {saving ? "Saving..." : editingConfig ? `Update ${currentProviderConfig?.name}` : `Connect ${currentProviderConfig?.name}`}
               </Button>
             </form>
           </DialogContent>
