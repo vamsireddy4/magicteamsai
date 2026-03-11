@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
     // Fetch call_logs that need syncing (no duration or no transcript)
     const { data: calls, error: fetchError } = await supabase
       .from("call_logs")
-      .select("id, ultravox_call_id, twilio_call_sid, caller_number, started_at, duration, transcript, status, agent_id")
+      .select("id, ultravox_call_id, twilio_call_sid, caller_number, recipient_number, started_at, duration, transcript, status, agent_id")
       .eq("user_id", user.id)
       .or("duration.is.null,transcript.is.null,status.eq.initiated");
 
