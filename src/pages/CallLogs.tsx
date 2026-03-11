@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PhoneIncoming, PhoneOutgoing, History, RefreshCw, Copy, Check } from "lucide-react";
+import { PhoneIncoming, PhoneOutgoing, History, RefreshCw, Copy, Check, Sparkles, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type { Json } from "@/integrations/supabase/types";
 
@@ -33,6 +33,8 @@ export default function CallLogs() {
   const [selectedCall, setSelectedCall] = useState<CallLog | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
+  const [callSummary, setCallSummary] = useState<string | null>(null);
 
   const fetchCalls = () => {
     if (!user) return;
@@ -105,6 +107,28 @@ export default function CallLogs() {
     return id;
   };
 
+  const summarizeCall = async (callId: string) => {
+    setSummarizing(true);
+    setCallSummary(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("summarize-call", {
+        body: { call_id: callId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setCallSummary(data.summary);
+    } catch (e: any) {
+      toast.error("Summary failed: " + (e.message || "Unknown error"));
+    } finally {
+      setSummarizing(false);
+    }
+  };
+
+  const handleSelectCall = (call: CallLog) => {
+    setSelectedCall(call);
+    setCallSummary(null);
+  };
+
   return (
     <DashboardLayout>
       <div className="flex flex-col h-full animate-fade-in">
@@ -154,7 +178,7 @@ export default function CallLogs() {
                     <TableRow
                       key={call.id}
                       className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => setSelectedCall(call)}
+                      onClick={() => handleSelectCall(call)}
                     >
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -302,6 +326,36 @@ export default function CallLogs() {
                     <p className="text-sm text-muted-foreground">
                       No transcript available. Click "Sync Call Data" to fetch transcripts.
                     </p>
+                  </div>
+                )}
+
+                {/* AI Summary */}
+                {selectedCall.transcript && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium flex items-center gap-1.5">
+                        <Sparkles className="h-4 w-4 text-primary" /> AI Summary
+                      </p>
+                      {!callSummary && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => summarizeCall(selectedCall.id)}
+                          disabled={summarizing}
+                        >
+                          {summarizing ? (
+                            <><Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> Analyzing...</>
+                          ) : (
+                            <><Sparkles className="h-3 w-3 mr-1.5" /> Generate Summary</>
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                    {callSummary && (
+                      <div className="rounded-lg bg-primary/5 border border-primary/20 p-4 text-sm whitespace-pre-wrap">
+                        {callSummary}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

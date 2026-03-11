@@ -64,7 +64,7 @@ const GEMINI_VOICES = [
 
 const AI_PROVIDERS = [
   { value: "ultravox", label: "Ultravox" },
-  { value: "gemini", label: "Gemini Live API" },
+  { value: "gemini", label: "Gemini Live API (Coming Soon)", disabled: true },
 ];
 
 const FIRST_SPEAKER_OPTIONS = [
@@ -285,7 +285,9 @@ export default function AgentForm() {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {AI_PROVIDERS.map((p) => (
-                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                      <SelectItem key={p.value} value={p.value} disabled={(p as any).disabled}>
+                        {p.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
