@@ -164,10 +164,14 @@ Deno.serve(async (req) => {
     });
 
     // Return TwiML/TeXML to connect to the stream
+    // For Gemini: strip query params and pass agent_id via Parameter (Twilio strips query params)
+    const isGemini = (agent as any).ai_provider === "gemini";
+    const cleanStreamUrl = isGemini ? streamUrl.split('?')[0] : streamUrl;
+    const paramTag = isGemini ? `<Parameter name="agent_id" value="${agent.id}"/>` : "";
     const responseXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
-    <Stream url="${streamUrl}" />
+    <Stream url="${cleanStreamUrl}">${paramTag}</Stream>
   </Connect>
 </Response>`;
 

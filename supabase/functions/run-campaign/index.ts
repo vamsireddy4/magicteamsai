@@ -49,7 +49,7 @@ async function placeCall(
       if (!resp.ok) throw new Error(`Telnyx error: ${await resp.text()}`);
       callSid = (await resp.json()).data?.call_control_id || "";
     } else {
-      const twiml = `<Response><Connect><Stream url="${bridgeUrl}"/></Connect></Response>`;
+      const twiml = `<Response><Connect><Stream url="${bridgeUrl.split('?')[0]}"><Parameter name="agent_id" value="${agent.id}"/></Stream></Connect></Response>`;
       const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
       const twilioAuthToken = (phoneConfig.twilio_auth_token || "").replace(/[^a-zA-Z0-9]/g, '');
       const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`, {
