@@ -107,8 +107,8 @@ export default function CallLogs() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 animate-fade-in">
-        <div className="flex items-center justify-between">
+      <div className="flex flex-col h-full animate-fade-in">
+        <div className="flex items-center justify-between mb-6 shrink-0">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Call History</h1>
             <p className="text-muted-foreground mt-1">View all inbound and outbound calls with transcripts.</p>
@@ -119,7 +119,7 @@ export default function CallLogs() {
           </Button>
         </div>
 
-        <Card>
+        <Card className="flex-1 min-h-0 flex flex-col">
           {loading ? (
             <CardContent className="p-6">
               <div className="animate-pulse space-y-3">
@@ -135,7 +135,7 @@ export default function CallLogs() {
               <p className="text-sm text-muted-foreground">Calls will appear here once your agents start receiving them.</p>
             </CardContent>
           ) : (
-            <div className="overflow-auto">
+            <div className="overflow-auto flex-1 min-h-0">
               <Table>
                 <TableHeader>
                   <TableRow>
