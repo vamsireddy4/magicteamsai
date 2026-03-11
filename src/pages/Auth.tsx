@@ -77,7 +77,7 @@ export default function Auth() {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-foreground/20">
               <Phone className="h-5 w-5" />
             </div>
-            <span className="text-xl font-bold tracking-tight">ReceptoAI</span>
+            <span className="text-xl font-bold tracking-tight">MagicTeams</span>
           </div>
         </div>
         <div className="space-y-6">
