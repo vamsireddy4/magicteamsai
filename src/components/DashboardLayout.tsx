@@ -48,7 +48,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { signOut } = useAuth();
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-screen overflow-hidden bg-background">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
