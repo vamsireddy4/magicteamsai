@@ -140,7 +140,10 @@ Deno.serve(async (req) => {
               headers: { "Authorization": `Bearer ${telnyxApiKey}`, "Content-Type": "application/json" },
               body: JSON.stringify({
                 connection_id: telnyxConnectionId, to: sc.recipient_number, from: phoneConfig.phone_number,
-                stream_url: bridgeUrl, stream_track: "both_tracks",
+                stream_url: bridgeUrl, stream_track: "inbound_track",
+                stream_bidirectional_mode: "rtp", stream_codec: "L16",
+                stream_bidirectional_codec: "L16", stream_bidirectional_sampling_rate: 16000,
+                stream_bidirectional_target_legs: "opposite",
               }),
             });
             if (!resp.ok) throw new Error(`Telnyx: ${await resp.text()}`);
