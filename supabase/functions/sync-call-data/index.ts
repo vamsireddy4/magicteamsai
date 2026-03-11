@@ -2,7 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 Deno.serve(async (req) => {
@@ -34,13 +35,13 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch call_logs with ultravox_call_id that have null duration
+    // Fetch call_logs with ultravox_call_id that need syncing (no duration or no transcript)
     const { data: calls, error: fetchError } = await supabase
       .from("call_logs")
-      .select("id, ultravox_call_id, started_at")
+      .select("id, ultravox_call_id, twilio_call_sid, started_at, duration, transcript")
       .eq("user_id", user.id)
       .not("ultravox_call_id", "is", null)
-      .is("duration", null);
+      .or("duration.is.null,transcript.is.null");
 
     if (fetchError) {
       return new Response(JSON.stringify({ error: fetchError.message }), {
@@ -60,45 +61,77 @@ Deno.serve(async (req) => {
 
     for (const call of calls) {
       try {
-        const res = await fetch(`https://api.ultravox.ai/api/calls/${call.ultravox_call_id}`, {
-          headers: { "X-API-Key": ultravoxApiKey },
-        });
+        // Fetch call details and messages (transcript) in parallel
+        const [callRes, messagesRes] = await Promise.all([
+          fetch(`https://api.ultravox.ai/api/calls/${call.ultravox_call_id}`, {
+            headers: { "X-API-Key": ultravoxApiKey },
+          }),
+          call.transcript === null
+            ? fetch(`https://api.ultravox.ai/api/calls/${call.ultravox_call_id}/messages`, {
+                headers: { "X-API-Key": ultravoxApiKey },
+              })
+            : Promise.resolve(null),
+        ]);
 
-        if (!res.ok) {
-          errors.push(`Failed to fetch call ${call.ultravox_call_id}: ${res.status}`);
+        if (!callRes.ok) {
+          errors.push(`Failed to fetch call ${call.ultravox_call_id}: ${callRes.status}`);
           continue;
         }
 
-        const data = await res.json();
+        const data = await callRes.json();
+        const updateData: Record<string, unknown> = {};
 
-        // Parse duration from Ultravox (format: "123s" or "123.456s")
-        let durationSeconds: number | null = null;
-        if (data.billedDuration) {
-          const match = data.billedDuration.match(/^([\d.]+)s$/);
-          if (match) {
-            durationSeconds = Math.round(parseFloat(match[1]));
+        // Parse duration
+        if (call.duration === null) {
+          let durationSeconds: number | null = null;
+          if (data.billedDuration) {
+            const match = data.billedDuration.match(/^([\d.]+)s$/);
+            if (match) {
+              durationSeconds = Math.round(parseFloat(match[1]));
+            }
+          }
+          if (durationSeconds === null && data.joined && data.ended) {
+            const joinedAt = new Date(data.joined).getTime();
+            const endedAt = new Date(data.ended).getTime();
+            durationSeconds = Math.round((endedAt - joinedAt) / 1000);
+          }
+          if (durationSeconds !== null && durationSeconds >= 0) {
+            updateData.duration = durationSeconds;
           }
         }
 
-        // If no billedDuration, calculate from joined/ended
-        if (durationSeconds === null && data.joined && data.ended) {
-          const joinedAt = new Date(data.joined).getTime();
-          const endedAt = new Date(data.ended).getTime();
-          durationSeconds = Math.round((endedAt - joinedAt) / 1000);
-        }
-
-        const updateData: Record<string, unknown> = {};
-        if (durationSeconds !== null && durationSeconds >= 0) {
-          updateData.duration = durationSeconds;
-        }
+        // Timing
         if (data.ended) {
           updateData.ended_at = data.ended;
         }
         if (data.joined) {
           updateData.started_at = data.joined;
         }
+
+        // Status
         if (data.endReason === "hangup" || data.endReason === "disconnect" || data.ended) {
           updateData.status = "completed";
+        }
+
+        // Transcript — parse messages from Ultravox
+        if (call.transcript === null && messagesRes && messagesRes.ok) {
+          const messagesData = await messagesRes.json();
+          const messages = messagesData.results || messagesData;
+
+          if (Array.isArray(messages) && messages.length > 0) {
+            // Format transcript as array of { role, text, timestamp }
+            const transcript = messages
+              .filter((m: any) => m.role && m.text)
+              .map((m: any) => ({
+                role: m.role === "MESSAGE_ROLE_AGENT" ? "agent" : m.role === "MESSAGE_ROLE_USER" ? "user" : m.role,
+                text: m.text,
+                timestamp: m.created || m.ordinal || null,
+              }));
+
+            if (transcript.length > 0) {
+              updateData.transcript = transcript;
+            }
+          }
         }
 
         if (Object.keys(updateData).length > 0) {
