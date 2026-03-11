@@ -303,8 +303,9 @@ Deno.serve(async (req) => {
           stream_url: joinUrl,
           stream_track: "inbound_track",
           stream_bidirectional_mode: "rtp",
-          stream_codec: "PCMU",
-          stream_bidirectional_codec: "PCMU",
+          stream_codec: "L16",
+          stream_bidirectional_codec: "L16",
+          stream_bidirectional_sampling_rate: 16000,
           stream_bidirectional_target_legs: "opposite",
         };
         console.log(`Telnyx call request:`, JSON.stringify(telnyxBody));
