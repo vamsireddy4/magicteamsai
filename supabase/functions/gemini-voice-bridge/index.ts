@@ -5,6 +5,12 @@
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 
+// Voices supported by Gemini native audio models
+const GEMINI_SUPPORTED_VOICES = new Set([
+  "Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr",
+]);
+const DEFAULT_GEMINI_VOICE = "Kore";
+
 // ── μ-law codec ──
 
 const MULAW_DECODE_TABLE = new Int16Array(256);
@@ -499,7 +505,12 @@ Deno.serve((req) => {
 
   // ── Connect to Gemini Live API ──
   function connectGemini(config: AgentConfig) {
-    const { prompt, model, voice } = config;
+    const { prompt, model } = config;
+    // Validate voice — fall back to default if not supported by Gemini
+    const voice = GEMINI_SUPPORTED_VOICES.has(config.voice) ? config.voice : DEFAULT_GEMINI_VOICE;
+    if (voice !== config.voice) {
+      console.log(`[BRIDGE] Voice "${config.voice}" not supported by Gemini, falling back to "${voice}"`);
+    }
     console.log(`[BRIDGE] Connecting to Gemini: model=models/${model} voice=${voice}`);
 
     const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`;
