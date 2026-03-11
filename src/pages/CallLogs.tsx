@@ -107,6 +107,28 @@ export default function CallLogs() {
     return id;
   };
 
+  const summarizeCall = async (callId: string) => {
+    setSummarizing(true);
+    setCallSummary(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("summarize-call", {
+        body: { call_id: callId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setCallSummary(data.summary);
+    } catch (e: any) {
+      toast.error("Summary failed: " + (e.message || "Unknown error"));
+    } finally {
+      setSummarizing(false);
+    }
+  };
+
+  const handleSelectCall = (call: CallLog) => {
+    setSelectedCall(call);
+    setCallSummary(null);
+  };
+
   return (
     <DashboardLayout>
       <div className="flex flex-col h-full animate-fade-in">
