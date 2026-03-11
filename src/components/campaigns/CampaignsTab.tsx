@@ -15,6 +15,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, MapPin, Phone, Target, MoreVertical, Pencil, Trash2, Play, Loader2, Users, CalendarDays, Clock, Hash, FileText, ArrowLeft } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface Campaign {
   id: string;
@@ -69,6 +71,8 @@ export default function CampaignsTab() {
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [contactCount, setContactCount] = useState(0);
   const [outcomeCounts, setOutcomeCounts] = useState<Record<string, number>>({});
+  const [contacts, setContacts] = useState<any[]>([]);
+  const [callOutcomes, setCallOutcomes] = useState<any[]>([]);
 
   const fetchData = async () => {
     if (!user) return;
@@ -87,13 +91,15 @@ export default function CampaignsTab() {
 
   const openCampaignDetail = async (c: Campaign) => {
     setSelectedCampaign(c);
-    const [{ count: cCount }, { data: outcomes }] = await Promise.all([
-      supabase.from("contacts").select("*", { count: "exact", head: true }).eq("campaign_id", c.id),
-      supabase.from("call_outcomes").select("outcome").eq("campaign_id", c.id),
+    const [{ data: contactsData, count: cCount }, { data: outcomes }] = await Promise.all([
+      supabase.from("contacts").select("*", { count: "exact" }).eq("campaign_id", c.id).order("created_at"),
+      supabase.from("call_outcomes").select("*").eq("campaign_id", c.id).order("created_at", { ascending: false }),
     ]);
+    setContacts(contactsData || []);
     setContactCount(cCount || 0);
+    setCallOutcomes(outcomes || []);
     const counts: Record<string, number> = {};
-    (outcomes || []).forEach((o) => { counts[o.outcome] = (counts[o.outcome] || 0) + 1; });
+    (outcomes || []).forEach((o: any) => { counts[o.outcome] = (counts[o.outcome] || 0) + 1; });
     setOutcomeCounts(counts);
   };
 
@@ -288,6 +294,94 @@ export default function CampaignsTab() {
             )}
           </CardContent>
         </Card>
+
+        {/* Contacts Table */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Users className="h-4 w-4" /> Contacts ({contacts.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {contacts.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No contacts uploaded for this campaign.</p>
+            ) : (
+              <ScrollArea className="max-h-[400px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Venue</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead>Children</TableHead>
+                      <TableHead>Age Range</TableHead>
+                      <TableHead>Language</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {contacts.map((ct) => (
+                      <TableRow key={ct.id}>
+                        <TableCell className="font-medium">{ct.first_name}</TableCell>
+                        <TableCell>{ct.phone_number}</TableCell>
+                        <TableCell>{ct.venue_name || "—"}</TableCell>
+                        <TableCell>{ct.venue_location || "—"}</TableCell>
+                        <TableCell>{ct.child_names || "—"}</TableCell>
+                        <TableCell>{ct.age_range || "—"}</TableCell>
+                        <TableCell>{ct.language || "en"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Call Outcomes Table */}
+        {callOutcomes.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Phone className="h-4 w-4" /> Call Results ({callOutcomes.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="max-h-[400px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Parent</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Outcome</TableHead>
+                      <TableHead>Attempt</TableHead>
+                      <TableHead>Summary</TableHead>
+                      <TableHead>Time</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {callOutcomes.map((co) => (
+                      <TableRow key={co.id}>
+                        <TableCell className="font-medium">{co.parent_name || "—"}</TableCell>
+                        <TableCell>{co.phone_number}</TableCell>
+                        <TableCell>
+                          <Badge variant={co.outcome === "BOOKED" ? "default" : co.outcome === "VOICEMAIL" || co.outcome === "NO_ANSWER" ? "secondary" : "outline"}>
+                            {co.outcome}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{co.attempt_number}</TableCell>
+                        <TableCell className="max-w-[200px] truncate">{co.summary || "—"}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {co.call_timestamp ? new Date(co.call_timestamp).toLocaleString() : "—"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="flex gap-3">
           {c.status === "draft" && c.agent_id && c.phone_config_id && (
