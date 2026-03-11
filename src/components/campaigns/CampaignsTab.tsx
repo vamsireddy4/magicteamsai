@@ -511,7 +511,6 @@ export default function CampaignsTab() {
         {["all", "draft", "active", "paused", "completed"].map((s) => (
           <Button key={s} variant={filter === s ? "default" : "outline"} size="sm" onClick={() => setFilter(s)}>
             {s.charAt(0).toUpperCase() + s.slice(1)}
-            {s !== "all" && statusCounts[s] ? ` (${statusCounts[s]})` : s === "all" ? ` (${campaigns.length})` : ""}
           </Button>
         ))}
       </div>
