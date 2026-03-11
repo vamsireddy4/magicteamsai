@@ -14,10 +14,7 @@ import PhoneConfig from "./pages/PhoneConfig";
 import CallLogs from "./pages/CallLogs";
 import OutboundCall from "./pages/OutboundCall";
 import UserSettings from "./pages/UserSettings";
-import DataCleaning from "./pages/DataCleaning";
 import Campaigns from "./pages/Campaigns";
-import Outcomes from "./pages/Outcomes";
-import RetryCSV from "./pages/RetryCSV";
 import Webhooks from "./pages/Webhooks";
 import ScheduledCalls from "./pages/ScheduledCalls";
 import CustomTools from "./pages/CustomTools";
@@ -44,10 +41,7 @@ const App = () => (
             <Route path="/phone-config" element={<ProtectedRoute><PhoneConfig /></ProtectedRoute>} />
             <Route path="/call-logs" element={<ProtectedRoute><CallLogs /></ProtectedRoute>} />
             <Route path="/outbound-call" element={<ProtectedRoute><OutboundCall /></ProtectedRoute>} />
-            <Route path="/data-cleaning" element={<ProtectedRoute><DataCleaning /></ProtectedRoute>} />
             <Route path="/campaigns" element={<ProtectedRoute><Campaigns /></ProtectedRoute>} />
-            <Route path="/outcomes" element={<ProtectedRoute><Outcomes /></ProtectedRoute>} />
-            <Route path="/retry-csv" element={<ProtectedRoute><RetryCSV /></ProtectedRoute>} />
             <Route path="/webhooks" element={<ProtectedRoute><Webhooks /></ProtectedRoute>} />
             
             <Route path="/custom-tools" element={<ProtectedRoute><CustomTools /></ProtectedRoute>} />
