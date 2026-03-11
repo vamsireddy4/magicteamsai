@@ -27,6 +27,7 @@ interface Campaign {
   age_range: string | null; times: string | null; start_date: string | null;
   end_date: string | null; booking_target: number | null; status: string;
   notes: string | null; calls_made: number; total_contacts: number;
+  twilio_phone_number: string | null; created_at: string;
 }
 
 interface CallLog {
@@ -86,7 +87,7 @@ export default function OutcomesTab() {
     if (!user) return;
     const [outcomesRes, campaignsRes, callLogsRes, contactsRes] = await Promise.all([
       supabase.from("call_outcomes").select("*").order("call_timestamp", { ascending: false }),
-      supabase.from("campaigns").select("id, venue_name, venue_location, round, age_range, times, start_date, end_date, booking_target, status, notes, calls_made, total_contacts").order("created_at", { ascending: false }),
+      supabase.from("campaigns").select("id, venue_name, venue_location, round, age_range, times, start_date, end_date, booking_target, status, notes, calls_made, total_contacts, twilio_phone_number, created_at").order("created_at", { ascending: false }),
       supabase.from("call_logs").select("*").order("started_at", { ascending: false }),
       supabase.from("contacts").select("campaign_id, phone_number, first_name, child_names"),
     ]);
@@ -158,8 +159,15 @@ export default function OutcomesTab() {
     const campContacts = contacts.filter((c) => c.campaign_id === selectedCampaign.id);
     const campPhones = new Set(campContacts.map((c) => c.phone_number));
 
-    // Get call logs matching campaign contacts
-    const campCallLogs = callLogs.filter((cl) => cl.recipient_number && campPhones.has(cl.recipient_number));
+    // Get call logs matching campaign contacts AND campaign's caller number
+    const campCallLogs = callLogs.filter((cl) => {
+      if (!cl.recipient_number || !campPhones.has(cl.recipient_number)) return false;
+      // If campaign has a specific phone number, only match calls from that number
+      if (selectedCampaign.twilio_phone_number && cl.caller_number) {
+        return cl.caller_number === selectedCampaign.twilio_phone_number;
+      }
+      return true;
+    });
 
     // Status counts
     const statusCounts = campCallLogs.reduce((acc, cl) => {
