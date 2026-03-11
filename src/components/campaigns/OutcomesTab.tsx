@@ -29,6 +29,12 @@ interface Campaign {
   notes: string | null; calls_made: number; total_contacts: number;
 }
 
+interface CallLog {
+  id: string; status: string; duration: number | null; started_at: string;
+  ended_at: string | null; recipient_number: string | null; caller_number: string | null;
+  direction: string; transcript: any; ultravox_call_id: string | null;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
   active: "bg-green-100 text-green-800",
