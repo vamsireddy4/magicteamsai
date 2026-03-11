@@ -64,6 +64,7 @@ export default function PhoneConfig() {
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<PhoneConfig | null>(null);
 
   const fetchConfigs = async () => {
     if (!user) return;
