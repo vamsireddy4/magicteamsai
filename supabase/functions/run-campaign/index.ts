@@ -240,8 +240,11 @@ Deno.serve(async (req) => {
     const { data: dncList } = await supabase.from("do_not_call").select("phone_number").eq("user_id", user.id);
     const dncNumbers = new Set((dncList || []).map((d: any) => d.phone_number));
 
-    // Fetch knowledge base
-    const { data: kbItems } = await supabase.from("knowledge_base_items").select("*").eq("agent_id", agent.id);
+    // Fetch knowledge base and agent tools in parallel
+    const [{ data: kbItems }, { data: agentTools }] = await Promise.all([
+      supabase.from("knowledge_base_items").select("*").eq("agent_id", agent.id),
+      supabase.from("agent_tools").select("*").eq("agent_id", agent.id).eq("is_active", true),
+    ]);
 
     // Filter out DNC numbers
     const eligibleContacts = contacts.filter((c: any) => !dncNumbers.has(c.phone_number));
