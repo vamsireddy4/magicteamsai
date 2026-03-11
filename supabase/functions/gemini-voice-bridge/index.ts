@@ -65,6 +65,37 @@ function b64encode(bytes: Uint8Array): string {
   return btoa(s);
 }
 
+// ── Tool type definitions ──
+interface CalendarIntegration {
+  id: string;
+  provider: string;
+  api_key: string | null;
+  calendar_id: string | null;
+  config: any;
+  is_active: boolean;
+}
+
+interface AgentTool {
+  id: string;
+  name: string;
+  description: string;
+  http_method: string;
+  http_url: string;
+  http_headers: Record<string, string>;
+  http_body_template: Record<string, any>;
+  parameters: any[];
+  is_active: boolean;
+}
+
+interface AgentConfig {
+  prompt: string;
+  model: string;
+  voice: string;
+  userId: string;
+  calendarIntegrations: CalendarIntegration[];
+  agentTools: AgentTool[];
+}
+
 // ── Main server ──
 
 Deno.serve((req) => {
@@ -83,8 +114,6 @@ Deno.serve((req) => {
 
     console.log("[BRIDGE] WebSocket upgrade detected");
     
-    // agent_id can come from query params (Telnyx) or from Twilio's start event customParameters
-    // Don't reject here if missing — we'll get it from the start event
     let agentId = reqUrl.searchParams.get("agent_id") || "";
     console.log(`[BRIDGE] agent_id from query: "${agentId}"`);
 
@@ -104,6 +133,7 @@ Deno.serve((req) => {
   const audioBuffer: string[] = [];
   let keepaliveTimer: number | null = null;
   let closed = false;
+  let agentConfig: AgentConfig | null = null;
 
   // ── Cleanup helper ──
   function cleanup(reason: string) {
@@ -115,39 +145,51 @@ Deno.serve((req) => {
     try { if (socket.readyState === WebSocket.OPEN) socket.close(); } catch (_e) { /* ignore */ }
   }
 
-  // ── Load agent config ──
-  async function loadAgent(): Promise<{ prompt: string; model: string; voice: string }> {
+  // ── Load agent config including tools and calendar integrations ──
+  async function loadAgent(): Promise<AgentConfig> {
     let prompt = "You are a helpful AI assistant on a phone call. Be conversational and natural.";
     let model = DEFAULT_GEMINI_MODEL;
     let voice = "Puck";
+    let userId = "";
+    let calendarIntegrations: CalendarIntegration[] = [];
+    let agentTools: AgentTool[] = [];
 
     try {
       const headers: Record<string, string> = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
 
-      const agentRes = await fetch(
-        `${sbUrl}/rest/v1/agents?id=eq.${agentId}&select=system_prompt,model,voice`,
-        { headers }
-      );
+      // Fetch agent, tools, and knowledge base in parallel
+      const [agentRes, toolsRes, kbRes] = await Promise.all([
+        fetch(`${sbUrl}/rest/v1/agents?id=eq.${agentId}&select=system_prompt,model,voice,user_id`, { headers }),
+        fetch(`${sbUrl}/rest/v1/agent_tools?agent_id=eq.${agentId}&is_active=eq.true&select=*`, { headers }),
+        fetch(`${sbUrl}/rest/v1/knowledge_base_items?agent_id=eq.${agentId}&select=title,content,website_url`, { headers }),
+      ]);
+
       if (!agentRes.ok) {
         console.error(`[BRIDGE] Agent fetch failed: ${agentRes.status} ${await agentRes.text()}`);
-        return { prompt, model, voice };
+        return { prompt, model, voice, userId, calendarIntegrations, agentTools };
       }
+
       const agents = await agentRes.json();
       if (agents?.length > 0) {
         prompt = agents[0].system_prompt || prompt;
+        userId = agents[0].user_id || "";
         const rawModel = agents[0].model || "";
-        if (rawModel.includes("gemini")) {
-          model = rawModel;
-        }
+        if (rawModel.includes("gemini")) model = rawModel;
         const rawVoice = agents[0].voice || "Kore";
         voice = rawVoice;
-        console.log(`[BRIDGE] Agent voice: using="${voice}" model="${model}"`);
+        console.log(`[BRIDGE] Agent voice: using="${voice}" model="${model}" userId="${userId}"`);
       }
 
-      const kbRes = await fetch(
-        `${sbUrl}/rest/v1/knowledge_base_items?agent_id=eq.${agentId}&select=title,content,website_url`,
-        { headers }
-      );
+      // Parse agent tools
+      if (toolsRes.ok) {
+        const tools = await toolsRes.json();
+        if (tools?.length > 0) {
+          agentTools = tools;
+          console.log(`[BRIDGE] Loaded ${agentTools.length} custom agent tools`);
+        }
+      }
+
+      // Parse KB items
       if (kbRes.ok) {
         const kbItems = await kbRes.json();
         if (kbItems?.length > 0) {
@@ -158,15 +200,306 @@ Deno.serve((req) => {
           }
         }
       }
+
+      // Fetch calendar integrations for this user
+      if (userId) {
+        const calRes = await fetch(
+          `${sbUrl}/rest/v1/calendar_integrations?user_id=eq.${userId}&is_active=eq.true&select=id,provider,api_key,calendar_id,config`,
+          { headers }
+        );
+        if (calRes.ok) {
+          const cals = await calRes.json();
+          if (cals?.length > 0) {
+            calendarIntegrations = cals;
+            console.log(`[BRIDGE] Loaded ${calendarIntegrations.length} calendar integrations`);
+          }
+        }
+      }
     } catch (e) {
       console.error("[BRIDGE] Agent load error:", e);
     }
 
-    return { prompt, model, voice };
+    return { prompt, model, voice, userId, calendarIntegrations, agentTools };
+  }
+
+  // ── Build Gemini function declarations for tools ──
+  function buildFunctionDeclarations(config: AgentConfig): any[] {
+    const declarations: any[] = [];
+
+    // Calendar tools — only if user has active calendar integrations
+    if (config.calendarIntegrations.length > 0) {
+      declarations.push({
+        name: "check_calendar_availability",
+        description: "Check available time slots on the calendar for a given date. Use this when the caller wants to book an appointment or check availability.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            date: {
+              type: "STRING",
+              description: "The date to check availability for, in YYYY-MM-DD format. If the caller says 'tomorrow', 'next Monday', etc., convert it to a date.",
+            },
+            duration_minutes: {
+              type: "NUMBER",
+              description: "Duration of the appointment in minutes. Default is 30.",
+            },
+          },
+          required: ["date"],
+        },
+      });
+
+      declarations.push({
+        name: "book_appointment",
+        description: "Book an appointment at a specific date and time. Use this after checking availability and the caller has chosen a time slot.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            start_time: {
+              type: "STRING",
+              description: "The start time of the appointment in ISO 8601 format (e.g., 2025-03-15T10:00:00Z).",
+            },
+            end_time: {
+              type: "STRING",
+              description: "The end time of the appointment in ISO 8601 format.",
+            },
+            attendee_name: {
+              type: "STRING",
+              description: "The name of the person booking the appointment.",
+            },
+            attendee_email: {
+              type: "STRING",
+              description: "The email of the person booking the appointment (if provided).",
+            },
+            attendee_phone: {
+              type: "STRING",
+              description: "The phone number of the person booking the appointment.",
+            },
+            notes: {
+              type: "STRING",
+              description: "Any additional notes about the appointment.",
+            },
+          },
+          required: ["start_time", "attendee_name"],
+        },
+      });
+    }
+
+    // Custom agent tools from agent_tools table
+    for (const tool of config.agentTools) {
+      const properties: Record<string, any> = {};
+      const required: string[] = [];
+
+      if (Array.isArray(tool.parameters)) {
+        for (const param of tool.parameters) {
+          properties[param.name] = {
+            type: (param.type || "string").toUpperCase(),
+            description: param.description || "",
+          };
+          if (param.required) required.push(param.name);
+        }
+      }
+
+      declarations.push({
+        name: tool.name,
+        description: tool.description,
+        parameters: {
+          type: "OBJECT",
+          properties,
+          required,
+        },
+      });
+    }
+
+    return declarations;
+  }
+
+  // ── Execute tool calls ──
+  async function executeToolCall(functionName: string, args: Record<string, any>): Promise<any> {
+    console.log(`[BRIDGE] Executing tool call: ${functionName}`, JSON.stringify(args));
+
+    try {
+      if (functionName === "check_calendar_availability" && agentConfig) {
+        return await executeCalendarAvailability(args, agentConfig.calendarIntegrations);
+      }
+
+      if (functionName === "book_appointment" && agentConfig) {
+        return await executeBookAppointment(args, agentConfig.calendarIntegrations);
+      }
+
+      // Custom agent tool
+      if (agentConfig) {
+        const tool = agentConfig.agentTools.find(t => t.name === functionName);
+        if (tool) {
+          return await executeCustomTool(tool, args);
+        }
+      }
+
+      return { error: `Unknown tool: ${functionName}` };
+    } catch (e) {
+      console.error(`[BRIDGE] Tool execution error (${functionName}):`, e);
+      return { error: `Tool execution failed: ${e.message || String(e)}` };
+    }
+  }
+
+  // ── Calendar availability check ──
+  async function executeCalendarAvailability(args: Record<string, any>, integrations: CalendarIntegration[]): Promise<any> {
+    const results: any[] = [];
+
+    for (const cal of integrations) {
+      try {
+        if (cal.provider === "cal_com" && cal.api_key) {
+          const dateFrom = args.date || new Date().toISOString().split("T")[0];
+          const res = await fetch(
+            `https://api.cal.com/v1/availability?apiKey=${cal.api_key}&eventTypeId=${cal.calendar_id}&dateFrom=${dateFrom}&dateTo=${dateFrom}`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            results.push({ provider: "Cal.com", slots: data.slots || data.busy || [] });
+          } else {
+            results.push({ provider: "Cal.com", error: `API error: ${res.statusText}` });
+          }
+        } else if (cal.provider === "google_calendar" && cal.api_key) {
+          const calendarId = cal.calendar_id || "primary";
+          const timeMin = args.date ? `${args.date}T00:00:00Z` : new Date().toISOString();
+          const timeMax = args.date
+            ? `${args.date}T23:59:59Z`
+            : new Date(Date.now() + 86400000).toISOString();
+          const res = await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?key=${cal.api_key}&timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const events = data.items?.map((e: any) => ({
+              summary: e.summary,
+              start: e.start?.dateTime || e.start?.date,
+              end: e.end?.dateTime || e.end?.date,
+            })) || [];
+            results.push({ provider: "Google Calendar", events, message: "These times are already booked. Available times are gaps between these events." });
+          } else {
+            results.push({ provider: "Google Calendar", error: `API error: ${res.statusText}` });
+          }
+        } else if (cal.provider === "gohighlevel" && cal.api_key) {
+          const startDate = args.date ? new Date(args.date).getTime() : Date.now();
+          const endDate = startDate + 86400000;
+          const res = await fetch(
+            `https://rest.gohighlevel.com/v1/appointments/slots?calendarId=${cal.calendar_id}&startDate=${startDate}&endDate=${endDate}`,
+            { headers: { Authorization: `Bearer ${cal.api_key}` } }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            results.push({ provider: "GoHighLevel", slots: data.slots || [] });
+          } else {
+            results.push({ provider: "GoHighLevel", error: `API error: ${res.statusText}` });
+          }
+        }
+      } catch (e) {
+        results.push({ provider: cal.provider, error: String(e) });
+      }
+    }
+
+    return { availability: results };
+  }
+
+  // ── Book appointment ──
+  async function executeBookAppointment(args: Record<string, any>, integrations: CalendarIntegration[]): Promise<any> {
+    // Use the first active calendar integration for booking
+    const cal = integrations[0];
+    if (!cal) return { error: "No calendar integration configured" };
+
+    try {
+      if (cal.provider === "cal_com" && cal.api_key) {
+        const res = await fetch(`https://api.cal.com/v1/bookings?apiKey=${cal.api_key}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            eventTypeId: parseInt(cal.calendar_id || "0"),
+            start: args.start_time,
+            end: args.end_time || new Date(new Date(args.start_time).getTime() + 30 * 60000).toISOString(),
+            responses: {
+              name: args.attendee_name || "Guest",
+              email: args.attendee_email || "guest@example.com",
+              phone: args.attendee_phone,
+              notes: args.notes,
+            },
+            timeZone: "UTC",
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          return { success: true, provider: "Cal.com", booking: data };
+        }
+        const err = await res.json().catch(() => ({}));
+        return { success: false, provider: "Cal.com", error: err.message || res.statusText };
+      }
+
+      if (cal.provider === "gohighlevel" && cal.api_key) {
+        const res = await fetch("https://rest.gohighlevel.com/v1/appointments/", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${cal.api_key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            calendarId: cal.calendar_id,
+            startTime: args.start_time,
+            endTime: args.end_time || new Date(new Date(args.start_time).getTime() + 30 * 60000).toISOString(),
+            title: `Appointment with ${args.attendee_name || "Guest"}`,
+            email: args.attendee_email,
+            phone: args.attendee_phone,
+            notes: args.notes,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          return { success: true, provider: "GoHighLevel", appointment: data };
+        }
+        const err = await res.json().catch(() => ({}));
+        return { success: false, provider: "GoHighLevel", error: err.message || res.statusText };
+      }
+
+      if (cal.provider === "google_calendar") {
+        return { success: false, provider: "Google Calendar", message: "Google Calendar booking requires OAuth credentials. Please use Cal.com or GoHighLevel for booking." };
+      }
+
+      return { error: `Unsupported calendar provider: ${cal.provider}` };
+    } catch (e) {
+      return { error: `Booking failed: ${e.message || String(e)}` };
+    }
+  }
+
+  // ── Execute custom HTTP tool ──
+  async function executeCustomTool(tool: AgentTool, args: Record<string, any>): Promise<any> {
+    let url = tool.http_url;
+    let body: string | undefined;
+
+    // Replace placeholders in URL
+    for (const [key, value] of Object.entries(args)) {
+      url = url.replace(`{{${key}}}`, encodeURIComponent(String(value)));
+    }
+
+    // Build body from template
+    if (tool.http_method !== "GET" && tool.http_body_template) {
+      let bodyObj = JSON.parse(JSON.stringify(tool.http_body_template));
+      // Replace placeholders in body template
+      const bodyStr = JSON.stringify(bodyObj);
+      let replaced = bodyStr;
+      for (const [key, value] of Object.entries(args)) {
+        replaced = replaced.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), String(value));
+      }
+      body = replaced;
+    }
+
+    const fetchHeaders: Record<string, string> = { "Content-Type": "application/json", ...tool.http_headers };
+
+    const res = await fetch(url, {
+      method: tool.http_method,
+      headers: fetchHeaders,
+      body: tool.http_method !== "GET" ? body : undefined,
+    });
+
+    const data = await res.json().catch(() => ({ status: res.status, statusText: res.statusText }));
+    return data;
   }
 
   // ── Connect to Gemini Live API ──
-  function connectGemini(prompt: string, model: string, voice: string) {
+  function connectGemini(config: AgentConfig) {
+    const { prompt, model, voice } = config;
     console.log(`[BRIDGE] Connecting to Gemini: model=models/${model} voice=${voice}`);
 
     const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`;
@@ -182,7 +515,7 @@ Deno.serve((req) => {
     geminiWs.onopen = () => {
       console.log("[BRIDGE] Gemini WS connected, sending setup...");
       try {
-        const setupMsg = {
+        const setupMsg: any = {
           setup: {
             model: `models/${model}`,
             generationConfig: {
@@ -194,6 +527,14 @@ Deno.serve((req) => {
             systemInstruction: { parts: [{ text: prompt }] },
           },
         };
+
+        // Add tools if any are available
+        const functionDeclarations = buildFunctionDeclarations(config);
+        if (functionDeclarations.length > 0) {
+          setupMsg.setup.tools = [{ functionDeclarations }];
+          console.log(`[BRIDGE] Registered ${functionDeclarations.length} tools with Gemini`);
+        }
+
         geminiWs!.send(JSON.stringify(setupMsg));
         console.log("[BRIDGE] Gemini setup message sent");
       } catch (e) {
@@ -204,7 +545,6 @@ Deno.serve((req) => {
 
     geminiWs.onmessage = async (ev) => {
       try {
-        // Gemini can send text or binary (Blob/ArrayBuffer) frames
         let text: string;
         if (typeof ev.data === "string") {
           text = ev.data;
@@ -225,7 +565,6 @@ Deno.serve((req) => {
         if (msg.setupComplete) {
           console.log("[BRIDGE] Gemini setup complete — ready for audio");
           geminiReady = true;
-          // Flush buffered audio
           const count = audioBuffer.length;
           for (const chunk of audioBuffer) {
             geminiWs!.send(JSON.stringify({
@@ -235,11 +574,9 @@ Deno.serve((req) => {
           audioBuffer.length = 0;
           if (count > 0) console.log(`[BRIDGE] Flushed ${count} buffered audio chunks`);
 
-          // Start keepalive — send empty audio periodically to keep connection alive
           keepaliveTimer = setInterval(() => {
             try {
               if (geminiWs?.readyState === WebSocket.OPEN && geminiReady) {
-                // Send a tiny silent PCM frame (640 bytes = 20ms of 16kHz 16-bit)
                 const silence = new Uint8Array(640);
                 geminiWs.send(JSON.stringify({
                   realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: b64encode(silence) }] },
@@ -247,6 +584,33 @@ Deno.serve((req) => {
               }
             } catch (_e) { /* ignore keepalive errors */ }
           }, 15000) as unknown as number;
+          return;
+        }
+
+        // ── Handle tool calls from Gemini ──
+        const toolCall = msg.toolCall;
+        if (toolCall && toolCall.functionCalls) {
+          console.log(`[BRIDGE] Gemini requesting ${toolCall.functionCalls.length} tool call(s)`);
+
+          const functionResponses: any[] = [];
+          for (const fc of toolCall.functionCalls) {
+            console.log(`[BRIDGE] Tool call: ${fc.name} args=${JSON.stringify(fc.args)}`);
+            const result = await executeToolCall(fc.name, fc.args || {});
+            functionResponses.push({
+              id: fc.id,
+              name: fc.name,
+              response: { result },
+            });
+            console.log(`[BRIDGE] Tool result for ${fc.name}: ${JSON.stringify(result).substring(0, 200)}`);
+          }
+
+          // Send tool responses back to Gemini
+          if (geminiWs?.readyState === WebSocket.OPEN) {
+            geminiWs.send(JSON.stringify({
+              toolResponse: { functionResponses },
+            }));
+            console.log("[BRIDGE] Sent tool responses to Gemini");
+          }
           return;
         }
 
@@ -270,7 +634,6 @@ Deno.serve((req) => {
 
         // Handle turn complete
         if ((msg.serverContent as any)?.turnComplete) {
-          // Model finished speaking — nothing to do, just log
           console.log("[BRIDGE] Gemini turn complete");
         }
 
@@ -285,7 +648,6 @@ Deno.serve((req) => {
 
     geminiWs.onerror = (e) => {
       console.error("[BRIDGE] Gemini WS error event fired");
-      // Note: onerror doesn't provide useful info in Deno, onclose will follow
     };
 
     geminiWs.onclose = (ev) => {
@@ -312,7 +674,6 @@ Deno.serve((req) => {
       } else if (msg.event === "start") {
         streamSid = msg.start?.streamSid || msg.start?.stream_id || msg.streamSid || "";
         
-        // Extract agent_id from Twilio's customParameters (since query params are stripped)
         const customParams = msg.start?.customParameters || {};
         if (customParams.agent_id && !agentId) {
           agentId = customParams.agent_id;
@@ -328,11 +689,11 @@ Deno.serve((req) => {
           return;
         }
 
-        // Load agent THEN connect to Gemini — sequential to avoid race conditions
+        // Load agent THEN connect to Gemini
         try {
-          const config = await loadAgent();
-          console.log(`[BRIDGE] Agent loaded, connecting to Gemini...`);
-          connectGemini(config.prompt, config.model, config.voice);
+          agentConfig = await loadAgent();
+          console.log(`[BRIDGE] Agent loaded with ${agentConfig.calendarIntegrations.length} calendar(s) and ${agentConfig.agentTools.length} tool(s), connecting to Gemini...`);
+          connectGemini(agentConfig);
         } catch (e) {
           console.error("[BRIDGE] Failed to load agent:", e);
           cleanup("agent_load_failed");
@@ -352,7 +713,6 @@ Deno.serve((req) => {
             if (audioBuffer.length > 300) audioBuffer.shift();
           }
         } else if (!geminiWs) {
-          // Buffer audio while Gemini is being set up
           audioBuffer.push(pcmB64);
           if (audioBuffer.length > 300) audioBuffer.shift();
         }
