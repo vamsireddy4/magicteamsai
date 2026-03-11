@@ -87,7 +87,7 @@ export default function OutcomesTab() {
     if (!user) return;
     const [outcomesRes, campaignsRes, callLogsRes, contactsRes] = await Promise.all([
       supabase.from("call_outcomes").select("*").order("call_timestamp", { ascending: false }),
-      supabase.from("campaigns").select("id, venue_name, venue_location, round, age_range, times, start_date, end_date, booking_target, status, notes, calls_made, total_contacts").order("created_at", { ascending: false }),
+      supabase.from("campaigns").select("id, venue_name, venue_location, round, age_range, times, start_date, end_date, booking_target, status, notes, calls_made, total_contacts, twilio_phone_number, created_at").order("created_at", { ascending: false }),
       supabase.from("call_logs").select("*").order("started_at", { ascending: false }),
       supabase.from("contacts").select("campaign_id, phone_number, first_name, child_names"),
     ]);
