@@ -389,13 +389,6 @@ export default function OutcomesTab() {
                       <Progress value={progress} className="h-1.5" />
                     </div>
 
-                    <div className="flex flex-wrap gap-1.5">
-                      {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
-                          <Badge key={o} className={`${OUTCOME_COLORS[o]} text-[10px] px-1.5 py-0`} variant="secondary">
-                            {o.replace("_", " ")} {counts[o] || 0}
-                          </Badge>
-                      ))}
-                    </div>
 
                     <div className="flex gap-3 text-xs text-muted-foreground pt-1 border-t">
                       {camp.age_range && <span>{camp.age_range}</span>}
