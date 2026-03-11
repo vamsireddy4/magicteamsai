@@ -48,18 +48,30 @@ Deno.serve(async (req) => {
       "X-API-Key": ultravoxApiKey,
     };
 
-    // Fetch voices and models in parallel
-    const [voicesRes, modelsRes] = await Promise.all([
-      fetch("https://api.ultravox.ai/api/voices", { headers }),
+    // Fetch all voices (paginated) and models in parallel
+    const fetchAllVoices = async () => {
+      const allVoices: any[] = [];
+      let url: string | null = "https://api.ultravox.ai/api/voices?pageSize=100";
+      while (url) {
+        const res = await fetch(url, { headers });
+        if (!res.ok) break;
+        const data = await res.json();
+        allVoices.push(...(data.results || []));
+        url = data.next || null;
+      }
+      return allVoices;
+    };
+
+    const [voices, modelsRes] = await Promise.all([
+      fetchAllVoices(),
       fetch("https://api.ultravox.ai/api/models", { headers }),
     ]);
 
-    const voicesData = voicesRes.ok ? await voicesRes.json() : { results: [] };
     const modelsData = modelsRes.ok ? await modelsRes.json() : { results: [] };
 
     return new Response(
       JSON.stringify({
-        voices: voicesData.results || voicesData,
+        voices,
         models: modelsData.results || modelsData,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
