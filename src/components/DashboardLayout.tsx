@@ -45,6 +45,7 @@ const navItems = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [logoHovered, setLogoHovered] = useState(false);
   const location = useLocation();
   const { signOut } = useAuth();
 
