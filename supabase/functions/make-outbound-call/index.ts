@@ -285,6 +285,7 @@ Deno.serve(async (req) => {
       ultravoxCallId = ultravoxData.callId;
 
       console.log(`Ultravox call created: ${ultravoxCallId}, joinUrl: ${joinUrl}`);
+      console.log(`Ultravox full response:`, JSON.stringify(ultravoxData));
 
       if (provider === "telnyx") {
         const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
@@ -295,29 +296,33 @@ Deno.serve(async (req) => {
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
+        const telnyxBody = {
+          connection_id: telnyxConnectionId,
+          to: recipient_number,
+          from: phoneConfig.phone_number,
+          stream_url: joinUrl,
+          stream_track: "inbound_track",
+          stream_bidirectional_mode: "rtp",
+          stream_codec: "L16",
+          stream_bidirectional_codec: "L16",
+          stream_bidirectional_sampling_rate: 16000,
+          stream_bidirectional_target_legs: "opposite",
+        };
+        console.log(`Telnyx call request:`, JSON.stringify(telnyxBody));
         const telnyxResponse = await fetch("https://api.telnyx.com/v2/calls", {
           method: "POST",
           headers: { "Authorization": `Bearer ${telnyxApiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            connection_id: telnyxConnectionId,
-            to: recipient_number,
-            from: phoneConfig.phone_number,
-            stream_url: joinUrl,
-            stream_track: "inbound_track",
-            stream_bidirectional_mode: "rtp",
-            stream_codec: "L16",
-            stream_bidirectional_codec: "L16",
-            stream_bidirectional_sampling_rate: 16000,
-            stream_bidirectional_target_legs: "opposite",
-          }),
+          body: JSON.stringify(telnyxBody),
         });
         if (!telnyxResponse.ok) {
           const err = await telnyxResponse.text();
+          console.error(`Telnyx call failed:`, err);
           return new Response(JSON.stringify({ error: "Failed to place Telnyx call", details: err }), {
             status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
         const telnyxData = await telnyxResponse.json();
+        console.log(`Telnyx call response:`, JSON.stringify(telnyxData));
         callSid = telnyxData.data?.call_control_id || "";
       } else {
         const twiml = `<Response><Connect><Stream url="${joinUrl}"/></Connect></Response>`;
