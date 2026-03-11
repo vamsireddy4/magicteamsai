@@ -180,22 +180,21 @@ export default function AgentForm() {
     }
   };
 
-  // Filter voices by search
+  // Build voice list filtered by selected AI provider
   const allVoices = useMemo(() => {
-    // Merge Gemini native voices into the Ultravox list
-    const geminiAsUltravox: UltravoxVoice[] = GEMINI_VOICES.map(v => ({
-      voiceId: v.value,
-      name: v.value,
-      description: v.label,
-      languageLabel: "Gemini Native",
-      provider: "gemini",
-    }));
-    const ultravoxNames = new Set(voices.map(v => v.name));
-    return [
-      ...geminiAsUltravox.filter(g => !ultravoxNames.has(g.name)),
-      ...voices,
-    ];
-  }, [voices]);
+    if (form.ai_provider === "gemini") {
+      // Only show Gemini-compatible voices
+      return GEMINI_VOICES.map(v => ({
+        voiceId: v.value,
+        name: v.value,
+        description: v.label,
+        languageLabel: "Gemini Native",
+        provider: "gemini",
+      } as UltravoxVoice));
+    }
+    // Ultravox provider — show Ultravox voices only
+    return voices;
+  }, [voices, form.ai_provider]);
 
   const filteredVoices = useMemo(() => {
     if (!voiceSearch.trim()) return allVoices;
