@@ -152,19 +152,6 @@ export default function OutcomesTab() {
 
 
 
-        {/* Campaign Details */}
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-              {selectedCampaign.age_range && <div><span className="text-muted-foreground">Age Range:</span> {selectedCampaign.age_range}</div>}
-              {selectedCampaign.times && <div><span className="text-muted-foreground">Times:</span> {selectedCampaign.times}</div>}
-              {selectedCampaign.start_date && <div className="flex items-center gap-1"><Calendar className="h-3 w-3 text-muted-foreground" /><span className="text-muted-foreground">Start:</span> {selectedCampaign.start_date}</div>}
-              {selectedCampaign.end_date && <div className="flex items-center gap-1"><Calendar className="h-3 w-3 text-muted-foreground" /><span className="text-muted-foreground">End:</span> {selectedCampaign.end_date}</div>}
-            </div>
-            {selectedCampaign.notes && <p className="text-sm text-muted-foreground mt-2 border-t pt-2">{selectedCampaign.notes}</p>}
-          </CardContent>
-        </Card>
-
         {/* Outcome Summary Cards */}
         <div className="grid gap-3 grid-cols-3">
           {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
