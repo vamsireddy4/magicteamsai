@@ -98,7 +98,9 @@ async function placeCall(
     const medium = provider === "telnyx" ? { telnyx: {} } : { twilio: {} };
     const ultravoxBody: any = {
       systemPrompt, model: agent.model || "fixie-ai/ultravox-v0.7", voice: agent.voice,
-      temperature: Number(agent.temperature), firstSpeakerSettings: { user: {} }, medium,
+      temperature: Number(agent.temperature),
+      firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT" ? { agent: {} } : { user: {} },
+      medium,
       languageHint: agent.language_hint || "en", maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
     };
     if (ultravoxTools.length > 0) {
