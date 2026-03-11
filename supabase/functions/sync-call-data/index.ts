@@ -236,18 +236,23 @@ Deno.serve(async (req) => {
                 outcome = "DECLINED";
               }
 
-              if (outcome) {
-                // Find matching call_outcome by phone number (recipient) and PENDING status
-                const recipientNumber = call.caller_number; // This is actually caller; we need recipient
-                // call_logs has recipient_number but we didn't fetch it — use a broader match
-                await supabase
+              if (outcome && call.recipient_number) {
+                // Update the most recent PENDING outcome for this phone number
+                const { data: pendingOutcomes } = await supabase
                   .from("call_outcomes")
-                  .update({ outcome })
+                  .select("id")
                   .eq("user_id", user.id)
-                  .eq("phone_number", call.recipient_number || "")
+                  .eq("phone_number", call.recipient_number)
                   .eq("outcome", "PENDING")
                   .order("created_at", { ascending: false })
                   .limit(1);
+
+                if (pendingOutcomes && pendingOutcomes.length > 0) {
+                  await supabase
+                    .from("call_outcomes")
+                    .update({ outcome })
+                    .eq("id", pendingOutcomes[0].id);
+                }
               }
             }
           }
