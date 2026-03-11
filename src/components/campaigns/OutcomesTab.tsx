@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, FileText } from "lucide-react";
+import { Plus, Search, FileText, RefreshCw, Loader2 } from "lucide-react";
 
 interface Outcome { id: string; campaign_id: string; phone_number: string; parent_name: string | null; child_names: string | null; venue_name: string | null; outcome: string; transcript: string | null; summary: string | null; attempt_number: number; call_timestamp: string; }
 interface Campaign { id: string; venue_name: string; round: number; }
@@ -32,6 +32,19 @@ export default function OutcomesTab() {
   const [selectedOutcome, setSelectedOutcome] = useState<Outcome | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addForm, setAddForm] = useState({ campaign_id: "", phone_number: "", parent_name: "", child_names: "", venue_name: "", outcome: "PENDING", transcript: "", summary: "", attempt_number: "1" });
+  const [syncing, setSyncing] = useState(false);
+
+  const syncCallData = async () => {
+    setSyncing(true);
+    try {
+      const { error } = await supabase.functions.invoke("sync-call-data");
+      if (error) throw error;
+      toast({ title: "Calls synced" });
+      await fetchData();
+    } catch (err: any) {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    } finally { setSyncing(false); }
+  };
 
   const fetchData = async () => {
     if (!user) return;
@@ -78,7 +91,11 @@ export default function OutcomesTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline" onClick={syncCallData} disabled={syncing}>
+          {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+          Sync & Refresh
+        </Button>
         <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
           <Button onClick={() => setAddDialogOpen(true)}><Plus className="h-4 w-4 mr-2" /> Add Outcome</Button>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
