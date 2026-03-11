@@ -5,6 +5,12 @@
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 
+// Voices supported by Gemini native audio models
+const GEMINI_SUPPORTED_VOICES = new Set([
+  "Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr",
+]);
+const DEFAULT_GEMINI_VOICE = "Kore";
+
 // ── μ-law codec ──
 
 const MULAW_DECODE_TABLE = new Int16Array(256);
