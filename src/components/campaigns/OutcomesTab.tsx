@@ -158,15 +158,37 @@ export default function OutcomesTab() {
     // Get phone numbers for this campaign's contacts
     const campContacts = contacts.filter((c) => c.campaign_id === selectedCampaign.id);
     const campPhones = new Set(campContacts.map((c) => c.phone_number));
+    const campaignOutcomes = getOutcomesForCampaign(selectedCampaign.id);
 
-    // Get call logs matching campaign contacts AND campaign's caller number
+    // Build phone -> outcome timestamps map for precise call matching
+    const outcomeTimestampsByPhone = campaignOutcomes.reduce((acc, outcome) => {
+      if (!outcome.phone_number || !outcome.call_timestamp) return acc;
+      const parsedTs = Date.parse(outcome.call_timestamp);
+      if (Number.isNaN(parsedTs)) return acc;
+      const existing = acc.get(outcome.phone_number) || [];
+      existing.push(parsedTs);
+      acc.set(outcome.phone_number, existing);
+      return acc;
+    }, new Map<string, number[]>());
+
+    const MATCH_WINDOW_MS = 15 * 60 * 1000;
+
+    // Match logs to this campaign only (contact + caller number + timestamp window near campaign outcomes)
     const campCallLogs = callLogs.filter((cl) => {
+      if (cl.direction !== "outbound") return false;
       if (!cl.recipient_number || !campPhones.has(cl.recipient_number)) return false;
-      // If campaign has a specific phone number, only match calls from that number
-      if (selectedCampaign.twilio_phone_number && cl.caller_number) {
-        return cl.caller_number === selectedCampaign.twilio_phone_number;
+
+      if (selectedCampaign.twilio_phone_number) {
+        if (!cl.caller_number || cl.caller_number !== selectedCampaign.twilio_phone_number) return false;
       }
-      return true;
+
+      const startedAtMs = cl.started_at ? Date.parse(cl.started_at) : NaN;
+      if (Number.isNaN(startedAtMs)) return false;
+
+      const relatedOutcomeTimes = outcomeTimestampsByPhone.get(cl.recipient_number) || [];
+      if (relatedOutcomeTimes.length === 0) return false;
+
+      return relatedOutcomeTimes.some((outcomeTime) => Math.abs(outcomeTime - startedAtMs) <= MATCH_WINDOW_MS);
     });
 
     // Status counts
@@ -214,7 +236,6 @@ export default function OutcomesTab() {
             <div className="flex items-center gap-3">
               <h2 className="text-xl font-bold">{selectedCampaign.venue_name}</h2>
               <Badge className={STATUS_COLORS[selectedCampaign.status] || ""} variant="secondary">{selectedCampaign.status}</Badge>
-              <Badge variant="outline">Round {selectedCampaign.round}</Badge>
             </div>
             {selectedCampaign.venue_location && (
               <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1"><MapPin className="h-3 w-3" /> {selectedCampaign.venue_location}</p>
