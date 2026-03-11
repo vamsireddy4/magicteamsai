@@ -55,6 +55,8 @@ export default function OutcomesTab() {
   const { toast } = useToast();
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [callLogs, setCallLogs] = useState<CallLog[]>([]);
+  const [contacts, setContacts] = useState<{ campaign_id: string; phone_number: string; first_name: string; child_names: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
