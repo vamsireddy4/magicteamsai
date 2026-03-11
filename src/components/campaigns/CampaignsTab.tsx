@@ -208,7 +208,17 @@ export default function CampaignsTab() {
     const c = selectedCampaign;
     const totalOutcomes = Object.values(outcomeCounts).reduce((a, b) => a + b, 0);
 
-    const allContactCols = [
+    // Build dynamic columns from metadata if available
+    const metadataCols: { key: string; label: string }[] = [];
+    if (contacts.length > 0 && contacts[0]?.metadata && typeof contacts[0].metadata === "object") {
+      const meta = contacts[0].metadata as Record<string, any>;
+      Object.keys(meta).forEach((key) => {
+        metadataCols.push({ key, label: key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()) });
+      });
+    }
+
+    // Use metadata columns if available, otherwise fall back to fixed columns
+    const fixedCols = [
       { key: "first_name", label: "Name" },
       { key: "phone_number", label: "Phone" },
       { key: "venue_name", label: "Venue" },
@@ -220,10 +230,19 @@ export default function CampaignsTab() {
       { key: "times", label: "Times" },
       { key: "language", label: "Language" },
     ];
-    const visibleCols = allContactCols.filter((col) =>
-      col.key === "first_name" || col.key === "phone_number" ||
-      contacts.some((ct) => ct[col.key] && ct[col.key] !== "en")
-    );
+
+    const useMetadata = metadataCols.length > 0;
+    const displayCols = useMetadata
+      ? metadataCols.filter((col) =>
+          contacts.some((ct) => {
+            const val = (ct.metadata as Record<string, any>)?.[col.key];
+            return val && val !== "" && val !== "en";
+          })
+        )
+      : fixedCols.filter((col) =>
+          col.key === "first_name" || col.key === "phone_number" ||
+          contacts.some((ct) => ct[col.key] && ct[col.key] !== "en")
+        );
 
     return (
       <div className="space-y-6">
@@ -319,7 +338,7 @@ export default function CampaignsTab() {
                         />
                       </TableHead>
                       <TableHead className="w-12">#</TableHead>
-                      {visibleCols.map((col) => (
+                      {displayCols.map((col) => (
                         <TableHead key={col.key}>{col.label}</TableHead>
                       ))}
                     </TableRow>
@@ -334,11 +353,16 @@ export default function CampaignsTab() {
                           />
                         </TableCell>
                         <TableCell className="text-muted-foreground text-xs">{idx + 1}</TableCell>
-                        {visibleCols.map((col) => (
-                          <TableCell key={col.key} className={col.key === "first_name" ? "font-medium" : col.key === "phone_number" ? "font-mono text-xs" : ""}>
-                            {ct[col.key] || "—"}
-                          </TableCell>
-                        ))}
+                        {displayCols.map((col) => {
+                          const val = useMetadata
+                            ? (ct.metadata as Record<string, any>)?.[col.key]
+                            : ct[col.key];
+                          return (
+                            <TableCell key={col.key} className={col.key.includes("name") && !col.key.includes("child") ? "font-medium" : col.key.includes("phone") ? "font-mono text-xs" : ""}>
+                              {val || "—"}
+                            </TableCell>
+                          );
+                        })}
                       </TableRow>
                     ))}
                   </TableBody>

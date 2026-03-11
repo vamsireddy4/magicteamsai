@@ -406,6 +406,7 @@ export type Database = {
           first_name: string
           id: string
           language: string | null
+          metadata: Json | null
           phone_number: string
           sheet_reference: string | null
           start_date: string | null
@@ -425,6 +426,7 @@ export type Database = {
           first_name: string
           id?: string
           language?: string | null
+          metadata?: Json | null
           phone_number: string
           sheet_reference?: string | null
           start_date?: string | null
@@ -444,6 +446,7 @@ export type Database = {
           first_name?: string
           id?: string
           language?: string | null
+          metadata?: Json | null
           phone_number?: string
           sheet_reference?: string | null
           start_date?: string | null
