@@ -86,8 +86,11 @@ Deno.serve((req) => {
     }
 
     console.log("[BRIDGE] WebSocket upgrade detected");
-    const agentId = reqUrl.searchParams.get("agent_id");
-    if (!agentId) return new Response("agent_id required", { status: 400 });
+    
+    // agent_id can come from query params (Telnyx) or from Twilio's start event customParameters
+    // Don't reject here if missing — we'll get it from the start event
+    let agentId = reqUrl.searchParams.get("agent_id") || "";
+    console.log(`[BRIDGE] agent_id from query: "${agentId}"`);
 
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiApiKey) return new Response("GEMINI_API_KEY not configured", { status: 500 });
