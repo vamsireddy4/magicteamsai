@@ -338,7 +338,7 @@ export default function CampaignsTab() {
                         />
                       </TableHead>
                       <TableHead className="w-12">#</TableHead>
-                      {visibleCols.map((col) => (
+                      {displayCols.map((col) => (
                         <TableHead key={col.key}>{col.label}</TableHead>
                       ))}
                     </TableRow>
