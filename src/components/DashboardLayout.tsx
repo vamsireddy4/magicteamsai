@@ -81,7 +81,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
                   <Phone className="h-4 w-4 text-primary-foreground" />
                 </div>
-                <span className="text-lg font-bold tracking-tight">ReceptoAI</span>
+                <span className="text-lg font-bold tracking-tight">MagicTeams</span>
               </Link>
               <div className="flex items-center gap-1">
                 <button
@@ -167,7 +167,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
               <Phone className="h-3.5 w-3.5 text-primary-foreground" />
             </div>
-            <span className="font-bold">ReceptoAI</span>
+            <span className="font-bold">MagicTeams</span>
           </div>
         </header>
         <div className="flex-1 p-6 lg:p-8 overflow-auto">

@@ -77,7 +77,7 @@ export default function Auth() {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-foreground/20">
               <Phone className="h-5 w-5" />
             </div>
-            <span className="text-xl font-bold tracking-tight">ReceptoAI</span>
+            <span className="text-xl font-bold tracking-tight">MagicTeams</span>
           </div>
         </div>
         <div className="space-y-6">
@@ -116,7 +116,7 @@ export default function Auth() {
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
                 <Phone className="h-4 w-4 text-primary-foreground" />
               </div>
-              <span className="text-lg font-bold">ReceptoAI</span>
+              <span className="text-lg font-bold">MagicTeams</span>
             </div>
             <CardTitle className="text-2xl font-bold">
               {isLogin ? "Welcome back" : "Create an account"}
