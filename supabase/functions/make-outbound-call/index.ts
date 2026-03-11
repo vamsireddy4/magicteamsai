@@ -143,8 +143,8 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Build WebSocket bridge URL for Gemini
-      const bridgeUrl = `${supabaseUrl}/functions/v1/gemini-voice-bridge?agent_id=${agent.id}`.replace("https://", "wss://");
+      // Build WebSocket bridge URL for Gemini (no query params - Twilio strips them)
+      const bridgeUrl = `${supabaseUrl}/functions/v1/gemini-voice-bridge`.replace("https://", "wss://");
 
       if (provider === "telnyx") {
         const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
@@ -155,6 +155,8 @@ Deno.serve(async (req) => {
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
+        // Telnyx: pass agent_id in stream_url query params (Telnyx preserves them)
+        const telnyxBridgeUrl = `${supabaseUrl}/functions/v1/gemini-voice-bridge?agent_id=${agent.id}`.replace("https://", "wss://");
         const telnyxResponse = await fetch("https://api.telnyx.com/v2/calls", {
           method: "POST",
           headers: { "Authorization": `Bearer ${telnyxApiKey}`, "Content-Type": "application/json" },
@@ -162,7 +164,7 @@ Deno.serve(async (req) => {
             connection_id: telnyxConnectionId,
             to: recipient_number,
             from: phoneConfig.phone_number,
-            stream_url: bridgeUrl,
+            stream_url: telnyxBridgeUrl,
             stream_track: "both_tracks",
           }),
         });
@@ -175,7 +177,8 @@ Deno.serve(async (req) => {
         const telnyxData = await telnyxResponse.json();
         callSid = telnyxData.data?.call_control_id || "";
       } else {
-        const twiml = `<Response><Connect><Stream url="${bridgeUrl}"/></Connect></Response>`;
+        // Twilio: pass agent_id via <Parameter> (Twilio strips query params from Stream URLs)
+        const twiml = `<Response><Connect><Stream url="${bridgeUrl}"><Parameter name="agent_id" value="${agent.id}"/></Stream></Connect></Response>`;
         const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
         const twilioAuthToken = (phoneConfig.twilio_auth_token || "").replace(/[^a-zA-Z0-9]/g, '');
         const twilioResponse = await fetch(
