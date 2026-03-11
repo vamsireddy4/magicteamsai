@@ -131,6 +131,8 @@ Deno.serve((req) => {
     const sbUrl = Deno.env.get("SUPABASE_URL")!;
     const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+    const elevenlabsApiKey = Deno.env.get("ELEVENLABS_API_KEY") || "";
+
     console.log("[BRIDGE] Calling Deno.upgradeWebSocket...");
     const { socket, response } = Deno.upgradeWebSocket(req);
     console.log("[BRIDGE] WebSocket upgrade success");
@@ -142,6 +144,7 @@ Deno.serve((req) => {
   let keepaliveTimer: number | null = null;
   let closed = false;
   let agentConfig: AgentConfig | null = null;
+  let useHybridMode = false; // true = Gemini text + ElevenLabs TTS
 
   // ── Cleanup helper ──
   function cleanup(reason: string) {
@@ -505,15 +508,60 @@ Deno.serve((req) => {
     return data;
   }
 
+  // ── ElevenLabs TTS: convert text to mulaw audio for telephony ──
+  async function speakViaElevenLabs(text: string, voiceId: string) {
+    if (!text.trim() || !elevenlabsApiKey) return;
+    console.log(`[BRIDGE] ElevenLabs TTS: voice=${voiceId} text="${text.substring(0, 80)}..."`);
+    try {
+      const ttsRes = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=ulaw_8000`,
+        {
+          method: "POST",
+          headers: {
+            "xi-api-key": elevenlabsApiKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text,
+            model_id: "eleven_turbo_v2_5",
+          }),
+        }
+      );
+      if (!ttsRes.ok) {
+        console.error(`[BRIDGE] ElevenLabs TTS error: ${ttsRes.status} ${await ttsRes.text()}`);
+        return;
+      }
+      // Stream audio chunks to telephony
+      const reader = ttsRes.body?.getReader();
+      if (!reader) return;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value && socket.readyState === WebSocket.OPEN && !closed) {
+          socket.send(JSON.stringify({
+            event: "media",
+            streamSid,
+            media: { payload: b64encode(value) },
+          }));
+        }
+      }
+      console.log("[BRIDGE] ElevenLabs TTS audio sent to telephony");
+    } catch (e) {
+      console.error("[BRIDGE] ElevenLabs TTS error:", e);
+    }
+  }
+
   // ── Connect to Gemini Live API ──
   function connectGemini(config: AgentConfig) {
-    const { prompt, model } = config;
-    // Validate voice — fall back to default if not supported by Gemini
-    const voice = GEMINI_SUPPORTED_VOICES.has(config.voice) ? config.voice : DEFAULT_GEMINI_VOICE;
-    if (voice !== config.voice) {
-      console.log(`[BRIDGE] Voice "${config.voice}" not supported by Gemini, falling back to "${voice}"`);
-    }
-    console.log(`[BRIDGE] Connecting to Gemini: model=models/${model} voice=${voice}`);
+    const { prompt, model, voice } = config;
+
+    // Determine mode: hybrid (ElevenLabs TTS) vs native audio
+    const isNativeVoice = GEMINI_SUPPORTED_VOICES.has(voice);
+    useHybridMode = !isNativeVoice && !!elevenlabsApiKey;
+
+    const geminiVoice = isNativeVoice ? voice : DEFAULT_GEMINI_VOICE;
+    console.log(`[BRIDGE] Mode: ${useHybridMode ? "HYBRID (Gemini text + ElevenLabs TTS)" : "NATIVE audio"}`);
+    console.log(`[BRIDGE] Connecting to Gemini: model=models/${model} voice=${useHybridMode ? `ElevenLabs:${voice}` : geminiVoice}`);
 
     const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`;
 
@@ -528,18 +576,34 @@ Deno.serve((req) => {
     geminiWs.onopen = () => {
       console.log("[BRIDGE] Gemini WS connected, sending setup...");
       try {
-        const setupMsg: any = {
-          setup: {
-            model: `models/${model}`,
-            generationConfig: {
-              responseModalities: ["AUDIO"],
-              speechConfig: {
-                voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } },
+        let setupMsg: any;
+
+        if (useHybridMode) {
+          // Hybrid mode: Gemini responds with TEXT, we use ElevenLabs for voice
+          setupMsg = {
+            setup: {
+              model: `models/${model}`,
+              generationConfig: {
+                responseModalities: ["TEXT"],
               },
+              systemInstruction: { parts: [{ text: prompt + "\n\nIMPORTANT: Keep your responses concise and conversational since they will be spoken aloud. Do not use markdown, lists, or formatting." }] },
             },
-            systemInstruction: { parts: [{ text: prompt }] },
-          },
-        };
+          };
+        } else {
+          // Native mode: Gemini responds with AUDIO directly
+          setupMsg = {
+            setup: {
+              model: `models/${model}`,
+              generationConfig: {
+                responseModalities: ["AUDIO"],
+                speechConfig: {
+                  voiceConfig: { prebuiltVoiceConfig: { voiceName: geminiVoice } },
+                },
+              },
+              systemInstruction: { parts: [{ text: prompt }] },
+            },
+          };
+        }
 
         // Add tools if any are available
         const functionDeclarations = buildFunctionDeclarations(config);
@@ -555,6 +619,10 @@ Deno.serve((req) => {
         cleanup("gemini_setup_send_error");
       }
     };
+
+    // Accumulate text for hybrid mode TTS
+    let pendingText = "";
+    let ttsTimeout: number | null = null;
 
     geminiWs.onmessage = async (ev) => {
       try {
@@ -627,11 +695,23 @@ Deno.serve((req) => {
           return;
         }
 
-        // Handle audio response from Gemini
+        // Handle responses from Gemini
         const parts = (msg.serverContent as any)?.modelTurn?.parts;
         if (parts) {
           for (const part of parts) {
-            if (part.inlineData?.data && part.inlineData.mimeType?.includes("audio/pcm")) {
+            if (useHybridMode && part.text) {
+              // Hybrid mode: accumulate text, send to ElevenLabs on sentence boundaries
+              pendingText += part.text;
+              // Flush on sentence boundaries for lower latency
+              const sentenceMatch = pendingText.match(/^(.*[.!?])\s*/s);
+              if (sentenceMatch) {
+                const sentence = sentenceMatch[1];
+                pendingText = pendingText.slice(sentenceMatch[0].length);
+                if (ttsTimeout) clearTimeout(ttsTimeout);
+                await speakViaElevenLabs(sentence, voice);
+              }
+            } else if (!useHybridMode && part.inlineData?.data && part.inlineData.mimeType?.includes("audio/pcm")) {
+              // Native mode: forward PCM audio
               const pcm = b64decode(part.inlineData.data);
               const mulaw = pcm24kToMulaw8k(pcm);
               if (socket.readyState === WebSocket.OPEN && !closed) {
@@ -648,6 +728,12 @@ Deno.serve((req) => {
         // Handle turn complete
         if ((msg.serverContent as any)?.turnComplete) {
           console.log("[BRIDGE] Gemini turn complete");
+          // Flush any remaining text in hybrid mode
+          if (useHybridMode && pendingText.trim()) {
+            await speakViaElevenLabs(pendingText.trim(), voice);
+            pendingText = "";
+          }
+          if (ttsTimeout) { clearTimeout(ttsTimeout); ttsTimeout = null; }
         }
 
         if (msg.error) {
