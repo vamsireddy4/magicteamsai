@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -19,6 +19,7 @@ import type { Tables } from "@/integrations/supabase/types";
 export default function Agents() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [agents, setAgents] = useState<Tables<"agents">[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -75,14 +76,14 @@ export default function Agents() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {agents.map((agent) => (
-              <Card key={agent.id} className="group relative">
+              <Card key={agent.id} className="group relative cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/agents/${agent.id}`)}>
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
                       <Bot className="h-5 w-5 text-accent-foreground" />
                     </div>
                     <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                         <Button variant="ghost" size="icon" className="h-8 w-8">
                           <MoreVertical className="h-4 w-4" />
                         </Button>
