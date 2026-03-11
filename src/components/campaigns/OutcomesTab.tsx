@@ -58,7 +58,7 @@ export default function OutcomesTab() {
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
     else {
       toast({ title: "Outcome added" });
-      if (addForm.outcome === "BOOKED" || addForm.outcome === "DECLINED") {
+      if (addForm.outcome === "ANSWERED" || addForm.outcome === "DECLINED") {
         await supabase.from("do_not_call").insert({ user_id: user.id, phone_number: addForm.phone_number, reason: addForm.outcome, parent_name: addForm.parent_name || null, venue_name: addForm.venue_name || null });
       }
       setAddDialogOpen(false);
