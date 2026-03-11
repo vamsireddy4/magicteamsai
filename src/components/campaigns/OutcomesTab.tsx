@@ -50,7 +50,7 @@ export default function OutcomesTab() {
     if (!user) return;
     const [outcomesRes, campaignsRes] = await Promise.all([
       supabase.from("call_outcomes").select("*").order("call_timestamp", { ascending: false }),
-      supabase.from("campaigns").select("id, venue_name, round"),
+      supabase.from("campaigns").select("id, venue_name, venue_location, round, age_range, times, start_date, end_date, booking_target, status, notes"),
     ]);
     setOutcomes((outcomesRes.data as Outcome[]) || []);
     setCampaigns((campaignsRes.data as Campaign[]) || []);
