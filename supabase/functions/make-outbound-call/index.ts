@@ -252,14 +252,23 @@ Deno.serve(async (req) => {
         ? { telnyx: {} }
         : { twilio: { } };
 
+      // Telnyx outbound calls are more reliable when the callee answers first,
+      // otherwise the agent can speak during ringing and the greeting gets lost.
+      const shouldWaitForRecipient = provider === "telnyx";
+
       const ultravoxBody: any = {
         systemPrompt,
         model: agent.model || "fixie-ai/ultravox-v0.7",
         voice: agent.voice,
         temperature: Number(agent.temperature),
-        firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT" ? { agent: {} } : { user: {} },
+        firstSpeakerSettings: shouldWaitForRecipient
+          ? { user: {} }
+          : agent.first_speaker === "FIRST_SPEAKER_AGENT"
+            ? { agent: {} }
+            : { user: {} },
         medium,
         languageHint: agent.language_hint || "en",
+        joinTimeout: shouldWaitForRecipient ? "90s" : "30s",
         maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
       };
       if (ultravoxTools.length > 0) {
