@@ -175,20 +175,32 @@ export default function OutcomesTab() {
       <Dialog open={!!selectedOutcome} onOpenChange={(open) => !open && setSelectedOutcome(null)}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Call Detail</DialogTitle></DialogHeader>
-          {selectedOutcome && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><span className="text-muted-foreground">Parent:</span> {selectedOutcome.parent_name || "—"}</div>
-                <div><span className="text-muted-foreground">Phone:</span> {selectedOutcome.phone_number}</div>
-                <div><span className="text-muted-foreground">Venue:</span> {selectedOutcome.venue_name || "—"}</div>
-                <div><span className="text-muted-foreground">Attempt:</span> {selectedOutcome.attempt_number}</div>
-                <div><span className="text-muted-foreground">Children:</span> {selectedOutcome.child_names || "—"}</div>
-                <div><span className="text-muted-foreground">Outcome:</span> <Badge className={OUTCOME_COLORS[selectedOutcome.outcome]}>{selectedOutcome.outcome}</Badge></div>
+          {selectedOutcome && (() => {
+            const camp = campaigns.find((c) => c.id === selectedOutcome.campaign_id);
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div><span className="text-muted-foreground">Parent:</span> {selectedOutcome.parent_name || "—"}</div>
+                  <div><span className="text-muted-foreground">Phone:</span> {selectedOutcome.phone_number}</div>
+                  <div><span className="text-muted-foreground">Venue:</span> {selectedOutcome.venue_name || "—"}</div>
+                  <div><span className="text-muted-foreground">Location:</span> {camp?.venue_location || "—"}</div>
+                  <div><span className="text-muted-foreground">Children:</span> {selectedOutcome.child_names || "—"}</div>
+                  <div><span className="text-muted-foreground">Outcome:</span> <Badge className={OUTCOME_COLORS[selectedOutcome.outcome]}>{selectedOutcome.outcome}</Badge></div>
+                  <div><span className="text-muted-foreground">Round:</span> {camp?.round || "—"}</div>
+                  <div><span className="text-muted-foreground">Attempt:</span> {selectedOutcome.attempt_number}</div>
+                  <div><span className="text-muted-foreground">Age Range:</span> {camp?.age_range || "—"}</div>
+                  <div><span className="text-muted-foreground">Times:</span> {camp?.times || "—"}</div>
+                  <div><span className="text-muted-foreground">Start Date:</span> {camp?.start_date || "—"}</div>
+                  <div><span className="text-muted-foreground">End Date:</span> {camp?.end_date || "—"}</div>
+                  <div><span className="text-muted-foreground">Booking Target:</span> {camp?.booking_target ?? "—"}</div>
+                  <div><span className="text-muted-foreground">Status:</span> {camp?.status || "—"}</div>
+                </div>
+                {camp?.notes && <div><p className="text-sm font-medium mb-1">Campaign Notes</p><p className="text-sm text-muted-foreground">{camp.notes}</p></div>}
+                {selectedOutcome.summary && <div><p className="text-sm font-medium mb-1">Summary</p><p className="text-sm text-muted-foreground">{selectedOutcome.summary}</p></div>}
+                {selectedOutcome.transcript && <div><p className="text-sm font-medium mb-1">Transcript</p><pre className="text-xs bg-muted p-3 rounded-lg whitespace-pre-wrap max-h-60 overflow-y-auto">{selectedOutcome.transcript}</pre></div>}
               </div>
-              {selectedOutcome.summary && <div><p className="text-sm font-medium mb-1">Summary</p><p className="text-sm text-muted-foreground">{selectedOutcome.summary}</p></div>}
-              {selectedOutcome.transcript && <div><p className="text-sm font-medium mb-1">Transcript</p><pre className="text-xs bg-muted p-3 rounded-lg whitespace-pre-wrap max-h-60 overflow-y-auto">{selectedOutcome.transcript}</pre></div>}
-            </div>
-          )}
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
