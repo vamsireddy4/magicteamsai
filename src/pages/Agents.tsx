@@ -76,7 +76,7 @@ export default function Agents() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {agents.map((agent) => (
-              <Card key={agent.id} className="group relative">
+              <Card key={agent.id} className="group relative cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/agents/${agent.id}`)}>
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
