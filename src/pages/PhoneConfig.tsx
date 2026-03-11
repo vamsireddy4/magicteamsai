@@ -243,7 +243,7 @@ export default function PhoneConfig() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 {currentProviderConfig && <img src={currentProviderConfig.logo} alt={currentProviderConfig.name} className="h-6 w-6 rounded object-contain" />}
-                Connect {currentProviderConfig?.name}
+                {editingConfig ? "Edit" : "Connect"} {currentProviderConfig?.name}
               </DialogTitle>
               <DialogDescription>
                 Enter your {currentProviderConfig?.name} credentials to enable phone calls.
