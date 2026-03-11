@@ -73,9 +73,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
             {!collapsed && <span className="text-lg font-bold tracking-tight">ReceptoAI</span>}
           </Link>
-          <button onClick={() => setSidebarOpen(false)} className="lg:hidden">
-            <X className="h-5 w-5 text-muted-foreground" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCollapsed(!collapsed)}
+              className="hidden lg:flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </button>
+            <button onClick={() => setSidebarOpen(false)} className="lg:hidden">
+              <X className="h-5 w-5 text-muted-foreground" />
+            </button>
+          </div>
         </div>
 
         <nav className="flex-1 space-y-1 p-2 overflow-y-auto">
@@ -134,14 +142,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
           )}
 
-          {/* Toggle button - desktop only */}
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="hidden lg:flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors justify-center"
-          >
-            {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-            {!collapsed && <span className="flex-1 text-left">Collapse</span>}
-          </button>
         </div>
       </aside>
 
