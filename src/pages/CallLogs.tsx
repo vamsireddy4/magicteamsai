@@ -178,7 +178,7 @@ export default function CallLogs() {
                     <TableRow
                       key={call.id}
                       className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => setSelectedCall(call)}
+                      onClick={() => handleSelectCall(call)}
                     >
                       <TableCell>
                         <div className="flex items-center gap-2">
