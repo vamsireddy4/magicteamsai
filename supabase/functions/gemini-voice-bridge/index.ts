@@ -72,23 +72,32 @@ function b64encode(bytes: Uint8Array): string {
 // ── Main server ──
 
 Deno.serve((req) => {
-  const upgrade = req.headers.get("upgrade") || "";
-  if (upgrade.toLowerCase() !== "websocket") {
-    return new Response("WebSocket upgrade required", { status: 426 });
-  }
+  console.log("[BRIDGE] === Handler invoked ===");
+  try {
+    const reqUrl = new URL(req.url);
+    const upgradeHeader = req.headers.get("upgrade") || "";
+    console.log(`[BRIDGE] method=${req.method} upgrade="${upgradeHeader}" url=${reqUrl.pathname}${reqUrl.search}`);
 
-  const url = new URL(req.url);
-  const agentId = url.searchParams.get("agent_id");
-  if (!agentId) return new Response("agent_id required", { status: 400 });
+    // Health check for non-WebSocket
+    if (upgradeHeader.toLowerCase() !== "websocket") {
+      return new Response(JSON.stringify({ status: "ok", timestamp: new Date().toISOString() }), { 
+        status: 200, headers: { "Content-Type": "application/json" } 
+      });
+    }
 
-  const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!geminiApiKey) return new Response("GEMINI_API_KEY not configured", { status: 500 });
+    console.log("[BRIDGE] WebSocket upgrade detected");
+    const agentId = reqUrl.searchParams.get("agent_id");
+    if (!agentId) return new Response("agent_id required", { status: 400 });
 
-  const sbUrl = Deno.env.get("SUPABASE_URL")!;
-  const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiApiKey) return new Response("GEMINI_API_KEY not configured", { status: 500 });
 
-  // Upgrade IMMEDIATELY — before any async work
-  const { socket, response } = Deno.upgradeWebSocket(req);
+    const sbUrl = Deno.env.get("SUPABASE_URL")!;
+    const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    console.log("[BRIDGE] Calling Deno.upgradeWebSocket...");
+    const { socket, response } = Deno.upgradeWebSocket(req);
+    console.log("[BRIDGE] WebSocket upgrade success");
 
   let geminiWs: WebSocket | null = null;
   let streamSid = "";
@@ -347,4 +356,8 @@ Deno.serve((req) => {
   };
 
   return response;
+  } catch (e) {
+    console.error("[BRIDGE] FATAL handler error:", e);
+    return new Response(JSON.stringify({ error: "Bridge handler crashed", details: String(e) }), { status: 500 });
+  }
 });
