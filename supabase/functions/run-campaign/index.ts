@@ -252,9 +252,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch contacts for this campaign
-    const { data: contacts } = await supabase
-      .from("contacts").select("*").eq("campaign_id", campaign_id).order("created_at");
+    // Fetch contacts for this campaign — optionally filtered by selected IDs
+    let contactsQuery = supabase.from("contacts").select("*").eq("campaign_id", campaign_id).order("created_at");
+    if (contact_ids && Array.isArray(contact_ids) && contact_ids.length > 0) {
+      contactsQuery = contactsQuery.in("id", contact_ids);
+    }
+    const { data: contacts } = await contactsQuery;
     if (!contacts || contacts.length === 0) {
       return new Response(JSON.stringify({ error: "No contacts found for this campaign" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
