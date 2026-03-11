@@ -214,7 +214,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { campaign_id } = await req.json();
+    const { campaign_id, contact_ids } = await req.json();
     if (!campaign_id) {
       return new Response(JSON.stringify({ error: "campaign_id is required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
