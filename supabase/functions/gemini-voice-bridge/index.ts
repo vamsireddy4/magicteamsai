@@ -131,6 +131,8 @@ Deno.serve((req) => {
     const sbUrl = Deno.env.get("SUPABASE_URL")!;
     const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+    const elevenlabsApiKey = Deno.env.get("ELEVENLABS_API_KEY") || "";
+
     console.log("[BRIDGE] Calling Deno.upgradeWebSocket...");
     const { socket, response } = Deno.upgradeWebSocket(req);
     console.log("[BRIDGE] WebSocket upgrade success");
@@ -142,6 +144,7 @@ Deno.serve((req) => {
   let keepaliveTimer: number | null = null;
   let closed = false;
   let agentConfig: AgentConfig | null = null;
+  let useHybridMode = false; // true = Gemini text + ElevenLabs TTS
 
   // ── Cleanup helper ──
   function cleanup(reason: string) {
