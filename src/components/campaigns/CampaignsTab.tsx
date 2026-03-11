@@ -71,6 +71,8 @@ export default function CampaignsTab() {
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [contactCount, setContactCount] = useState(0);
   const [outcomeCounts, setOutcomeCounts] = useState<Record<string, number>>({});
+  const [contacts, setContacts] = useState<any[]>([]);
+  const [callOutcomes, setCallOutcomes] = useState<any[]>([]);
 
   const fetchData = async () => {
     if (!user) return;
@@ -89,13 +91,15 @@ export default function CampaignsTab() {
 
   const openCampaignDetail = async (c: Campaign) => {
     setSelectedCampaign(c);
-    const [{ count: cCount }, { data: outcomes }] = await Promise.all([
-      supabase.from("contacts").select("*", { count: "exact", head: true }).eq("campaign_id", c.id),
-      supabase.from("call_outcomes").select("outcome").eq("campaign_id", c.id),
+    const [{ data: contactsData, count: cCount }, { data: outcomes }] = await Promise.all([
+      supabase.from("contacts").select("*", { count: "exact" }).eq("campaign_id", c.id).order("created_at"),
+      supabase.from("call_outcomes").select("*").eq("campaign_id", c.id).order("created_at", { ascending: false }),
     ]);
+    setContacts(contactsData || []);
     setContactCount(cCount || 0);
+    setCallOutcomes(outcomes || []);
     const counts: Record<string, number> = {};
-    (outcomes || []).forEach((o) => { counts[o.outcome] = (counts[o.outcome] || 0) + 1; });
+    (outcomes || []).forEach((o: any) => { counts[o.outcome] = (counts[o.outcome] || 0) + 1; });
     setOutcomeCounts(counts);
   };
 
