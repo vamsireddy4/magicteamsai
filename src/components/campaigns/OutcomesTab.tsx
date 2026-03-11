@@ -218,27 +218,6 @@ export default function OutcomesTab() {
           </Button>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid gap-3 grid-cols-3">
-          <Card>
-            <CardContent className="pt-4 pb-3 text-center">
-              <p className="text-2xl font-bold">{campCallLogs.length}</p>
-              <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><Phone className="h-3 w-3" /> Total Calls</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 pb-3 text-center">
-              <p className="text-2xl font-bold">{statusCounts["completed"] || 0}</p>
-              <p className="text-xs text-muted-foreground">Completed</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 pb-3 text-center">
-              <p className="text-2xl font-bold">{campCallLogs.filter(cl => cl.status === "completed" && (cl.duration || 0) > 10).length}</p>
-              <p className="text-xs text-muted-foreground">Answered (10s+)</p>
-            </CardContent>
-          </Card>
-        </div>
 
         {/* Outcome Breakdown */}
         <div className="grid gap-3 grid-cols-3">
