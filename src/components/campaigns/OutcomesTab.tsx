@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, FileText } from "lucide-react";
+import { Plus, Search, FileText, RefreshCw, Loader2 } from "lucide-react";
 
 interface Outcome { id: string; campaign_id: string; phone_number: string; parent_name: string | null; child_names: string | null; venue_name: string | null; outcome: string; transcript: string | null; summary: string | null; attempt_number: number; call_timestamp: string; }
 interface Campaign { id: string; venue_name: string; round: number; }
