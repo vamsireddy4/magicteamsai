@@ -19,6 +19,7 @@ import type { Tables } from "@/integrations/supabase/types";
 export default function Agents() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [agents, setAgents] = useState<Tables<"agents">[]>([]);
   const [loading, setLoading] = useState(true);
 
