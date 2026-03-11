@@ -102,7 +102,7 @@ export default function OutcomesTab() {
       </div>
 
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-        {["BOOKED", "DECLINED", "FLAGGED_REVIEW", "VOICEMAIL", "NO_ANSWER", "PENDING"].map((o) => (
+        {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
           <Card key={o} className="cursor-pointer hover:shadow-sm transition-shadow" onClick={() => setFilterOutcome(filterOutcome === o ? "ALL" : o)}>
             <CardContent className="pt-4 pb-3 text-center">
               <p className="text-2xl font-bold">{outcomeCounts[o] || 0}</p>
