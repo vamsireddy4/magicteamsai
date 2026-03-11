@@ -176,9 +176,10 @@ export default function CampaignsTab() {
         delay_seconds: parseInt(detailDelay) || 30,
       }).eq("id", selectedCampaign.id);
 
-      // If not all contacts selected, we need to handle partial — for now run full campaign
-      // The run-campaign function calls all contacts in the campaign
-      const { data, error } = await supabase.functions.invoke("run-campaign", { body: { campaign_id: selectedCampaign.id } });
+      // Pass selected contact IDs so only those are called
+      const { data, error } = await supabase.functions.invoke("run-campaign", {
+        body: { campaign_id: selectedCampaign.id, contact_ids: Array.from(selectedContactIds) },
+      });
       if (error) throw error;
       toast({ title: "Campaign started", description: `${data?.total || 0} calls queued` });
       // Refresh detail
