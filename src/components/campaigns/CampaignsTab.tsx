@@ -12,8 +12,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, MapPin, Phone, Target, MoreVertical, Pencil, Trash2, Play, Loader2 } from "lucide-react";
+import { Plus, MapPin, Phone, Target, MoreVertical, Pencil, Trash2, Play, Loader2, Users, CalendarDays, Clock, Hash, FileText, ArrowLeft } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Separator } from "@/components/ui/separator";
 
 interface Campaign {
   id: string;
@@ -65,6 +66,9 @@ export default function CampaignsTab() {
   const [form, setForm] = useState(emptyForm);
   const [filter, setFilter] = useState("all");
   const [runningCampaign, setRunningCampaign] = useState<string | null>(null);
+  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [contactCount, setContactCount] = useState(0);
+  const [outcomeCounts, setOutcomeCounts] = useState<Record<string, number>>({});
 
   const fetchData = async () => {
     if (!user) return;
@@ -80,6 +84,18 @@ export default function CampaignsTab() {
   };
 
   useEffect(() => { fetchData(); }, [user]);
+
+  const openCampaignDetail = async (c: Campaign) => {
+    setSelectedCampaign(c);
+    const [{ count: cCount }, { data: outcomes }] = await Promise.all([
+      supabase.from("contacts").select("*", { count: "exact", head: true }).eq("campaign_id", c.id),
+      supabase.from("call_outcomes").select("outcome").eq("campaign_id", c.id),
+    ]);
+    setContactCount(cCount || 0);
+    const counts: Record<string, number> = {};
+    (outcomes || []).forEach((o) => { counts[o.outcome] = (counts[o.outcome] || 0) + 1; });
+    setOutcomeCounts(counts);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,7 +131,7 @@ export default function CampaignsTab() {
   const deleteCampaign = async (id: string) => {
     const { error } = await supabase.from("campaigns").delete().eq("id", id);
     if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
-    else { toast({ title: "Campaign deleted" }); fetchData(); }
+    else { toast({ title: "Campaign deleted" }); if (selectedCampaign?.id === id) setSelectedCampaign(null); fetchData(); }
   };
 
   const startCampaign = async (campaignId: string) => {
@@ -134,6 +150,157 @@ export default function CampaignsTab() {
   const statusCounts = campaigns.reduce((acc, c) => { acc[c.status] = (acc[c.status] || 0) + 1; return acc; }, {} as Record<string, number>);
   const getAgentName = (id: string | null) => id ? agents.find(a => a.id === id)?.name || "Unknown" : "—";
   const getPhoneLabel = (id: string | null) => { if (!id) return "—"; const pc = phoneConfigs.find(p => p.id === id); return pc ? (pc.friendly_name || pc.phone_number) : "Unknown"; };
+
+  // Campaign detail view
+  if (selectedCampaign) {
+    const c = selectedCampaign;
+    const totalOutcomes = Object.values(outcomeCounts).reduce((a, b) => a + b, 0);
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => setSelectedCampaign(null)}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="flex-1">
+            <h2 className="text-2xl font-bold">{c.venue_name}</h2>
+            {c.venue_location && <p className="text-muted-foreground flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {c.venue_location}</p>}
+          </div>
+          <div className="flex gap-2">
+            <Badge className={`${STATUS_COLORS[c.status] || ""} text-sm px-3 py-1`}>{c.status}</Badge>
+            <Badge variant="outline" className="text-sm px-3 py-1">Round {c.round}</Badge>
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardContent className="pt-6 text-center">
+              <Users className="h-8 w-8 mx-auto text-primary mb-2" />
+              <p className="text-2xl font-bold">{contactCount}</p>
+              <p className="text-xs text-muted-foreground">Total Contacts</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6 text-center">
+              <Phone className="h-8 w-8 mx-auto text-primary mb-2" />
+              <p className="text-2xl font-bold">{c.calls_made}</p>
+              <p className="text-xs text-muted-foreground">Calls Made</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6 text-center">
+              <Target className="h-8 w-8 mx-auto text-primary mb-2" />
+              <p className="text-2xl font-bold">{c.booking_target ?? "—"}</p>
+              <p className="text-xs text-muted-foreground">Booking Target</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6 text-center">
+              <Hash className="h-8 w-8 mx-auto text-primary mb-2" />
+              <p className="text-2xl font-bold">{totalOutcomes}</p>
+              <p className="text-xs text-muted-foreground">Total Outcomes</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {c.total_contacts > 0 && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex justify-between text-sm mb-2">
+                <span className="text-muted-foreground">Call Progress</span>
+                <span className="font-medium">{c.calls_made} / {c.total_contacts}</span>
+              </div>
+              <Progress value={c.total_contacts > 0 ? (c.calls_made / c.total_contacts) * 100 : 0} className="h-3" />
+            </CardContent>
+          </Card>
+        )}
+
+        {Object.keys(outcomeCounts).length > 0 && (
+          <Card>
+            <CardHeader><CardTitle className="text-base">Outcome Breakdown</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+                {Object.entries(outcomeCounts).sort((a, b) => b[1] - a[1]).map(([outcome, count]) => (
+                  <div key={outcome} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                    <span className="text-sm font-medium">{outcome}</span>
+                    <Badge variant="secondary">{count}</Badge>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <Card>
+          <CardHeader><CardTitle className="text-base">Campaign Details</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-3">
+                {c.agent_id && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground w-28">Agent:</span>
+                    <span className="font-medium">{getAgentName(c.agent_id)}</span>
+                  </div>
+                )}
+                {c.phone_config_id && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground w-28">Phone:</span>
+                    <span className="font-medium">{getPhoneLabel(c.phone_config_id)}</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-muted-foreground w-28">Delay:</span>
+                  <span className="font-medium">{c.delay_seconds}s between calls</span>
+                </div>
+                {c.age_range && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground w-28">Age Range:</span>
+                    <span className="font-medium">{c.age_range}</span>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-3">
+                {c.start_date && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground w-28">Dates:</span>
+                    <span className="font-medium">{c.start_date} → {c.end_date || "TBD"}</span>
+                  </div>
+                )}
+                {c.times && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground w-28">Times:</span>
+                    <span className="font-medium">{c.times}</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-muted-foreground w-28">Created:</span>
+                  <span className="font-medium">{new Date(c.created_at).toLocaleDateString()}</span>
+                </div>
+              </div>
+            </div>
+            {c.notes && (
+              <>
+                <Separator className="my-4" />
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> Notes</p>
+                  <p className="text-sm">{c.notes}</p>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="flex gap-3">
+          {c.status === "draft" && c.agent_id && c.phone_config_id && (
+            <Button onClick={() => startCampaign(c.id)} disabled={runningCampaign === c.id}>
+              {runningCampaign === c.id ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running...</> : <><Play className="h-4 w-4 mr-2" /> Start Campaign</>}
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => editCampaign(c)}><Pencil className="h-4 w-4 mr-2" /> Edit</Button>
+          <Button variant="destructive" onClick={() => deleteCampaign(c.id)}><Trash2 className="h-4 w-4 mr-2" /> Delete</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -197,7 +364,7 @@ export default function CampaignsTab() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filtered.map((c) => (
-            <Card key={c.id} className="relative">
+            <Card key={c.id} className="relative cursor-pointer hover:shadow-md transition-shadow" onClick={() => openCampaignDetail(c)}>
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div>
@@ -205,10 +372,10 @@ export default function CampaignsTab() {
                     {c.venue_location && <CardDescription className="flex items-center gap-1 mt-1"><MapPin className="h-3 w-3" /> {c.venue_location}</CardDescription>}
                   </div>
                   <DropdownMenu>
-                    <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                    <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.stopPropagation()}><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => editCampaign(c)}><Pencil className="h-4 w-4 mr-2" /> Edit</DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive" onClick={() => deleteCampaign(c.id)}><Trash2 className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); editCampaign(c); }}><Pencil className="h-4 w-4 mr-2" /> Edit</DropdownMenuItem>
+                      <DropdownMenuItem className="text-destructive" onClick={(e) => { e.stopPropagation(); deleteCampaign(c.id); }}><Trash2 className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -233,7 +400,7 @@ export default function CampaignsTab() {
                   </div>
                 )}
                 {c.status === "draft" && c.agent_id && c.phone_config_id && (
-                  <Button size="sm" className="w-full mt-2" onClick={() => startCampaign(c.id)} disabled={runningCampaign === c.id}>
+                  <Button size="sm" className="w-full mt-2" onClick={(e) => { e.stopPropagation(); startCampaign(c.id); }} disabled={runningCampaign === c.id}>
                     {runningCampaign === c.id ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running...</> : <><Play className="h-4 w-4 mr-2" /> Start Campaign</>}
                   </Button>
                 )}
