@@ -19,7 +19,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  const model = "gemini-2.0-flash-live-001";
+  const model = "gemini-2.5-flash-native-audio-preview-12-2025";
   const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`;
 
   console.log("Attempting Gemini WebSocket connection...");
