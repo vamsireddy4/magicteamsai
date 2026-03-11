@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
     // Fetch call_logs that need syncing (no duration or no transcript)
     const { data: calls, error: fetchError } = await supabase
       .from("call_logs")
-      .select("id, ultravox_call_id, twilio_call_sid, caller_number, started_at, duration, transcript, status, agent_id")
+      .select("id, ultravox_call_id, twilio_call_sid, caller_number, recipient_number, started_at, duration, transcript, status, agent_id")
       .eq("user_id", user.id)
       .or("duration.is.null,transcript.is.null,status.eq.initiated");
 
@@ -217,6 +217,44 @@ Deno.serve(async (req) => {
             errors.push(`Failed to update call ${call.id}: ${updateError.message}`);
           } else {
             updated++;
+
+            // Update corresponding call_outcome based on call status
+            const finalStatus = (updateData.status as string) || call.status;
+            if (finalStatus && finalStatus !== "initiated" && call.caller_number) {
+              // Map call status to outcome
+              let outcome: string | null = null;
+              const duration = (updateData.duration as number) ?? call.duration;
+              if (finalStatus === "completed" && duration && duration > 10) {
+                outcome = "ANSWERED";
+              } else if (finalStatus === "completed" && (!duration || duration <= 10)) {
+                outcome = "VOICEMAIL";
+              } else if (finalStatus === "no-answer" || finalStatus === "canceled") {
+                outcome = "NO_ANSWER";
+              } else if (finalStatus === "busy") {
+                outcome = "NO_ANSWER";
+              } else if (finalStatus === "failed") {
+                outcome = "DECLINED";
+              }
+
+              if (outcome && call.recipient_number) {
+                // Update the most recent PENDING outcome for this phone number
+                const { data: pendingOutcomes } = await supabase
+                  .from("call_outcomes")
+                  .select("id")
+                  .eq("user_id", user.id)
+                  .eq("phone_number", call.recipient_number)
+                  .eq("outcome", "PENDING")
+                  .order("created_at", { ascending: false })
+                  .limit(1);
+
+                if (pendingOutcomes && pendingOutcomes.length > 0) {
+                  await supabase
+                    .from("call_outcomes")
+                    .update({ outcome })
+                    .eq("id", pendingOutcomes[0].id);
+                }
+              }
+            }
           }
         }
       } catch (e) {
