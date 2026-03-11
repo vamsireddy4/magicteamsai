@@ -257,7 +257,7 @@ Deno.serve(async (req) => {
         model: agent.model || "fixie-ai/ultravox-v0.7",
         voice: agent.voice,
         temperature: Number(agent.temperature),
-        firstSpeakerSettings: { user: {} },
+        firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT" ? { agent: {} } : { user: {} },
         medium,
         languageHint: agent.language_hint || "en",
         maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
