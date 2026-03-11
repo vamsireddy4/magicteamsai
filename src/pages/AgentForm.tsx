@@ -334,15 +334,19 @@ export default function AgentForm() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Voice</Label>
-                  {form.ai_provider === "ultravox" && (
+                  {(form.ai_provider === "ultravox" || form.ai_provider === "gemini") && (
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">Custom (ElevenLabs)</span>
                       <Switch
                         checked={useCustomVoice}
                         onCheckedChange={(val) => {
                           setUseCustomVoice(val);
-                          if (!val && voices.length > 0) {
-                            setForm({ ...form, voice: voices[0].name });
+                          if (!val) {
+                            if (form.ai_provider === "gemini") {
+                              setForm({ ...form, voice: "Kore" });
+                            } else if (voices.length > 0) {
+                              setForm({ ...form, voice: voices[0].name });
+                            }
                           }
                         }}
                       />
@@ -350,7 +354,20 @@ export default function AgentForm() {
                   )}
                 </div>
 
-                {useCustomVoice && form.ai_provider === "ultravox" ? (
+                {useCustomVoice ? (
+                  <div className="space-y-2">
+                    <Input
+                      value={form.voice}
+                      onChange={(e) => setForm({ ...form, voice: e.target.value })}
+                      placeholder="Enter ElevenLabs voice ID"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {form.ai_provider === "gemini"
+                        ? "Paste your ElevenLabs voice ID. Gemini will handle conversation logic while ElevenLabs provides the voice."
+                        : "Paste your ElevenLabs voice ID for a custom voice."}
+                    </p>
+                  </div>
+                ) : loadingVoices ? (
                   <div className="space-y-2">
                     <Input
                       value={form.voice}
