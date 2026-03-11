@@ -14,8 +14,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, FileText, RefreshCw, Loader2 } from "lucide-react";
 
-interface Outcome { id: string; campaign_id: string; phone_number: string; parent_name: string | null; child_names: string | null; venue_name: string | null; outcome: string; transcript: string | null; summary: string | null; attempt_number: number; call_timestamp: string; }
-interface Campaign { id: string; venue_name: string; round: number; }
+interface Outcome { id: string; campaign_id: string; phone_number: string; parent_name: string | null; child_names: string | null; venue_name: string | null; outcome: string; transcript: string | null; summary: string | null; attempt_number: number; call_timestamp: string; contact_id: string | null; }
+interface Campaign { id: string; venue_name: string; venue_location: string | null; round: number; age_range: string | null; times: string | null; start_date: string | null; end_date: string | null; booking_target: number | null; status: string; notes: string | null; }
 
 const OUTCOME_COLORS: Record<string, string> = { ANSWERED: "bg-green-100 text-green-800", DECLINED: "bg-red-100 text-red-800", FLAGGED_REVIEW: "bg-yellow-100 text-yellow-800", VOICEMAIL: "bg-blue-100 text-blue-800", NO_ANSWER: "bg-muted text-muted-foreground", PENDING: "bg-muted text-muted-foreground" };
 const OUTCOMES = ["ALL", "ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"];
@@ -50,7 +50,7 @@ export default function OutcomesTab() {
     if (!user) return;
     const [outcomesRes, campaignsRes] = await Promise.all([
       supabase.from("call_outcomes").select("*").order("call_timestamp", { ascending: false }),
-      supabase.from("campaigns").select("id, venue_name, round"),
+      supabase.from("campaigns").select("id, venue_name, venue_location, round, age_range, times, start_date, end_date, booking_target, status, notes"),
     ]);
     setOutcomes((outcomesRes.data as Outcome[]) || []);
     setCampaigns((campaignsRes.data as Campaign[]) || []);
@@ -145,20 +145,25 @@ export default function OutcomesTab() {
           : (
             <div className="overflow-auto">
               <Table>
-                <TableHeader><TableRow><TableHead>Timestamp</TableHead><TableHead>Venue</TableHead><TableHead>Parent</TableHead><TableHead>Phone</TableHead><TableHead>Children</TableHead><TableHead>Outcome</TableHead><TableHead>Attempt</TableHead><TableHead></TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Timestamp</TableHead><TableHead>Venue</TableHead><TableHead>Location</TableHead><TableHead>Parent</TableHead><TableHead>Phone</TableHead><TableHead>Children</TableHead><TableHead>Outcome</TableHead><TableHead>Round</TableHead><TableHead>Attempt</TableHead><TableHead></TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {filtered.slice(0, 100).map((o) => (
-                    <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedOutcome(o)}>
-                      <TableCell className="text-xs">{new Date(o.call_timestamp).toLocaleString()}</TableCell>
-                      <TableCell className="text-sm">{o.venue_name || "—"}</TableCell>
-                      <TableCell className="text-sm font-medium">{o.parent_name || "—"}</TableCell>
-                      <TableCell className="font-mono text-xs">{o.phone_number}</TableCell>
-                      <TableCell className="text-sm">{o.child_names || "—"}</TableCell>
-                      <TableCell><Badge className={OUTCOME_COLORS[o.outcome] || ""} variant="secondary">{o.outcome}</Badge></TableCell>
-                      <TableCell className="text-center">{o.attempt_number}</TableCell>
-                      <TableCell>{(o.transcript || o.summary) && <FileText className="h-4 w-4 text-muted-foreground" />}</TableCell>
-                    </TableRow>
-                  ))}
+                  {filtered.slice(0, 100).map((o) => {
+                    const camp = campaigns.find((c) => c.id === o.campaign_id);
+                    return (
+                      <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedOutcome(o)}>
+                        <TableCell className="text-xs">{new Date(o.call_timestamp).toLocaleString()}</TableCell>
+                        <TableCell className="text-sm">{o.venue_name || "—"}</TableCell>
+                        <TableCell className="text-sm">{camp?.venue_location || "—"}</TableCell>
+                        <TableCell className="text-sm font-medium">{o.parent_name || "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">{o.phone_number}</TableCell>
+                        <TableCell className="text-sm">{o.child_names || "—"}</TableCell>
+                        <TableCell><Badge className={OUTCOME_COLORS[o.outcome] || ""} variant="secondary">{o.outcome}</Badge></TableCell>
+                        <TableCell className="text-center">{camp?.round || "—"}</TableCell>
+                        <TableCell className="text-center">{o.attempt_number}</TableCell>
+                        <TableCell>{(o.transcript || o.summary) && <FileText className="h-4 w-4 text-muted-foreground" />}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
               {filtered.length > 100 && <p className="text-xs text-muted-foreground p-3">Showing 100 of {filtered.length}</p>}
@@ -170,20 +175,32 @@ export default function OutcomesTab() {
       <Dialog open={!!selectedOutcome} onOpenChange={(open) => !open && setSelectedOutcome(null)}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Call Detail</DialogTitle></DialogHeader>
-          {selectedOutcome && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><span className="text-muted-foreground">Parent:</span> {selectedOutcome.parent_name || "—"}</div>
-                <div><span className="text-muted-foreground">Phone:</span> {selectedOutcome.phone_number}</div>
-                <div><span className="text-muted-foreground">Venue:</span> {selectedOutcome.venue_name || "—"}</div>
-                <div><span className="text-muted-foreground">Attempt:</span> {selectedOutcome.attempt_number}</div>
-                <div><span className="text-muted-foreground">Children:</span> {selectedOutcome.child_names || "—"}</div>
-                <div><span className="text-muted-foreground">Outcome:</span> <Badge className={OUTCOME_COLORS[selectedOutcome.outcome]}>{selectedOutcome.outcome}</Badge></div>
+          {selectedOutcome && (() => {
+            const camp = campaigns.find((c) => c.id === selectedOutcome.campaign_id);
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div><span className="text-muted-foreground">Parent:</span> {selectedOutcome.parent_name || "—"}</div>
+                  <div><span className="text-muted-foreground">Phone:</span> {selectedOutcome.phone_number}</div>
+                  <div><span className="text-muted-foreground">Venue:</span> {selectedOutcome.venue_name || "—"}</div>
+                  <div><span className="text-muted-foreground">Location:</span> {camp?.venue_location || "—"}</div>
+                  <div><span className="text-muted-foreground">Children:</span> {selectedOutcome.child_names || "—"}</div>
+                  <div><span className="text-muted-foreground">Outcome:</span> <Badge className={OUTCOME_COLORS[selectedOutcome.outcome]}>{selectedOutcome.outcome}</Badge></div>
+                  <div><span className="text-muted-foreground">Round:</span> {camp?.round || "—"}</div>
+                  <div><span className="text-muted-foreground">Attempt:</span> {selectedOutcome.attempt_number}</div>
+                  <div><span className="text-muted-foreground">Age Range:</span> {camp?.age_range || "—"}</div>
+                  <div><span className="text-muted-foreground">Times:</span> {camp?.times || "—"}</div>
+                  <div><span className="text-muted-foreground">Start Date:</span> {camp?.start_date || "—"}</div>
+                  <div><span className="text-muted-foreground">End Date:</span> {camp?.end_date || "—"}</div>
+                  <div><span className="text-muted-foreground">Booking Target:</span> {camp?.booking_target ?? "—"}</div>
+                  <div><span className="text-muted-foreground">Status:</span> {camp?.status || "—"}</div>
+                </div>
+                {camp?.notes && <div><p className="text-sm font-medium mb-1">Campaign Notes</p><p className="text-sm text-muted-foreground">{camp.notes}</p></div>}
+                {selectedOutcome.summary && <div><p className="text-sm font-medium mb-1">Summary</p><p className="text-sm text-muted-foreground">{selectedOutcome.summary}</p></div>}
+                {selectedOutcome.transcript && <div><p className="text-sm font-medium mb-1">Transcript</p><pre className="text-xs bg-muted p-3 rounded-lg whitespace-pre-wrap max-h-60 overflow-y-auto">{selectedOutcome.transcript}</pre></div>}
               </div>
-              {selectedOutcome.summary && <div><p className="text-sm font-medium mb-1">Summary</p><p className="text-sm text-muted-foreground">{selectedOutcome.summary}</p></div>}
-              {selectedOutcome.transcript && <div><p className="text-sm font-medium mb-1">Transcript</p><pre className="text-xs bg-muted p-3 rounded-lg whitespace-pre-wrap max-h-60 overflow-y-auto">{selectedOutcome.transcript}</pre></div>}
-            </div>
-          )}
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
