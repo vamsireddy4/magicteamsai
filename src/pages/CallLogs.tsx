@@ -135,7 +135,7 @@ export default function CallLogs() {
               <p className="text-sm text-muted-foreground">Calls will appear here once your agents start receiving them.</p>
             </CardContent>
           ) : (
-            <div className="overflow-auto">
+            <div className="overflow-auto flex-1 min-h-0">
               <Table>
                 <TableHeader>
                   <TableRow>
