@@ -151,9 +151,10 @@ export default function AgentForm() {
 
   // Check if the current voice is a custom one (not in Ultravox list)
   useEffect(() => {
-    if (voices.length > 0 && form.voice) {
-      const isUltravoxVoice = voices.some(v => v.voiceId === form.voice || v.name === form.voice);
-      if (!isUltravoxVoice && form.voice !== "terrence") {
+    if ((voices.length > 0 || GEMINI_VOICES.length > 0) && form.voice) {
+      const isKnownVoice = voices.some(v => v.voiceId === form.voice || v.name === form.voice)
+        || GEMINI_VOICES.some(v => v.value === form.voice);
+      if (!isKnownVoice && form.voice !== "terrence") {
         setUseCustomVoice(true);
       }
     }
@@ -180,23 +181,39 @@ export default function AgentForm() {
   };
 
   // Filter voices by search
+  const allVoices = useMemo(() => {
+    // Merge Gemini native voices into the Ultravox list
+    const geminiAsUltravox: UltravoxVoice[] = GEMINI_VOICES.map(v => ({
+      voiceId: v.value,
+      name: v.value,
+      description: v.label,
+      languageLabel: "Gemini Native",
+      provider: "gemini",
+    }));
+    const ultravoxNames = new Set(voices.map(v => v.name));
+    return [
+      ...geminiAsUltravox.filter(g => !ultravoxNames.has(g.name)),
+      ...voices,
+    ];
+  }, [voices]);
+
   const filteredVoices = useMemo(() => {
-    if (!voiceSearch.trim()) return voices;
+    if (!voiceSearch.trim()) return allVoices;
     const q = voiceSearch.toLowerCase();
-    return voices.filter(v =>
+    return allVoices.filter(v =>
       v.name.toLowerCase().includes(q) ||
       (v.description?.toLowerCase().includes(q)) ||
       (v.languageLabel?.toLowerCase().includes(q)) ||
       (v.primaryLanguage?.toLowerCase().includes(q)) ||
       (v.provider?.toLowerCase().includes(q))
     );
-  }, [voices, voiceSearch]);
+  }, [allVoices, voiceSearch]);
 
   // Find current voice name for display
   const currentVoiceName = useMemo(() => {
-    const found = voices.find(v => v.voiceId === form.voice || v.name === form.voice);
+    const found = allVoices.find(v => v.voiceId === form.voice || v.name === form.voice);
     return found ? `${found.name} ${found.languageLabel || ""}` : form.voice;
-  }, [voices, form.voice]);
+  }, [allVoices, form.voice]);
 
   return (
     <DashboardLayout>
@@ -349,25 +366,6 @@ export default function AgentForm() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {form.ai_provider === "gemini" && (
-                      <>
-                        <p className="text-xs text-muted-foreground">Gemini native voices:</p>
-                        <Select
-                          value={GEMINI_VOICES.some(v => v.value === form.voice) ? form.voice : ""}
-                          onValueChange={(val) => setForm({ ...form, voice: val })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a Gemini native voice" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {GEMINI_VOICES.map((v) => (
-                              <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground mt-2">Or choose an Ultravox voice:</p>
-                      </>
-                    )}
                     <div className="relative">
                       <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                       <Input
