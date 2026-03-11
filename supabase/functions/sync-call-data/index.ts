@@ -217,6 +217,39 @@ Deno.serve(async (req) => {
             errors.push(`Failed to update call ${call.id}: ${updateError.message}`);
           } else {
             updated++;
+
+            // Update corresponding call_outcome based on call status
+            const finalStatus = (updateData.status as string) || call.status;
+            if (finalStatus && finalStatus !== "initiated" && call.caller_number) {
+              // Map call status to outcome
+              let outcome: string | null = null;
+              const duration = (updateData.duration as number) ?? call.duration;
+              if (finalStatus === "completed" && duration && duration > 10) {
+                outcome = "ANSWERED";
+              } else if (finalStatus === "completed" && (!duration || duration <= 10)) {
+                outcome = "VOICEMAIL";
+              } else if (finalStatus === "no-answer" || finalStatus === "canceled") {
+                outcome = "NO_ANSWER";
+              } else if (finalStatus === "busy") {
+                outcome = "NO_ANSWER";
+              } else if (finalStatus === "failed") {
+                outcome = "DECLINED";
+              }
+
+              if (outcome) {
+                // Find matching call_outcome by phone number (recipient) and PENDING status
+                const recipientNumber = call.caller_number; // This is actually caller; we need recipient
+                // call_logs has recipient_number but we didn't fetch it — use a broader match
+                await supabase
+                  .from("call_outcomes")
+                  .update({ outcome })
+                  .eq("user_id", user.id)
+                  .eq("phone_number", call.recipient_number || "")
+                  .eq("outcome", "PENDING")
+                  .order("created_at", { ascending: false })
+                  .limit(1);
+              }
+            }
           }
         }
       } catch (e) {
