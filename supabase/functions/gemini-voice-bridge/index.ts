@@ -1,5 +1,16 @@
 // Gemini Live API ↔ Twilio/Telnyx WebSocket bridge
-// Zero npm imports to avoid edge function shutdown issues
+// Zero npm imports — pure Deno for edge function stability
+
+// Valid Gemini Live API voices
+const VALID_GEMINI_VOICES = new Set([
+  "Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Vale",
+  "Zephyr", "Autonoe", "Umbriel", "Erinome", "Laomedeia", "Schedar",
+  "Achird", "Sadachbia", "Sadaltager", "Callirrhoe", "Iapetus", "Despina",
+]);
+
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
+
+// ── μ-law codec ──
 
 const MULAW_DECODE_TABLE = new Int16Array(256);
 (function () {
@@ -57,19 +68,12 @@ function b64encode(bytes: Uint8Array): string {
   return btoa(s);
 }
 
-// Helper to parse WebSocket messages (Gemini may send Blob or string)
 async function parseWsMessage(data: unknown): Promise<Record<string, unknown>> {
-  let text: string;
-  if (data instanceof Blob) {
-    text = await data.text();
-  } else {
-    text = data as string;
-  }
+  const text = data instanceof Blob ? await data.text() : (data as string);
   return JSON.parse(text);
 }
 
-// Default model for Gemini Live API
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
+// ── Main server ──
 
 Deno.serve((req) => {
   const upgrade = req.headers.get("upgrade") || "";
@@ -79,16 +83,12 @@ Deno.serve((req) => {
 
   const url = new URL(req.url);
   const agentId = url.searchParams.get("agent_id");
-  if (!agentId) {
-    return new Response("agent_id required", { status: 400 });
-  }
+  if (!agentId) return new Response("agent_id required", { status: 400 });
 
   const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!geminiApiKey) {
-    return new Response("GEMINI_API_KEY not configured", { status: 500 });
-  }
+  if (!geminiApiKey) return new Response("GEMINI_API_KEY not configured", { status: 500 });
 
-  // Upgrade WebSocket IMMEDIATELY
+  // Upgrade IMMEDIATELY — before any async work
   const { socket, response } = Deno.upgradeWebSocket(req);
 
   let geminiWs: WebSocket | null = null;
@@ -96,10 +96,12 @@ Deno.serve((req) => {
   let geminiReady = false;
   const audioBuffer: string[] = [];
 
-  let prompt = "You are a helpful AI assistant.";
+  let prompt = "You are a helpful AI assistant on a phone call. Be conversational and natural.";
   let model = DEFAULT_GEMINI_MODEL;
   let voice = "Puck";
   let agentLoaded = false;
+
+  // ── Load agent config (non-blocking) ──
 
   async function loadAgent() {
     try {
@@ -114,14 +116,14 @@ Deno.serve((req) => {
       const agents = await agentRes.json();
       if (agents?.length > 0) {
         prompt = agents[0].system_prompt || prompt;
-        // Map deprecated model names to working ones
         const rawModel = agents[0].model || "";
-        if (rawModel.includes("gemini-2.0-flash")) {
-          model = DEFAULT_GEMINI_MODEL; // deprecated models → use default
-        } else if (rawModel.includes("gemini")) {
+        if (rawModel.includes("gemini")) {
           model = rawModel;
         }
-        voice = agents[0].voice || voice;
+        // Validate voice — fall back to Puck if not a valid Gemini voice
+        const rawVoice = agents[0].voice || "Puck";
+        voice = VALID_GEMINI_VOICES.has(rawVoice) ? rawVoice : "Puck";
+        console.log(`Voice: requested="${rawVoice}" using="${voice}"`);
       }
 
       const kbRes = await fetch(
@@ -145,19 +147,28 @@ Deno.serve((req) => {
     }
   }
 
+  // ── Connect to Gemini Live API ──
+
   function connectGemini() {
     if (!agentLoaded) {
       setTimeout(connectGemini, 100);
       return;
     }
 
-    console.log("Connecting to Gemini: model=" + model);
+    console.log("Connecting to Gemini Live API: model=" + model + " voice=" + voice);
     const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`;
-    geminiWs = new WebSocket(geminiUrl);
+
+    try {
+      geminiWs = new WebSocket(geminiUrl);
+    } catch (e) {
+      console.error("Failed to create Gemini WebSocket:", e);
+      socket.close();
+      return;
+    }
 
     geminiWs.onopen = () => {
       console.log("Gemini WS connected, sending setup...");
-      geminiWs!.send(JSON.stringify({
+      const setupMsg = {
         setup: {
           model: `models/${model}`,
           generationConfig: {
@@ -168,7 +179,9 @@ Deno.serve((req) => {
           },
           systemInstruction: { parts: [{ text: prompt }] },
         },
-      }));
+      };
+      geminiWs!.send(JSON.stringify(setupMsg));
+      console.log("Gemini setup sent");
     };
 
     geminiWs.onmessage = async (ev) => {
@@ -176,7 +189,7 @@ Deno.serve((req) => {
         const msg = await parseWsMessage(ev.data);
 
         if (msg.setupComplete) {
-          console.log("Gemini setup complete - ready for audio");
+          console.log("Gemini setup complete — ready for audio");
           geminiReady = true;
           const count = audioBuffer.length;
           for (const chunk of audioBuffer) {
@@ -185,11 +198,11 @@ Deno.serve((req) => {
             }));
           }
           audioBuffer.length = 0;
-          if (count > 0) console.log("Flushed " + count + " buffered chunks");
+          if (count > 0) console.log("Flushed " + count + " buffered audio chunks");
           return;
         }
 
-        // Handle audio response
+        // Handle audio response from Gemini
         const parts = (msg.serverContent as any)?.modelTurn?.parts;
         if (parts) {
           for (const part of parts) {
@@ -211,18 +224,25 @@ Deno.serve((req) => {
           console.error("Gemini error:", JSON.stringify(msg.error));
         }
       } catch (e) {
-        console.error("Gemini msg parse error:", e);
+        console.error("Gemini message parse error:", e);
       }
     };
 
-    geminiWs.onerror = (e) => console.error("Gemini WS error:", e);
+    geminiWs.onerror = (e) => {
+      console.error("Gemini WS error:", e);
+    };
 
     geminiWs.onclose = (ev) => {
-      console.log("Gemini closed: code=" + ev.code + " reason=" + ev.reason);
+      console.log("Gemini WS closed: code=" + ev.code + " reason=" + ev.reason);
       geminiReady = false;
-      setTimeout(() => { if (socket.readyState === WebSocket.OPEN) socket.close(); }, 500);
+      // Give a moment, then close telephony if still open
+      setTimeout(() => {
+        if (socket.readyState === WebSocket.OPEN) socket.close();
+      }, 500);
     };
   }
+
+  // ── Telephony WebSocket handlers ──
 
   socket.onopen = () => {
     console.log("Telephony WS connected");
@@ -231,13 +251,13 @@ Deno.serve((req) => {
 
   socket.onmessage = (event) => {
     try {
-      const msg = JSON.parse(event.data);
+      const msg = JSON.parse(event.data as string);
 
       if (msg.event === "start") {
         streamSid = msg.start?.streamSid || msg.start?.stream_id || "";
-        console.log("Stream started: " + streamSid);
+        console.log("Stream started: sid=" + streamSid);
         connectGemini();
-      } else if (msg.event === "media") {
+      } else if (msg.event === "media" && msg.media?.payload) {
         const mu = b64decode(msg.media.payload);
         const pcm = mulawToPcm16k(mu);
         const pcmB64 = b64encode(pcm);
@@ -267,7 +287,9 @@ Deno.serve((req) => {
     if (geminiWs?.readyState === WebSocket.OPEN) geminiWs.close();
   };
 
-  socket.onerror = (e) => console.error("Telephony WS error:", e);
+  socket.onerror = (e) => {
+    console.error("Telephony WS error:", e);
+  };
 
   return response;
 });
