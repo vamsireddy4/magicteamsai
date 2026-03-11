@@ -35,14 +35,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch call_logs that need syncing (no duration or no transcript)
+    // Fetch call_logs that need syncing — include any call that isn't fully resolved
     const { data: calls, error: fetchError } = await supabase
       .from("call_logs")
       .select("id, ultravox_call_id, twilio_call_sid, caller_number, recipient_number, started_at, duration, transcript, status, agent_id")
       .eq("user_id", user.id)
-      .or("duration.is.null,transcript.is.null,status.eq.initiated");
+      .or("duration.is.null,transcript.is.null,status.eq.initiated,status.eq.in-progress");
+
+    console.log(`Found ${calls?.length || 0} calls to sync`);
 
     if (fetchError) {
+      console.error("Fetch error:", fetchError.message);
       return new Response(JSON.stringify({ error: fetchError.message }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -220,25 +223,26 @@ Deno.serve(async (req) => {
 
             // Update corresponding call_outcome based on call status
             const finalStatus = (updateData.status as string) || call.status;
-            if (finalStatus && finalStatus !== "initiated" && call.caller_number) {
+            const duration = (updateData.duration as number) ?? call.duration;
+            console.log(`Call ${call.id}: finalStatus=${finalStatus}, duration=${duration}, recipient=${call.recipient_number}`);
+            
+            if (finalStatus && finalStatus !== "initiated") {
               // Map call status to outcome
               let outcome: string | null = null;
-              const duration = (updateData.duration as number) ?? call.duration;
               if (finalStatus === "completed" && duration && duration > 10) {
                 outcome = "ANSWERED";
               } else if (finalStatus === "completed" && (!duration || duration <= 10)) {
                 outcome = "VOICEMAIL";
-              } else if (finalStatus === "no-answer" || finalStatus === "canceled") {
-                outcome = "NO_ANSWER";
-              } else if (finalStatus === "busy") {
+              } else if (finalStatus === "no-answer" || finalStatus === "canceled" || finalStatus === "busy") {
                 outcome = "NO_ANSWER";
               } else if (finalStatus === "failed") {
                 outcome = "DECLINED";
               }
 
+              console.log(`Mapped outcome: ${outcome} for recipient: ${call.recipient_number}`);
+
               if (outcome && call.recipient_number) {
-                // Update the most recent PENDING outcome for this phone number
-                const { data: pendingOutcomes } = await supabase
+                const { data: pendingOutcomes, error: poErr } = await supabase
                   .from("call_outcomes")
                   .select("id")
                   .eq("user_id", user.id)
@@ -247,11 +251,14 @@ Deno.serve(async (req) => {
                   .order("created_at", { ascending: false })
                   .limit(1);
 
+                console.log(`Found ${pendingOutcomes?.length || 0} pending outcomes for ${call.recipient_number}`, poErr?.message || "");
+
                 if (pendingOutcomes && pendingOutcomes.length > 0) {
-                  await supabase
+                  const { error: upErr } = await supabase
                     .from("call_outcomes")
                     .update({ outcome })
                     .eq("id", pendingOutcomes[0].id);
+                  console.log(`Updated outcome ${pendingOutcomes[0].id} to ${outcome}`, upErr?.message || "ok");
                 }
               }
             }
