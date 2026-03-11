@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, FileSpreadsheet, Phone, Play, Loader2, Sparkles } from "lucide-react";
+import { Upload, FileSpreadsheet, Phone, Play, Loader2, Sparkles, Save } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface ColumnDef { key: string; label: string; type: "text" | "phone" | "date" | "number" | "email"; }
@@ -32,6 +32,8 @@ export default function DataCleaningTab() {
   const [selectedPhoneConfig, setSelectedPhoneConfig] = useState("");
   const [delaySec, setDelaySec] = useState("30");
   const [calling, setCalling] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [campaignName, setCampaignName] = useState("");
 
   useEffect(() => {
     if (!user) return;
@@ -66,6 +68,34 @@ export default function DataCleaningTab() {
 
   const phoneCol = columns.find((c) => c.type === "phone")?.key || columns.find((c) => c.key.toLowerCase().includes("phone"))?.key || "";
   const nameCol = columns.find((c) => c.key.toLowerCase().includes("name") && !c.key.toLowerCase().includes("child"))?.key || "";
+  const emailCol = columns.find((c) => c.type === "email")?.key || columns.find((c) => c.key.toLowerCase().includes("email"))?.key || "";
+
+  const saveContacts = async () => {
+    if (!user) return;
+    const selected = rows.filter((_, i) => selectedIndices.has(i));
+    if (selected.length === 0) { toast({ title: "No contacts selected", variant: "destructive" }); return; }
+    const venueName = campaignName.trim() || selected[0]?.venue_name || selected[0]?.venue || "Bulk Campaign";
+    setSaving(true);
+    try {
+      const { data: campaign, error: campErr } = await supabase.from("campaigns").insert({
+        user_id: user.id, venue_name: venueName,
+        agent_id: selectedAgent || null, phone_config_id: selectedPhoneConfig || null,
+        delay_seconds: parseInt(delaySec) || 30, status: "draft", total_contacts: selected.length,
+      } as any).select("id").single();
+      if (campErr || !campaign) throw campErr || new Error("Failed to create campaign");
+      const contactRows = selected.map((row) => ({
+        campaign_id: campaign.id, user_id: user.id, phone_number: row[phoneCol] || "",
+        first_name: row[nameCol] || row[Object.keys(row)[0]] || "", child_names: row.child_names || row.child_name || row.children || null,
+        venue_name: row.venue_name || row.venue || null, venue_location: row.venue_location || row.location || null,
+        start_date: row.start_date || null, end_date: row.end_date || null, times: row.times || row.time || null, age_range: row.age_range || null,
+      }));
+      const { error: contactErr } = await supabase.from("contacts").insert(contactRows as any);
+      if (contactErr) throw contactErr;
+      toast({ title: "Contacts saved!", description: `${selected.length} contacts saved to campaign "${venueName}". Go to the Campaigns tab to start calling.` });
+      reset();
+    } catch (err: any) { toast({ title: "Error saving contacts", description: err.message, variant: "destructive" }); }
+    finally { setSaving(false); }
+  };
 
   const startBulkCalling = async () => {
     if (!user) return;
@@ -75,7 +105,7 @@ export default function DataCleaningTab() {
     if (!phoneCol) { toast({ title: "No phone column detected", variant: "destructive" }); return; }
     setCalling(true);
     try {
-      const venueName = selected[0]?.venue_name || selected[0]?.venue || "Bulk Campaign";
+      const venueName = campaignName.trim() || selected[0]?.venue_name || selected[0]?.venue || "Bulk Campaign";
       const { data: campaign, error: campErr } = await supabase.from("campaigns").insert({
         user_id: user.id, venue_name: venueName, agent_id: selectedAgent, phone_config_id: selectedPhoneConfig,
         delay_seconds: parseInt(delaySec) || 30, status: "draft", total_contacts: selected.length,
@@ -96,7 +126,7 @@ export default function DataCleaningTab() {
     finally { setCalling(false); }
   };
 
-  const reset = () => { setColumns([]); setRows([]); setSelectedIndices(new Set()); setSummary(""); setCustomerFile(null); };
+  const reset = () => { setColumns([]); setRows([]); setSelectedIndices(new Set()); setSummary(""); setCustomerFile(null); setCampaignName(""); };
 
   return (
     <div className="space-y-6">
@@ -170,18 +200,22 @@ export default function DataCleaningTab() {
       {rows.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Phone className="h-5 w-5" /> Start Bulk Calling</CardTitle>
-            <CardDescription>Call {selectedIndices.size} selected contacts using your AI agent.</CardDescription>
+            <CardTitle className="flex items-center gap-2"><Save className="h-5 w-5" /> Save & Start Calling</CardTitle>
+            <CardDescription>Save {selectedIndices.size} selected contacts to a campaign, or start calling immediately.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="space-y-2"><Label>Agent *</Label><Select value={selectedAgent} onValueChange={setSelectedAgent}><SelectTrigger><SelectValue placeholder="Select agent" /></SelectTrigger><SelectContent>{agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-2"><Label>Phone Number *</Label><Select value={selectedPhoneConfig} onValueChange={setSelectedPhoneConfig}><SelectTrigger><SelectValue placeholder="Select number" /></SelectTrigger><SelectContent>{phoneConfigs.map((pc) => <SelectItem key={pc.id} value={pc.id}>{pc.friendly_name || pc.phone_number} ({pc.provider})</SelectItem>)}</SelectContent></Select></div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-2"><Label>Campaign Name</Label><Input value={campaignName} onChange={(e) => setCampaignName(e.target.value)} placeholder="e.g. My Bulk Campaign" /></div>
+              <div className="space-y-2"><Label>Agent</Label><Select value={selectedAgent} onValueChange={setSelectedAgent}><SelectTrigger><SelectValue placeholder="Select agent" /></SelectTrigger><SelectContent>{agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>Phone Number</Label><Select value={selectedPhoneConfig} onValueChange={setSelectedPhoneConfig}><SelectTrigger><SelectValue placeholder="Select number" /></SelectTrigger><SelectContent>{phoneConfigs.map((pc) => <SelectItem key={pc.id} value={pc.id}>{pc.friendly_name || pc.phone_number} ({pc.provider})</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-2"><Label>Delay Between Calls (sec)</Label><Input type="number" value={delaySec} onChange={(e) => setDelaySec(e.target.value)} min={5} /></div>
             </div>
-            <div className="mt-4">
-              <Button onClick={startBulkCalling} disabled={calling || selectedIndices.size === 0 || !selectedAgent || !selectedPhoneConfig} size="lg">
-                {calling ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Starting Campaign...</> : <><Play className="h-4 w-4 mr-2" /> Call {selectedIndices.size} Contacts</>}
+            <div className="mt-4 flex gap-3">
+              <Button variant="outline" onClick={saveContacts} disabled={saving || selectedIndices.size === 0}>
+                {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</> : <><Save className="h-4 w-4 mr-2" /> Save Contacts</>}
+              </Button>
+              <Button onClick={startBulkCalling} disabled={calling || selectedIndices.size === 0 || !selectedAgent || !selectedPhoneConfig}>
+                {calling ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Starting Campaign...</> : <><Play className="h-4 w-4 mr-2" /> Save &amp; Call {selectedIndices.size} Contacts</>}
               </Button>
             </div>
           </CardContent>
