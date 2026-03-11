@@ -32,6 +32,19 @@ export default function OutcomesTab() {
   const [selectedOutcome, setSelectedOutcome] = useState<Outcome | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addForm, setAddForm] = useState({ campaign_id: "", phone_number: "", parent_name: "", child_names: "", venue_name: "", outcome: "PENDING", transcript: "", summary: "", attempt_number: "1" });
+  const [syncing, setSyncing] = useState(false);
+
+  const syncCallData = async () => {
+    setSyncing(true);
+    try {
+      const { error } = await supabase.functions.invoke("sync-call-data");
+      if (error) throw error;
+      toast({ title: "Calls synced" });
+      await fetchData();
+    } catch (err: any) {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    } finally { setSyncing(false); }
+  };
 
   const fetchData = async () => {
     if (!user) return;
