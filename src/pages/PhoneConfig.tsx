@@ -101,30 +101,36 @@ export default function PhoneConfig() {
     if (!user || !selectedProvider) return;
     setSaving(true);
 
-    const insertData: Record<string, any> = {
+    const data: Record<string, any> = {
       user_id: user.id,
       provider: selectedProvider,
       phone_number: form.phone_number,
     };
 
     if (selectedProvider === "twilio") {
-      insertData.twilio_account_sid = form.twilio_account_sid;
-      insertData.twilio_auth_token = form.twilio_auth_token;
+      data.twilio_account_sid = form.twilio_account_sid;
+      data.twilio_auth_token = form.twilio_auth_token;
     } else if (selectedProvider === "telnyx") {
-      insertData.telnyx_api_key = form.telnyx_api_key;
-      insertData.telnyx_connection_id = form.telnyx_connection_id;
+      data.telnyx_api_key = form.telnyx_api_key;
+      data.telnyx_connection_id = form.telnyx_connection_id;
     }
 
-    const { error } = await supabase.from("phone_configs").insert(insertData as any);
+    let error;
+    if (editingConfig) {
+      ({ error } = await supabase.from("phone_configs").update(data as any).eq("id", editingConfig.id));
+    } else {
+      ({ error } = await supabase.from("phone_configs").insert(data as any));
+    }
 
     setSaving(false);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
       const provider = PROVIDERS.find(p => p.id === selectedProvider);
-      toast({ title: `${provider?.name} phone number added successfully` });
+      toast({ title: editingConfig ? `${provider?.name} config updated` : `${provider?.name} phone number added successfully` });
       setDialogOpen(false);
       setSelectedProvider(null);
+      setEditingConfig(null);
       setForm({});
       fetchConfigs();
     }
