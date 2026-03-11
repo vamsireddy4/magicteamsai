@@ -145,20 +145,25 @@ export default function OutcomesTab() {
           : (
             <div className="overflow-auto">
               <Table>
-                <TableHeader><TableRow><TableHead>Timestamp</TableHead><TableHead>Venue</TableHead><TableHead>Parent</TableHead><TableHead>Phone</TableHead><TableHead>Children</TableHead><TableHead>Outcome</TableHead><TableHead>Attempt</TableHead><TableHead></TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Timestamp</TableHead><TableHead>Venue</TableHead><TableHead>Location</TableHead><TableHead>Parent</TableHead><TableHead>Phone</TableHead><TableHead>Children</TableHead><TableHead>Outcome</TableHead><TableHead>Round</TableHead><TableHead>Attempt</TableHead><TableHead></TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {filtered.slice(0, 100).map((o) => (
-                    <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedOutcome(o)}>
-                      <TableCell className="text-xs">{new Date(o.call_timestamp).toLocaleString()}</TableCell>
-                      <TableCell className="text-sm">{o.venue_name || "—"}</TableCell>
-                      <TableCell className="text-sm font-medium">{o.parent_name || "—"}</TableCell>
-                      <TableCell className="font-mono text-xs">{o.phone_number}</TableCell>
-                      <TableCell className="text-sm">{o.child_names || "—"}</TableCell>
-                      <TableCell><Badge className={OUTCOME_COLORS[o.outcome] || ""} variant="secondary">{o.outcome}</Badge></TableCell>
-                      <TableCell className="text-center">{o.attempt_number}</TableCell>
-                      <TableCell>{(o.transcript || o.summary) && <FileText className="h-4 w-4 text-muted-foreground" />}</TableCell>
-                    </TableRow>
-                  ))}
+                  {filtered.slice(0, 100).map((o) => {
+                    const camp = campaigns.find((c) => c.id === o.campaign_id);
+                    return (
+                      <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedOutcome(o)}>
+                        <TableCell className="text-xs">{new Date(o.call_timestamp).toLocaleString()}</TableCell>
+                        <TableCell className="text-sm">{o.venue_name || "—"}</TableCell>
+                        <TableCell className="text-sm">{camp?.venue_location || "—"}</TableCell>
+                        <TableCell className="text-sm font-medium">{o.parent_name || "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">{o.phone_number}</TableCell>
+                        <TableCell className="text-sm">{o.child_names || "—"}</TableCell>
+                        <TableCell><Badge className={OUTCOME_COLORS[o.outcome] || ""} variant="secondary">{o.outcome}</Badge></TableCell>
+                        <TableCell className="text-center">{camp?.round || "—"}</TableCell>
+                        <TableCell className="text-center">{o.attempt_number}</TableCell>
+                        <TableCell>{(o.transcript || o.summary) && <FileText className="h-4 w-4 text-muted-foreground" />}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
               {filtered.length > 100 && <p className="text-xs text-muted-foreground p-3">Showing 100 of {filtered.length}</p>}
