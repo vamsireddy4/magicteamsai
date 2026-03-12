@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Bot, Phone, PhoneCall, Clock, Plus, ArrowRight, RefreshCw } from "lucide-react";
+import { Bot, Phone, PhoneCall, Clock, Plus, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Dashboard() {
