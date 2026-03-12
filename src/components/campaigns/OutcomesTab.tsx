@@ -121,8 +121,11 @@ export default function OutcomesTab() {
     try {
       const { data, error } = await supabase.functions.invoke("summarize-call", { body: { call_id: callLogId } });
       if (error) throw error;
-      setSummaries((prev) => ({ ...prev, [callLogId]: data?.summary || "No summary generated." }));
-      toast({ title: "Summary generated" });
+      const summaryText = data?.summary || "No summary generated.";
+      setSummaries((prev) => ({ ...prev, [callLogId]: summaryText }));
+      // Persist to database
+      await supabase.from("call_logs").update({ summary: summaryText } as any).eq("id", callLogId);
+      toast({ title: "Summary generated & saved" });
     } catch (err: any) {
       toast({ title: "Summary failed", description: err.message, variant: "destructive" });
     } finally {
