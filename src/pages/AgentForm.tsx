@@ -13,12 +13,12 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Loader2, Search, Settings, BookOpen, Wrench, Webhook, CalendarDays } from "lucide-react";
+import { ArrowLeft, Loader2, Search, Settings, BookOpen, Wrench, Webhook } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import AgentKnowledgeBase from "@/components/agent-tabs/AgentKnowledgeBase";
 import AgentCustomTools from "@/components/agent-tabs/AgentCustomTools";
 import AgentWebhooks from "@/components/agent-tabs/AgentWebhooks";
-import AgentCalendarIntegrations from "@/components/agent-tabs/AgentCalendarIntegrations";
+
 
 interface UltravoxVoice {
   voiceId: string;
@@ -187,12 +187,11 @@ export default function AgentForm() {
         </div>
 
         <Tabs defaultValue="general" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="general" className="flex items-center gap-2"><Settings className="h-4 w-4" /><span className="hidden sm:inline">General</span></TabsTrigger>
             <TabsTrigger value="knowledge" className="flex items-center gap-2" disabled={!isEditing}><BookOpen className="h-4 w-4" /><span className="hidden sm:inline">Knowledge</span></TabsTrigger>
             <TabsTrigger value="tools" className="flex items-center gap-2" disabled={!isEditing}><Wrench className="h-4 w-4" /><span className="hidden sm:inline">Tools</span></TabsTrigger>
             <TabsTrigger value="webhooks" className="flex items-center gap-2" disabled={!isEditing}><Webhook className="h-4 w-4" /><span className="hidden sm:inline">Webhooks</span></TabsTrigger>
-            <TabsTrigger value="calendar" className="flex items-center gap-2" disabled={!isEditing}><CalendarDays className="h-4 w-4" /><span className="hidden sm:inline">Calendar</span></TabsTrigger>
           </TabsList>
 
           <TabsContent value="general" className="mt-6">
@@ -364,12 +363,6 @@ export default function AgentForm() {
                 <Card>
                   <CardHeader><CardTitle>Webhooks</CardTitle></CardHeader>
                   <CardContent><AgentWebhooks agentId={id} userId={user.id} /></CardContent>
-                </Card>
-              </TabsContent>
-              <TabsContent value="calendar" className="mt-6">
-                <Card>
-                  <CardHeader><CardTitle>Calendar Integrations</CardTitle></CardHeader>
-                  <CardContent><AgentCalendarIntegrations agentId={id} userId={user.id} /></CardContent>
                 </Card>
               </TabsContent>
             </>
