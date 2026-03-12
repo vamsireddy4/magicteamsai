@@ -181,7 +181,7 @@ export default function AgentForm() {
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate("/agents")}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">{isEditing ? "Edit Agent" : "Create Agent"}</h1>
+            <h1 className="text-3xl font-bold tracking-tight">{isEditing ? form.name || "Edit Agent" : "Create Agent"}</h1>
             <p className="text-muted-foreground mt-1">Configure your AI receptionist.</p>
           </div>
         </div>
