@@ -378,10 +378,7 @@ export default function OutcomesTab() {
                         <h3 className="font-semibold text-base">{camp.venue_name}</h3>
                         {camp.venue_location && <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5"><MapPin className="h-3 w-3" /> {camp.venue_location}</p>}
                       </div>
-                      <div className="flex gap-1.5">
-                        <Badge className={STATUS_COLORS[camp.status] || ""} variant="secondary">{camp.status}</Badge>
-                        <Badge variant="outline">R{camp.round}</Badge>
-                      </div>
+                      <Badge className={STATUS_COLORS[camp.status] || ""} variant="secondary">{camp.status}</Badge>
                     </div>
 
                     <div className="space-y-1">
