@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Download, RefreshCw, Search, Clock, ArrowLeft, Phone } from "lucide-react";
 
-interface Campaign { id: string; venue_name: string; round: number; status: string; }
+interface Campaign { id: string; venue_name: string; round: number; status: string; agent_id: string | null; phone_config_id: string | null; }
 interface CallLog {
   id: string; status: string; duration: number | null; started_at: string;
   recipient_number: string | null; transcript: any; summary: string | null;
