@@ -359,17 +359,6 @@ export default function OutcomesTab() {
         </Dialog>
       </div>
 
-      {/* Global Outcome Summary */}
-      <div className="grid gap-3 grid-cols-3">
-        {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
-          <Card key={o}>
-            <CardContent className="pt-4 pb-3 text-center">
-              <p className="text-2xl font-bold">{allOutcomeCounts[o] || 0}</p>
-              <Badge className={`${OUTCOME_COLORS[o]} mt-1`} variant="secondary">{o.replace("_", " ")}</Badge>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
 
       {/* Campaign Cards */}
       {loading ? <div className="p-8 text-center text-muted-foreground">Loading...</div>
@@ -389,10 +378,7 @@ export default function OutcomesTab() {
                         <h3 className="font-semibold text-base">{camp.venue_name}</h3>
                         {camp.venue_location && <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5"><MapPin className="h-3 w-3" /> {camp.venue_location}</p>}
                       </div>
-                      <div className="flex gap-1.5">
-                        <Badge className={STATUS_COLORS[camp.status] || ""} variant="secondary">{camp.status}</Badge>
-                        <Badge variant="outline">R{camp.round}</Badge>
-                      </div>
+                      <Badge className={STATUS_COLORS[camp.status] || ""} variant="secondary">{camp.status}</Badge>
                     </div>
 
                     <div className="space-y-1">
