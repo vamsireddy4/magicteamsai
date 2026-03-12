@@ -216,7 +216,7 @@ export default function AgentForm() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl space-y-6 animate-fade-in">
+      <div className="space-y-6 animate-fade-in">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate("/agents")}>
             <ArrowLeft className="h-4 w-4" />

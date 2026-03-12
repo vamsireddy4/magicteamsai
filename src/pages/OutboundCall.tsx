@@ -55,7 +55,7 @@ export default function OutboundCall() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-lg space-y-6 animate-fade-in">
+      <div className="space-y-6 animate-fade-in">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Outbound Call</h1>
           <p className="text-muted-foreground mt-1">Make an AI-powered outbound call.</p>
