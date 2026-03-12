@@ -78,6 +78,14 @@ Deno.serve(async (req) => {
       await supabase.from("telnyx_call_state").delete().eq("call_control_id", callControlId);
     }
 
+    if (eventType === "streaming.started") {
+      console.log(`[telnyx-webhook] streaming.started payload: ${JSON.stringify(payload)}`);
+    }
+
+    if (eventType === "streaming.stopped") {
+      console.log(`[telnyx-webhook] streaming.stopped payload: ${JSON.stringify(payload)}`);
+    }
+
     if (eventType === "call.hangup") {
       // Clean up any remaining state
       await supabase.from("telnyx_call_state").delete().eq("call_control_id", callControlId);
