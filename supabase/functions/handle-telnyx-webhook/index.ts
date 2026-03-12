@@ -14,7 +14,8 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const eventType = body?.data?.event_type;
-    const callControlId = body?.data?.payload?.call_control_id;
+    const payload = body?.data?.payload ?? {};
+    const callControlId = payload?.call_control_id;
 
     console.log(`[telnyx-webhook] Event: ${eventType}, call_control_id: ${callControlId}`);
 
@@ -56,12 +57,12 @@ Deno.serve(async (req) => {
           },
           body: JSON.stringify({
             stream_url: callState.join_url,
-            stream_track: "inbound_track",
+            stream_track: "both_tracks",
             stream_bidirectional_mode: "rtp",
-            stream_codec: "L16",
-            stream_bidirectional_codec: "L16",
-            stream_bidirectional_sampling_rate: 16000,
-            stream_bidirectional_target_legs: "opposite",
+            stream_codec: "PCMU",
+            stream_bidirectional_codec: "PCMU",
+            stream_bidirectional_sampling_rate: 8000,
+            stream_bidirectional_target_legs: "self",
           }),
         }
       );
@@ -75,6 +76,14 @@ Deno.serve(async (req) => {
 
       // Clean up the state record
       await supabase.from("telnyx_call_state").delete().eq("call_control_id", callControlId);
+    }
+
+    if (eventType === "streaming.started") {
+      console.log(`[telnyx-webhook] streaming.started payload: ${JSON.stringify(payload)}`);
+    }
+
+    if (eventType === "streaming.stopped") {
+      console.log(`[telnyx-webhook] streaming.stopped payload: ${JSON.stringify(payload)}`);
     }
 
     if (eventType === "call.hangup") {
