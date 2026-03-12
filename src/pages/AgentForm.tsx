@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Loader2, Search, Settings, BookOpen, Wrench, Webhook, CalendarDays } from "lucide-react";
+import { ArrowLeft, Loader2, Search, Settings, BookOpen, Wrench, Webhook } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import AgentKnowledgeBase from "@/components/agent-tabs/AgentKnowledgeBase";
 import AgentCustomTools from "@/components/agent-tabs/AgentCustomTools";
