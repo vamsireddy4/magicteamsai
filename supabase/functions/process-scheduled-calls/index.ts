@@ -143,7 +143,7 @@ Deno.serve(async (req) => {
                 stream_url: bridgeUrl, stream_track: "inbound_track",
                 stream_bidirectional_mode: "rtp", stream_codec: "L16",
                 stream_bidirectional_codec: "L16", stream_bidirectional_sampling_rate: 16000,
-                stream_bidirectional_target_legs: "opposite",
+                stream_bidirectional_target_legs: "opposite", timeout_secs: 90,
               }),
             });
             if (!resp.ok) throw new Error(`Telnyx: ${await resp.text()}`);
@@ -163,15 +163,20 @@ Deno.serve(async (req) => {
         } else {
           // Ultravox path
           if (!ultravoxApiKey) throw new Error("ULTRAVOX_API_KEY not configured");
+          let modelName = agent.model || "fixie-ai/ultravox-v0.7";
+          if (modelName && !modelName.includes("/")) {
+            modelName = `fixie-ai/${modelName}`;
+          }
           const medium = provider === "telnyx" ? { telnyx: {} } : { twilio: {} };
           const ultravoxBody: any = {
-            systemPrompt, model: agent.model || "fixie-ai/ultravox-v0.7", voice: agent.voice,
+            systemPrompt, model: modelName, voice: agent.voice,
             temperature: Number(agent.temperature), firstSpeakerSettings: { user: {} }, medium,
             languageHint: agent.language_hint || "en", maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
           };
           if (ultravoxTools.length > 0) {
             ultravoxBody.selectedTools = ultravoxTools;
           }
+          console.log(`[process-scheduled-calls] Ultravox call: model=${modelName}, provider=${provider}`);
           const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
             method: "POST",
             headers: { "Content-Type": "application/json", "X-API-Key": ultravoxApiKey },
@@ -193,7 +198,7 @@ Deno.serve(async (req) => {
                 stream_url: joinUrl, stream_track: "inbound_track",
                 stream_bidirectional_mode: "rtp", stream_codec: "L16",
                 stream_bidirectional_codec: "L16", stream_bidirectional_sampling_rate: 16000,
-                stream_bidirectional_target_legs: "opposite",
+                stream_bidirectional_target_legs: "opposite", timeout_secs: 90,
               }),
             });
             if (!resp.ok) throw new Error(`Telnyx: ${await resp.text()}`);

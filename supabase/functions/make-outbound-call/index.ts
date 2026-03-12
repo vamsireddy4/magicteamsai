@@ -248,13 +248,19 @@ Deno.serve(async (req) => {
       }
 
       // Build Ultravox medium based on telephony provider
+      // Ensure model name has proper prefix
+      let modelName = agent.model || "fixie-ai/ultravox-v0.7";
+      if (modelName && !modelName.includes("/")) {
+        modelName = `fixie-ai/${modelName}`;
+      }
+
       const medium: any = provider === "telnyx"
         ? { telnyx: {} }
-        : { twilio: { } };
+        : { twilio: {} };
 
       const ultravoxBody: any = {
         systemPrompt,
-        model: agent.model || "fixie-ai/ultravox-v0.7",
+        model: modelName,
         voice: agent.voice,
         temperature: Number(agent.temperature),
         firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT" ? { agent: {} } : { user: {} },
@@ -266,6 +272,8 @@ Deno.serve(async (req) => {
         ultravoxBody.selectedTools = ultravoxTools;
       }
 
+      console.log(`[make-outbound-call] Creating Ultravox call with model=${modelName}, voice=${agent.voice}, provider=${provider}, medium=${JSON.stringify(medium)}`);
+
       const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-API-Key": ultravoxApiKey },
@@ -274,6 +282,7 @@ Deno.serve(async (req) => {
 
       if (!ultravoxResponse.ok) {
         const errorText = await ultravoxResponse.text();
+        console.error(`[make-outbound-call] Ultravox API error: ${errorText}`);
         return new Response(
           JSON.stringify({ error: "Failed to create outbound call", details: errorText }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -284,7 +293,7 @@ Deno.serve(async (req) => {
       const joinUrl = ultravoxData.joinUrl;
       ultravoxCallId = ultravoxData.callId;
 
-      console.log(`Ultravox call created: ${ultravoxCallId}, joinUrl: ${joinUrl}`);
+      console.log(`[make-outbound-call] Ultravox call created: ${ultravoxCallId}, joinUrl: ${joinUrl}`);
 
       if (provider === "telnyx") {
         const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
@@ -295,30 +304,38 @@ Deno.serve(async (req) => {
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
+
+        const telnyxCallBody = {
+          connection_id: telnyxConnectionId,
+          to: recipient_number,
+          from: phoneConfig.phone_number,
+          stream_url: joinUrl,
+          stream_track: "inbound_track",
+          stream_bidirectional_mode: "rtp",
+          stream_codec: "L16",
+          stream_bidirectional_codec: "L16",
+          stream_bidirectional_sampling_rate: 16000,
+          stream_bidirectional_target_legs: "opposite",
+          timeout_secs: 90,
+        };
+
+        console.log(`[make-outbound-call] Placing Telnyx call to ${recipient_number} from ${phoneConfig.phone_number}, connection_id=${telnyxConnectionId}, stream_url=${joinUrl}`);
+
         const telnyxResponse = await fetch("https://api.telnyx.com/v2/calls", {
           method: "POST",
           headers: { "Authorization": `Bearer ${telnyxApiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            connection_id: telnyxConnectionId,
-            to: recipient_number,
-            from: phoneConfig.phone_number,
-            stream_url: joinUrl,
-            stream_track: "inbound_track",
-            stream_bidirectional_mode: "rtp",
-            stream_codec: "L16",
-            stream_bidirectional_codec: "L16",
-            stream_bidirectional_sampling_rate: 16000,
-            stream_bidirectional_target_legs: "opposite",
-          }),
+          body: JSON.stringify(telnyxCallBody),
         });
         if (!telnyxResponse.ok) {
           const err = await telnyxResponse.text();
+          console.error(`[make-outbound-call] Telnyx API error: ${err}`);
           return new Response(JSON.stringify({ error: "Failed to place Telnyx call", details: err }), {
             status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
         const telnyxData = await telnyxResponse.json();
         callSid = telnyxData.data?.call_control_id || "";
+        console.log(`[make-outbound-call] Telnyx call placed successfully, call_control_id=${callSid}`);
       } else {
         const twiml = `<Response><Connect><Stream url="${joinUrl}"/></Connect></Response>`;
         const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
