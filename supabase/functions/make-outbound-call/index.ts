@@ -248,13 +248,19 @@ Deno.serve(async (req) => {
       }
 
       // Build Ultravox medium based on telephony provider
+      // Ensure model name has proper prefix
+      let modelName = agent.model || "fixie-ai/ultravox-v0.7";
+      if (modelName && !modelName.includes("/")) {
+        modelName = `fixie-ai/${modelName}`;
+      }
+
       const medium: any = provider === "telnyx"
         ? { telnyx: {} }
-        : { twilio: { } };
+        : { twilio: {} };
 
       const ultravoxBody: any = {
         systemPrompt,
-        model: agent.model || "fixie-ai/ultravox-v0.7",
+        model: modelName,
         voice: agent.voice,
         temperature: Number(agent.temperature),
         firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT" ? { agent: {} } : { user: {} },
@@ -266,6 +272,8 @@ Deno.serve(async (req) => {
         ultravoxBody.selectedTools = ultravoxTools;
       }
 
+      console.log(`[make-outbound-call] Creating Ultravox call with model=${modelName}, voice=${agent.voice}, provider=${provider}, medium=${JSON.stringify(medium)}`);
+
       const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-API-Key": ultravoxApiKey },
@@ -274,6 +282,7 @@ Deno.serve(async (req) => {
 
       if (!ultravoxResponse.ok) {
         const errorText = await ultravoxResponse.text();
+        console.error(`[make-outbound-call] Ultravox API error: ${errorText}`);
         return new Response(
           JSON.stringify({ error: "Failed to create outbound call", details: errorText }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -284,7 +293,7 @@ Deno.serve(async (req) => {
       const joinUrl = ultravoxData.joinUrl;
       ultravoxCallId = ultravoxData.callId;
 
-      console.log(`Ultravox call created: ${ultravoxCallId}, joinUrl: ${joinUrl}`);
+      console.log(`[make-outbound-call] Ultravox call created: ${ultravoxCallId}, joinUrl: ${joinUrl}`);
 
       if (provider === "telnyx") {
         const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
