@@ -81,8 +81,15 @@ export default function OutcomesTab() {
     ]);
     setOutcomes((outcomesRes.data as Outcome[]) || []);
     setCampaigns((campaignsRes.data as Campaign[]) || []);
-    setCallLogs((callLogsRes.data as CallLog[]) || []);
+    const logs = (callLogsRes.data as CallLog[]) || [];
+    setCallLogs(logs);
     setContacts(contactsRes.data || []);
+    // Load persisted summaries from call_logs
+    const savedSummaries: Record<string, string> = {};
+    for (const log of logs) {
+      if (log.summary) savedSummaries[log.id] = log.summary;
+    }
+    setSummaries((prev) => ({ ...savedSummaries, ...prev }));
     setLoading(false);
   }, [user]);
 
