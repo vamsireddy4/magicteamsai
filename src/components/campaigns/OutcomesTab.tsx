@@ -218,6 +218,24 @@ export default function OutcomesTab() {
           </Button>
         </div>
 
+        {/* Outcome Summary Cards */}
+        {(() => {
+          const campOutcomes = getOutcomesForCampaign(selectedCampaign.id);
+          const campOutcomeCounts = getOutcomeCounts(campOutcomes);
+          return (
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+              {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
+                <Card key={o} className={`cursor-pointer hover:shadow-sm transition-shadow ${filterOutcome === o ? "ring-2 ring-primary" : ""}`}
+                  onClick={() => setFilterOutcome(filterOutcome === o ? "ALL" : o)}>
+                  <CardContent className="pt-4 pb-3 text-center">
+                    <p className="text-2xl font-bold">{campOutcomeCounts[o] || 0}</p>
+                    <Badge className={`${OUTCOME_COLORS[o]} mt-1`} variant="secondary">{o.replace("_", " ")}</Badge>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* Search & Filter */}
         <div className="flex gap-3 flex-wrap items-end">
