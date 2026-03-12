@@ -94,7 +94,15 @@ export default function CampaignsTab() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, [user]);
+  useEffect(() => {
+    fetchData();
+    const channel = supabase
+      .channel('campaigns-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'campaigns' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, () => fetchData())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   const openCampaignDetail = async (c: Campaign) => {
     setSelectedCampaign(c);

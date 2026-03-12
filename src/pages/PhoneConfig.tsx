@@ -73,7 +73,14 @@ export default function PhoneConfig() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchConfigs(); }, [user]);
+  useEffect(() => {
+    fetchConfigs();
+    const channel = supabase
+      .channel('phone-configs-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'phone_configs' }, () => fetchConfigs())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   const openConnectDialog = (providerId: string, config?: PhoneConfig) => {
     setSelectedProvider(providerId);

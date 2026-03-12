@@ -80,7 +80,14 @@ export default function Outcomes() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, [user]);
+  useEffect(() => {
+    fetchData();
+    const channel = supabase
+      .channel('outcomes-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_outcomes' }, () => fetchData())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   const handleAddOutcome = async (e: React.FormEvent) => {
     e.preventDefault();

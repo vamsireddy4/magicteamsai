@@ -41,7 +41,14 @@ export default function KnowledgeBase() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, [user]);
+  useEffect(() => {
+    fetchData();
+    const channel = supabase
+      .channel('knowledge-base-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'knowledge_base_items' }, () => fetchData())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

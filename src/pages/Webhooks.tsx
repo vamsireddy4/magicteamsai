@@ -68,7 +68,14 @@ export default function Webhooks() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, [user]);
+  useEffect(() => {
+    fetchData();
+    const channel = supabase
+      .channel('webhooks-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'webhooks' }, () => fetchData())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   const toggleEvent = (event: string) => {
     setForm(f => ({
