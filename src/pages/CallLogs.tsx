@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PhoneIncoming, PhoneOutgoing, History, RefreshCw, Copy, Check, Sparkles, Loader2 } from "lucide-react";
+import { PhoneIncoming, PhoneOutgoing, History, Copy, Check, Sparkles, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type { Json } from "@/integrations/supabase/types";
 
@@ -31,7 +31,6 @@ export default function CallLogs() {
   const [calls, setCalls] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCall, setSelectedCall] = useState<CallLog | null>(null);
-  const [syncing, setSyncing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [callSummary, setCallSummary] = useState<string | null>(null);
@@ -49,22 +48,16 @@ export default function CallLogs() {
   };
 
   useEffect(() => {
-    fetchCalls();
-  }, [user]);
+    // Auto-sync on load, then fetch
+    supabase.functions.invoke("sync-call-data").then(() => fetchCalls());
 
-  const syncCallData = async () => {
-    setSyncing(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("sync-call-data");
-      if (error) throw error;
-      toast.success(`Synced ${data.updated} call(s)`);
-      fetchCalls();
-    } catch (e: any) {
-      toast.error("Failed to sync: " + (e.message || "Unknown error"));
-    } finally {
-      setSyncing(false);
-    }
-  };
+    const channel = supabase
+      .channel('call-logs-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_logs' }, () => fetchCalls())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   const formatDuration = (seconds: number | null) => {
     if (!seconds) return "—";
@@ -137,10 +130,6 @@ export default function CallLogs() {
             <h1 className="text-3xl font-bold tracking-tight">Call History</h1>
             <p className="text-muted-foreground mt-1">View all inbound and outbound calls with transcripts.</p>
           </div>
-          <Button variant="outline" size="sm" onClick={syncCallData} disabled={syncing}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Syncing..." : "Sync Call Data"}
-          </Button>
         </div>
 
         <Card className="flex-1 min-h-0 flex flex-col">
@@ -324,7 +313,7 @@ export default function CallLogs() {
                 ) : (
                   <div className="rounded-lg border border-dashed p-6 text-center">
                     <p className="text-sm text-muted-foreground">
-                      No transcript available. Click "Sync Call Data" to fetch transcripts.
+                      No transcript available.
                     </p>
                   </div>
                 )}
