@@ -331,7 +331,7 @@ export default function OutcomesTab() {
   }
 
   // ─── Campaign List View ───
-  const allOutcomeCounts = outcomes.reduce((acc, o) => { acc[o.outcome] = (acc[o.outcome] || 0) + 1; return acc; }, {} as Record<string, number>);
+  const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
 
   return (
     <div className="space-y-6">
