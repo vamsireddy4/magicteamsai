@@ -540,7 +540,6 @@ export default function CampaignsTab() {
               <CardContent className="space-y-3">
                 <div className="flex gap-2 flex-wrap">
                   <Badge className={STATUS_COLORS[c.status] || ""}>{c.status}</Badge>
-                  <Badge variant="outline">Round {c.round}</Badge>
                   {c.age_range && <Badge variant="secondary">{c.age_range}</Badge>}
                 </div>
                 <div className="text-xs text-muted-foreground space-y-1">
