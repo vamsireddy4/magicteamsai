@@ -195,6 +195,7 @@ export type Database = {
           recipient_number: string | null
           started_at: string
           status: string
+          summary: string | null
           transcript: Json | null
           twilio_call_sid: string | null
           ultravox_call_id: string | null
@@ -211,6 +212,7 @@ export type Database = {
           recipient_number?: string | null
           started_at?: string
           status?: string
+          summary?: string | null
           transcript?: Json | null
           twilio_call_sid?: string | null
           ultravox_call_id?: string | null
@@ -227,6 +229,7 @@ export type Database = {
           recipient_number?: string | null
           started_at?: string
           status?: string
+          summary?: string | null
           transcript?: Json | null
           twilio_call_sid?: string | null
           ultravox_call_id?: string | null
