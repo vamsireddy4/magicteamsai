@@ -32,7 +32,7 @@ interface Campaign {
 interface CallLog {
   id: string; status: string; duration: number | null; started_at: string;
   ended_at: string | null; recipient_number: string | null; caller_number: string | null;
-  direction: string; transcript: any; ultravox_call_id: string | null;
+  direction: string; transcript: any; ultravox_call_id: string | null; summary: string | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -81,8 +81,15 @@ export default function OutcomesTab() {
     ]);
     setOutcomes((outcomesRes.data as Outcome[]) || []);
     setCampaigns((campaignsRes.data as Campaign[]) || []);
-    setCallLogs((callLogsRes.data as CallLog[]) || []);
+    const logs = (callLogsRes.data as CallLog[]) || [];
+    setCallLogs(logs);
     setContacts(contactsRes.data || []);
+    // Load persisted summaries from call_logs
+    const savedSummaries: Record<string, string> = {};
+    for (const log of logs) {
+      if (log.summary) savedSummaries[log.id] = log.summary;
+    }
+    setSummaries((prev) => ({ ...savedSummaries, ...prev }));
     setLoading(false);
   }, [user]);
 
@@ -121,8 +128,11 @@ export default function OutcomesTab() {
     try {
       const { data, error } = await supabase.functions.invoke("summarize-call", { body: { call_id: callLogId } });
       if (error) throw error;
-      setSummaries((prev) => ({ ...prev, [callLogId]: data?.summary || "No summary generated." }));
-      toast({ title: "Summary generated" });
+      const summaryText = data?.summary || "No summary generated.";
+      setSummaries((prev) => ({ ...prev, [callLogId]: summaryText }));
+      // Persist to database
+      await supabase.from("call_logs").update({ summary: summaryText } as any).eq("id", callLogId);
+      toast({ title: "Summary generated & saved" });
     } catch (err: any) {
       toast({ title: "Summary failed", description: err.message, variant: "destructive" });
     } finally {
