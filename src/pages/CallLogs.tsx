@@ -313,7 +313,7 @@ export default function CallLogs() {
                 ) : (
                   <div className="rounded-lg border border-dashed p-6 text-center">
                     <p className="text-sm text-muted-foreground">
-                      No transcript available. Click "Sync Call Data" to fetch transcripts.
+                      No transcript available.
                     </p>
                   </div>
                 )}
