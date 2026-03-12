@@ -91,6 +91,7 @@ export default function AgentForm() {
   const [loadingVoices, setLoadingVoices] = useState(true);
   const [voiceSearch, setVoiceSearch] = useState("");
   const [useCustomVoice, setUseCustomVoice] = useState(false);
+  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
 
   const [form, setForm] = useState({
     name: "",
