@@ -239,7 +239,7 @@ export default function OutcomesTab() {
     // Export to CSV
     const handleExportCSV = () => {
       const headers = ["Time", "Contact", "Phone", "Children", "Attempt", "Result", "Duration (s)", "Transcript", "AI Summary"];
-      const rows = campCallLogs.map((cl) => {
+      const rows = firstAttemptLogs.map((cl) => {
         const contact = getContactForLog(cl);
         const result = getCallResult(cl);
         const transcriptText = formatTranscript(cl.transcript) || "";
