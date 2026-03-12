@@ -261,8 +261,6 @@ export default function RetryCSVTab() {
   }
 
   // ─── Campaign Cards View ───
-  const [retryCampaignId, setRetryCampaignId] = useState<string>("");
-  const [retrying, setRetrying] = useState(false);
 
   const handleRetryCalls = async () => {
     if (!retryCampaignId || !user) return;
