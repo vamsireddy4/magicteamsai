@@ -218,27 +218,24 @@ export default function OutcomesTab() {
           </Button>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid gap-3 grid-cols-3">
-          <Card>
-            <CardContent className="pt-4 pb-3 text-center">
-              <p className="text-2xl font-bold">{campCallLogs.length}</p>
-              <p className="text-xs text-muted-foreground flex items-center justify-center gap-1"><Phone className="h-3 w-3" /> Total Calls</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 pb-3 text-center">
-              <p className="text-2xl font-bold">{statusCounts["completed"] || 0}</p>
-              <p className="text-xs text-muted-foreground">Completed</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 pb-3 text-center">
-              <p className="text-2xl font-bold">{campCallLogs.filter(cl => cl.status === "completed" && (cl.duration || 0) > 10).length}</p>
-              <p className="text-xs text-muted-foreground">Answered (10s+)</p>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Outcome Summary Cards */}
+        {(() => {
+          const campOutcomes = getOutcomesForCampaign(selectedCampaign.id);
+          const campOutcomeCounts = getOutcomeCounts(campOutcomes);
+          return (
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+              {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
+                <Card key={o} className={`cursor-pointer hover:shadow-sm transition-shadow ${filterOutcome === o ? "ring-2 ring-primary" : ""}`}
+                  onClick={() => setFilterOutcome(filterOutcome === o ? "ALL" : o)}>
+                  <CardContent className="pt-4 pb-3 text-center">
+                    <p className="text-2xl font-bold">{campOutcomeCounts[o] || 0}</p>
+                    <Badge className={`${OUTCOME_COLORS[o]} mt-1`} variant="secondary">{o.replace("_", " ")}</Badge>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* Search & Filter */}
         <div className="flex gap-3 flex-wrap items-end">
