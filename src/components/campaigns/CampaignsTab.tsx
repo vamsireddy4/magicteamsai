@@ -255,10 +255,7 @@ export default function CampaignsTab() {
             <h2 className="text-2xl font-bold">{c.venue_name}</h2>
             {c.venue_location && <p className="text-muted-foreground flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {c.venue_location}</p>}
           </div>
-          <div className="flex gap-2">
-            <Badge className={`${STATUS_COLORS[c.status] || ""} text-sm px-3 py-1`}>{c.status}</Badge>
-            <Badge variant="outline" className="text-sm px-3 py-1">Round {c.round}</Badge>
-          </div>
+          <Badge className={`${STATUS_COLORS[c.status] || ""} text-sm px-3 py-1`}>{c.status}</Badge>
         </div>
 
         <div className="grid gap-4 grid-cols-2">
