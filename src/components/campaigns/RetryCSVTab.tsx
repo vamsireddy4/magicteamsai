@@ -262,32 +262,23 @@ export default function RetryCSVTab() {
 
   return (
     <div className="space-y-6">
-      {campaignEntries.length === 0 ? (
-        <div className="py-12 text-center text-muted-foreground">No retry calls found across any campaign.</div>
+      {campaigns.length === 0 ? (
+        <div className="py-12 text-center text-muted-foreground">No campaigns found.</div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {campaignEntries.map(([campaignId, { campaign, calls }]) => {
-            const counts: Record<string, number> = {};
-            for (const cl of calls) {
-              const r = getCallResult(cl);
-              counts[r] = (counts[r] || 0) + 1;
-            }
+          {campaigns.map((campaign) => {
+            const campData = retryByCampaign.get(campaign.id);
+            const retryCount = campData?.calls.length || 0;
             return (
-              <Card key={campaignId} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedCampaign(campaign)}>
+              <Card key={campaign.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedCampaign(campaign)}>
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base">{campaign.venue_name}</CardTitle>
                     <Badge className={STATUS_COLORS[campaign.status] || ""} variant="secondary">{campaign.status}</Badge>
                   </div>
-                  <CardDescription>Round {campaign.round} · {calls.length} retry calls</CardDescription>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  <div className="flex flex-wrap gap-2">
-                    {counts["ANSWERED"] ? <Badge className="bg-green-100 text-green-800" variant="secondary">{counts["ANSWERED"]} Answered</Badge> : null}
-                    {counts["VOICEMAIL"] ? <Badge className="bg-blue-100 text-blue-800" variant="secondary">{counts["VOICEMAIL"]} Voicemail</Badge> : null}
-                    {counts["NO ANSWER"] ? <Badge variant="secondary">{counts["NO ANSWER"]} No Answer</Badge> : null}
-                    {counts["FAILED"] ? <Badge className="bg-red-100 text-red-800" variant="secondary">{counts["FAILED"]} Failed</Badge> : null}
-                  </div>
+                  <p className="text-sm text-muted-foreground">{retryCount} retry calls</p>
                 </CardContent>
               </Card>
             );
