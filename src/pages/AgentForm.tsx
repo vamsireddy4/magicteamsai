@@ -365,12 +365,6 @@ export default function AgentForm() {
                   <CardContent><AgentWebhooks agentId={id} userId={user.id} /></CardContent>
                 </Card>
               </TabsContent>
-              <TabsContent value="calendar" className="mt-6">
-                <Card>
-                  <CardHeader><CardTitle>Calendar Integrations</CardTitle></CardHeader>
-                  <CardContent><AgentCalendarIntegrations agentId={id} userId={user.id} /></CardContent>
-                </Card>
-              </TabsContent>
             </>
           )}
         </Tabs>
