@@ -304,30 +304,38 @@ Deno.serve(async (req) => {
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
+
+        const telnyxCallBody = {
+          connection_id: telnyxConnectionId,
+          to: recipient_number,
+          from: phoneConfig.phone_number,
+          stream_url: joinUrl,
+          stream_track: "inbound_track",
+          stream_bidirectional_mode: "rtp",
+          stream_codec: "L16",
+          stream_bidirectional_codec: "L16",
+          stream_bidirectional_sampling_rate: 16000,
+          stream_bidirectional_target_legs: "opposite",
+          timeout_secs: 90,
+        };
+
+        console.log(`[make-outbound-call] Placing Telnyx call to ${recipient_number} from ${phoneConfig.phone_number}, connection_id=${telnyxConnectionId}, stream_url=${joinUrl}`);
+
         const telnyxResponse = await fetch("https://api.telnyx.com/v2/calls", {
           method: "POST",
           headers: { "Authorization": `Bearer ${telnyxApiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            connection_id: telnyxConnectionId,
-            to: recipient_number,
-            from: phoneConfig.phone_number,
-            stream_url: joinUrl,
-            stream_track: "inbound_track",
-            stream_bidirectional_mode: "rtp",
-            stream_codec: "L16",
-            stream_bidirectional_codec: "L16",
-            stream_bidirectional_sampling_rate: 16000,
-            stream_bidirectional_target_legs: "opposite",
-          }),
+          body: JSON.stringify(telnyxCallBody),
         });
         if (!telnyxResponse.ok) {
           const err = await telnyxResponse.text();
+          console.error(`[make-outbound-call] Telnyx API error: ${err}`);
           return new Response(JSON.stringify({ error: "Failed to place Telnyx call", details: err }), {
             status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
         const telnyxData = await telnyxResponse.json();
         callSid = telnyxData.data?.call_control_id || "";
+        console.log(`[make-outbound-call] Telnyx call placed successfully, call_control_id=${callSid}`);
       } else {
         const twiml = `<Response><Connect><Stream url="${joinUrl}"/></Connect></Response>`;
         const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
