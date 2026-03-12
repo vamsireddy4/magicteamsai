@@ -44,6 +44,8 @@ export default function RetryCSVTab() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [retryCampaignId, setRetryCampaignId] = useState<string>("");
+  const [retrying, setRetrying] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
