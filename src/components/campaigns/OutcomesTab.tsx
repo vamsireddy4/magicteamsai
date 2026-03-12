@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, FileText, RefreshCw, Loader2, ArrowLeft, MapPin, Calendar, Users, Target, Phone, Clock } from "lucide-react";
+import { Plus, Search, FileText, Loader2, ArrowLeft, MapPin, Calendar, Clock, Sparkles } from "lucide-react";
 
 interface Outcome {
   id: string; campaign_id: string; phone_number: string; parent_name: string | null;
@@ -58,7 +58,6 @@ export default function OutcomesTab() {
   const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   const [contacts, setContacts] = useState<{ campaign_id: string; phone_number: string; first_name: string; child_names: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
 
   // Drill-down state
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
@@ -66,23 +65,15 @@ export default function OutcomesTab() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCallLog, setSelectedCallLog] = useState<CallLog | null>(null);
 
+  // AI Summary state
+  const [summaries, setSummaries] = useState<Record<string, string>>({});
+  const [summarizing, setSummarizing] = useState<Record<string, boolean>>({});
+
   // Add dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addForm, setAddForm] = useState({ campaign_id: "", phone_number: "", parent_name: "", child_names: "", venue_name: "", outcome: "PENDING", transcript: "", summary: "", attempt_number: "1" });
 
-  const syncCallData = async () => {
-    setSyncing(true);
-    try {
-      const { error } = await supabase.functions.invoke("sync-call-data");
-      if (error) throw error;
-      toast({ title: "Calls synced" });
-      await fetchData();
-    } catch (err: any) {
-      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
-    } finally { setSyncing(false); }
-  };
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!user) return;
     const [outcomesRes, campaignsRes, callLogsRes, contactsRes] = await Promise.all([
       supabase.from("call_outcomes").select("*").order("call_timestamp", { ascending: false }),
@@ -95,9 +86,20 @@ export default function OutcomesTab() {
     setCallLogs((callLogsRes.data as CallLog[]) || []);
     setContacts(contactsRes.data || []);
     setLoading(false);
-  };
+  }, [user]);
 
-  useEffect(() => { fetchData(); }, [user]);
+  // Initial fetch + realtime subscription
+  useEffect(() => {
+    fetchData();
+
+    const channel = supabase
+      .channel('outcomes-call-logs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_logs' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_outcomes' }, () => fetchData())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchData]);
 
   const handleAddOutcome = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,15 +118,27 @@ export default function OutcomesTab() {
       }
       setAddDialogOpen(false);
       setAddForm({ campaign_id: "", phone_number: "", parent_name: "", child_names: "", venue_name: "", outcome: "PENDING", transcript: "", summary: "", attempt_number: "1" });
-      fetchData();
+    }
+  };
+
+  const handleSummarize = async (callLogId: string) => {
+    setSummarizing((prev) => ({ ...prev, [callLogId]: true }));
+    try {
+      const { data, error } = await supabase.functions.invoke("summarize-call", { body: { call_id: callLogId } });
+      if (error) throw error;
+      setSummaries((prev) => ({ ...prev, [callLogId]: data?.summary || "No summary generated." }));
+      toast({ title: "Summary generated" });
+    } catch (err: any) {
+      toast({ title: "Summary failed", description: err.message, variant: "destructive" });
+    } finally {
+      setSummarizing((prev) => ({ ...prev, [callLogId]: false }));
     }
   };
 
   // Helpers
   const getOutcomesForCampaign = (campaignId: string) => outcomes.filter((o) => o.campaign_id === campaignId);
-
-  const getOutcomeCounts = (campaignOutcomes: Outcome[]) =>
-    campaignOutcomes.reduce((acc, o) => { acc[o.outcome] = (acc[o.outcome] || 0) + 1; return acc; }, {} as Record<string, number>);
+  const getOutcomeCounts = (campOutcomes: Outcome[]) =>
+    campOutcomes.reduce((acc, o) => { acc[o.outcome] = (acc[o.outcome] || 0) + 1; return acc; }, {} as Record<string, number>);
 
   const CALL_STATUS_COLORS: Record<string, string> = {
     completed: "bg-green-100 text-green-800",
@@ -152,22 +166,33 @@ export default function OutcomesTab() {
     return JSON.stringify(transcript, null, 2);
   };
 
+  const truncateText = (text: string | null, maxLen: number) => {
+    if (!text) return null;
+    return text.length > maxLen ? text.slice(0, maxLen) + "…" : text;
+  };
+
   // ─── Campaign Detail View ───
   if (selectedCampaign) {
-    // Get phone numbers for this campaign's contacts
     const campContacts = contacts.filter((c) => c.campaign_id === selectedCampaign.id);
     const campPhones = new Set(campContacts.map((c) => c.phone_number));
-
-    // Get call logs matching campaign contacts
     const campCallLogs = callLogs.filter((cl) => cl.recipient_number && campPhones.has(cl.recipient_number));
 
-    // Status counts
-    const statusCounts = campCallLogs.reduce((acc, cl) => {
-      acc[cl.status] = (acc[cl.status] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+    // Compute attempt numbers per recipient_number
+    const attemptMap: Record<string, number> = {};
+    const phoneCallCounts: Record<string, number> = {};
+    // Sort by started_at ascending to assign attempt numbers
+    const sortedLogs = [...campCallLogs].sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
+    for (const cl of sortedLogs) {
+      const phone = cl.recipient_number || "";
+      phoneCallCounts[phone] = (phoneCallCounts[phone] || 0) + 1;
+      attemptMap[cl.id] = phoneCallCounts[phone];
+    }
 
-    // Search filter
+    // Outcome summary cards
+    const campOutcomes = getOutcomesForCampaign(selectedCampaign.id);
+    const campOutcomeCounts = getOutcomeCounts(campOutcomes);
+
+    // Filter
     const filteredLogs = campCallLogs.filter((cl) => {
       if (filterOutcome !== "ALL") {
         if (filterOutcome === "ANSWERED" && !(cl.status === "completed" && (cl.duration || 0) > 10)) return false;
@@ -212,30 +237,20 @@ export default function OutcomesTab() {
               <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1"><MapPin className="h-3 w-3" /> {selectedCampaign.venue_location}</p>
             )}
           </div>
-          <Button variant="outline" onClick={syncCallData} disabled={syncing}>
-            {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-            Sync & Refresh
-          </Button>
         </div>
 
         {/* Outcome Summary Cards */}
-        {(() => {
-          const campOutcomes = getOutcomesForCampaign(selectedCampaign.id);
-          const campOutcomeCounts = getOutcomeCounts(campOutcomes);
-          return (
-            <div className="grid gap-3 grid-cols-3">
-              {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
-                <Card key={o} className={`cursor-pointer hover:shadow-sm transition-shadow ${filterOutcome === o ? "ring-2 ring-primary" : ""}`}
-                  onClick={() => setFilterOutcome(filterOutcome === o ? "ALL" : o)}>
-                  <CardContent className="pt-4 pb-3 text-center">
-                    <p className="text-2xl font-bold">{campOutcomeCounts[o] || 0}</p>
-                    <Badge className={`${OUTCOME_COLORS[o]} mt-1`} variant="secondary">{o.replace("_", " ")}</Badge>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          );
-        })()}
+        <div className="grid gap-3 grid-cols-3">
+          {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
+            <Card key={o} className={`cursor-pointer hover:shadow-sm transition-shadow ${filterOutcome === o ? "ring-2 ring-primary" : ""}`}
+              onClick={() => setFilterOutcome(filterOutcome === o ? "ALL" : o)}>
+              <CardContent className="pt-4 pb-3 text-center">
+                <p className="text-2xl font-bold">{campOutcomeCounts[o] || 0}</p>
+                <Badge className={`${OUTCOME_COLORS[o]} mt-1`} variant="secondary">{o.replace("_", " ")}</Badge>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
 
         {/* Search & Filter */}
         <div className="flex gap-3 flex-wrap items-end">
@@ -266,25 +281,61 @@ export default function OutcomesTab() {
                       <TableHead>Time</TableHead>
                       <TableHead>Contact</TableHead>
                       <TableHead>Phone</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Attempt</TableHead>
                       <TableHead>Result</TableHead>
                       <TableHead>Duration</TableHead>
-                      <TableHead></TableHead>
+                      <TableHead>Transcript</TableHead>
+                      <TableHead>AI Summary</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredLogs.slice(0, 100).map((cl) => {
                       const contact = getContactForLog(cl);
                       const result = getCallResult(cl);
+                      const transcriptText = formatTranscript(cl.transcript);
+                      const attempt = attemptMap[cl.id] || 1;
+                      const summary = summaries[cl.id];
+                      const isSummarizing = summarizing[cl.id];
+
                       return (
                         <TableRow key={cl.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedCallLog(cl)}>
                           <TableCell className="text-xs">{new Date(cl.started_at).toLocaleString()}</TableCell>
                           <TableCell className="text-sm font-medium">{contact?.first_name || "—"}</TableCell>
                           <TableCell className="font-mono text-xs">{cl.recipient_number || "—"}</TableCell>
-                          <TableCell><Badge className={CALL_STATUS_COLORS[cl.status] || "bg-muted text-muted-foreground"} variant="secondary">{cl.status}</Badge></TableCell>
+                          <TableCell>
+                            {attempt > 1 ? (
+                              <Badge variant="outline" className="text-xs">Retry #{attempt}</Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">1st</span>
+                            )}
+                          </TableCell>
                           <TableCell><Badge className={OUTCOME_COLORS[result] || "bg-muted text-muted-foreground"} variant="secondary">{result}</Badge></TableCell>
                           <TableCell className="text-sm flex items-center gap-1"><Clock className="h-3 w-3 text-muted-foreground" /> {formatDuration(cl.duration)}</TableCell>
-                          <TableCell>{cl.transcript && <FileText className="h-4 w-4 text-muted-foreground" />}</TableCell>
+                          <TableCell className="max-w-[150px]">
+                            {transcriptText ? (
+                              <span className="text-xs text-muted-foreground line-clamp-2">{truncateText(transcriptText, 80)}</span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-[180px]" onClick={(e) => e.stopPropagation()}>
+                            {summary ? (
+                              <span className="text-xs text-muted-foreground line-clamp-2">{truncateText(summary, 100)}</span>
+                            ) : transcriptText ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs gap-1"
+                                disabled={isSummarizing}
+                                onClick={() => handleSummarize(cl.id)}
+                              >
+                                {isSummarizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                                {isSummarizing ? "Generating..." : "Generate"}
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
                         </TableRow>
                       );
                     })}
@@ -303,6 +354,7 @@ export default function OutcomesTab() {
             {selectedCallLog && (() => {
               const contact = getContactForLog(selectedCallLog);
               const transcriptText = formatTranscript(selectedCallLog.transcript);
+              const summary = summaries[selectedCallLog.id];
               return (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-3 text-sm">
@@ -314,9 +366,21 @@ export default function OutcomesTab() {
                     <div><span className="text-muted-foreground">Duration:</span> {formatDuration(selectedCallLog.duration)}</div>
                     <div><span className="text-muted-foreground">Started:</span> {new Date(selectedCallLog.started_at).toLocaleString()}</div>
                     {selectedCallLog.ended_at && <div><span className="text-muted-foreground">Ended:</span> {new Date(selectedCallLog.ended_at).toLocaleString()}</div>}
-                    <div><span className="text-muted-foreground">Direction:</span> {selectedCallLog.direction}</div>
+                    <div><span className="text-muted-foreground">Attempt:</span> {attemptMap[selectedCallLog.id] > 1 ? `Retry #${attemptMap[selectedCallLog.id]}` : "1st"}</div>
                     {selectedCallLog.caller_number && <div><span className="text-muted-foreground">From:</span> {selectedCallLog.caller_number}</div>}
                   </div>
+                  {summary && (
+                    <div>
+                      <p className="text-sm font-medium mb-1">AI Summary</p>
+                      <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">{summary}</p>
+                    </div>
+                  )}
+                  {!summary && transcriptText && (
+                    <Button variant="outline" size="sm" className="gap-1" disabled={summarizing[selectedCallLog.id]} onClick={() => handleSummarize(selectedCallLog.id)}>
+                      {summarizing[selectedCallLog.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                      {summarizing[selectedCallLog.id] ? "Generating Summary..." : "Generate AI Summary"}
+                    </Button>
+                  )}
                   {transcriptText && <div><p className="text-sm font-medium mb-1">Transcript</p><pre className="text-xs bg-muted p-3 rounded-lg whitespace-pre-wrap max-h-60 overflow-y-auto">{transcriptText}</pre></div>}
                 </div>
               );
@@ -328,15 +392,9 @@ export default function OutcomesTab() {
   }
 
   // ─── Campaign List View ───
-  const allOutcomeCounts = outcomes.reduce((acc, o) => { acc[o.outcome] = (acc[o.outcome] || 0) + 1; return acc; }, {} as Record<string, number>);
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-end gap-2">
-        <Button variant="outline" onClick={syncCallData} disabled={syncing}>
-          {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-          Sync & Refresh
-        </Button>
         <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
           <Button onClick={() => setAddDialogOpen(true)}><Plus className="h-4 w-4 mr-2" /> Add Outcome</Button>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -358,7 +416,6 @@ export default function OutcomesTab() {
           </DialogContent>
         </Dialog>
       </div>
-
 
       {/* Campaign Cards */}
       {loading ? <div className="p-8 text-center text-muted-foreground">Loading...</div>
