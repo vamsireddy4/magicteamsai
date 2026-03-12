@@ -14,7 +14,8 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const eventType = body?.data?.event_type;
-    const callControlId = body?.data?.payload?.call_control_id;
+    const payload = body?.data?.payload ?? {};
+    const callControlId = payload?.call_control_id;
 
     console.log(`[telnyx-webhook] Event: ${eventType}, call_control_id: ${callControlId}`);
 
