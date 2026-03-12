@@ -261,7 +261,7 @@ export default function CampaignsTab() {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2">
           <Card><CardContent className="pt-6 text-center"><Users className="h-8 w-8 mx-auto text-primary mb-2" /><p className="text-2xl font-bold">{contactCount}</p><p className="text-xs text-muted-foreground">Total Contacts</p></CardContent></Card>
           <Card><CardContent className="pt-6 text-center"><Phone className="h-8 w-8 mx-auto text-primary mb-2" /><p className="text-2xl font-bold">{c.calls_made}</p><p className="text-xs text-muted-foreground">Calls Made</p></CardContent></Card>
           <Card><CardContent className="pt-6 text-center"><Target className="h-8 w-8 mx-auto text-primary mb-2" /><p className="text-2xl font-bold">{c.booking_target ?? "—"}</p><p className="text-xs text-muted-foreground">Booking Target</p></CardContent></Card>
@@ -511,7 +511,6 @@ export default function CampaignsTab() {
         {["all", "draft", "active", "paused", "completed"].map((s) => (
           <Button key={s} variant={filter === s ? "default" : "outline"} size="sm" onClick={() => setFilter(s)}>
             {s.charAt(0).toUpperCase() + s.slice(1)}
-            {s !== "all" && statusCounts[s] ? ` (${statusCounts[s]})` : s === "all" ? ` (${campaigns.length})` : ""}
           </Button>
         ))}
       </div>
