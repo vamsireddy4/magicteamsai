@@ -305,21 +305,18 @@ Deno.serve(async (req) => {
           );
         }
 
-        const telnyxCallBody = {
+        // Use webhook URL for Telnyx to handle call.answered -> streaming_start
+        const webhookUrl = `${supabaseUrl}/functions/v1/handle-telnyx-webhook`;
+
+        const telnyxCallBody: any = {
           connection_id: telnyxConnectionId,
           to: recipient_number,
           from: phoneConfig.phone_number,
-          stream_url: joinUrl,
-          stream_track: "inbound_track",
-          stream_bidirectional_mode: "rtp",
-          stream_codec: "L16",
-          stream_bidirectional_codec: "L16",
-          stream_bidirectional_sampling_rate: 16000,
-          stream_bidirectional_target_legs: "opposite",
+          webhook_url: webhookUrl,
           timeout_secs: 90,
         };
 
-        console.log(`[make-outbound-call] Placing Telnyx call to ${recipient_number} from ${phoneConfig.phone_number}, connection_id=${telnyxConnectionId}, stream_url=${joinUrl}`);
+        console.log(`[make-outbound-call] Placing Telnyx call to ${recipient_number} from ${phoneConfig.phone_number}, connection_id=${telnyxConnectionId}, webhook=${webhookUrl}`);
 
         const telnyxResponse = await fetch("https://api.telnyx.com/v2/calls", {
           method: "POST",
@@ -335,7 +332,17 @@ Deno.serve(async (req) => {
         }
         const telnyxData = await telnyxResponse.json();
         callSid = telnyxData.data?.call_control_id || "";
-        console.log(`[make-outbound-call] Telnyx call placed successfully, call_control_id=${callSid}`);
+        console.log(`[make-outbound-call] Telnyx call placed, call_control_id=${callSid}`);
+
+        // Store call state so webhook can start streaming when answered
+        await supabase.from("telnyx_call_state").insert({
+          call_control_id: callSid,
+          join_url: joinUrl,
+          telnyx_api_key: telnyxApiKey,
+          agent_id: agent.id,
+          user_id: user.id,
+        });
+        console.log(`[make-outbound-call] Stored call state for webhook-based streaming_start`);
       } else {
         const twiml = `<Response><Connect><Stream url="${joinUrl}"/></Connect></Response>`;
         const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
