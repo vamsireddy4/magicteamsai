@@ -143,7 +143,7 @@ Deno.serve(async (req) => {
                 stream_url: bridgeUrl, stream_track: "inbound_track",
                 stream_bidirectional_mode: "rtp", stream_codec: "L16",
                 stream_bidirectional_codec: "L16", stream_bidirectional_sampling_rate: 16000,
-                stream_bidirectional_target_legs: "opposite",
+                stream_bidirectional_target_legs: "opposite", timeout_secs: 90,
               }),
             });
             if (!resp.ok) throw new Error(`Telnyx: ${await resp.text()}`);
