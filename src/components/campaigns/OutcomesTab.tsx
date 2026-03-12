@@ -223,7 +223,7 @@ export default function OutcomesTab() {
           const campOutcomes = getOutcomesForCampaign(selectedCampaign.id);
           const campOutcomeCounts = getOutcomeCounts(campOutcomes);
           return (
-            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="grid gap-3 grid-cols-3">
               {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
                 <Card key={o} className={`cursor-pointer hover:shadow-sm transition-shadow ${filterOutcome === o ? "ring-2 ring-primary" : ""}`}
                   onClick={() => setFilterOutcome(filterOutcome === o ? "ALL" : o)}>
