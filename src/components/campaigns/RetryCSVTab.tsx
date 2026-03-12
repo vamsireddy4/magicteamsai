@@ -269,6 +269,11 @@ export default function RetryCSVTab() {
       const campaign = campaigns.find((c) => c.id === retryCampaignId);
       if (!campaign) throw new Error("Campaign not found");
 
+      if (!campaign.agent_id || !campaign.phone_config_id) {
+        toast({ title: "Campaign not configured", description: "Please assign an agent and phone number to this campaign in the Campaigns tab before retrying.", variant: "destructive" });
+        setRetrying(false);
+        return;
+      }
       // Get contacts for this campaign that had VOICEMAIL or NO ANSWER
       const campContacts = contacts.filter((c) => c.campaign_id === retryCampaignId);
       const campPhones = new Set(campContacts.map((c) => c.phone_number));
