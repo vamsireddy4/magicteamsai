@@ -27,7 +27,7 @@ const navItems = [
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/knowledge-base", label: "Knowledge Base", icon: BookOpen },
-  { href: "/phone-config", label: "Phone Numbers", icon: Phone },
+  { href: "/phone-config", label: "Phone Integration", icon: Phone },
   { href: "/call-logs", label: "Call History", icon: History },
   { href: "/outbound-call", label: "Outbound Call", icon: PhoneCall },
   { href: "/webhooks", label: "Webhooks", icon: Webhook },
