@@ -31,7 +31,6 @@ export default function CallLogs() {
   const [calls, setCalls] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCall, setSelectedCall] = useState<CallLog | null>(null);
-  const [syncing, setSyncing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [callSummary, setCallSummary] = useState<string | null>(null);
@@ -49,22 +48,16 @@ export default function CallLogs() {
   };
 
   useEffect(() => {
-    fetchCalls();
-  }, [user]);
+    // Auto-sync on load, then fetch
+    supabase.functions.invoke("sync-call-data").then(() => fetchCalls());
 
-  const syncCallData = async () => {
-    setSyncing(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("sync-call-data");
-      if (error) throw error;
-      toast.success(`Synced ${data.updated} call(s)`);
-      fetchCalls();
-    } catch (e: any) {
-      toast.error("Failed to sync: " + (e.message || "Unknown error"));
-    } finally {
-      setSyncing(false);
-    }
-  };
+    const channel = supabase
+      .channel('call-logs-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_logs' }, () => fetchCalls())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   const formatDuration = (seconds: number | null) => {
     if (!seconds) return "—";
