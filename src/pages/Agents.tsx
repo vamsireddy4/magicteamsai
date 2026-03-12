@@ -109,12 +109,9 @@ export default function Agents() {
                   <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
                     {agent.system_prompt}
                   </p>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={agent.is_active ? "default" : "secondary"}>
-                      {agent.is_active ? "Active" : "Inactive"}
-                    </Badge>
-                    <Badge variant="outline">{agent.voice}</Badge>
-                  </div>
+                  <Badge variant={agent.is_active ? "default" : "secondary"}>
+                    {agent.is_active ? "Active" : "Inactive"}
+                  </Badge>
                 </CardContent>
               </Card>
             ))}
