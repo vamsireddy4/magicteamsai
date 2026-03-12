@@ -211,7 +211,7 @@ export default function OutcomesTab() {
     }
 
     // Filter
-    const filteredLogs = campCallLogs.filter((cl) => {
+    const filteredLogs = firstAttemptLogs.filter((cl) => {
       if (filterOutcome !== "ALL") {
         const result = getCallResult(cl);
         const filterMap: Record<string, string[]> = {
