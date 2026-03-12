@@ -50,7 +50,7 @@ export default function RetryCSVTab() {
   const fetchData = useCallback(async () => {
     if (!user) return;
     const [campaignsRes, callLogsRes, contactsRes, dncRes] = await Promise.all([
-      supabase.from("campaigns").select("id, venue_name, round, status").order("venue_name"),
+      supabase.from("campaigns").select("id, venue_name, round, status, agent_id, phone_config_id").order("venue_name"),
       supabase.from("call_logs").select("id, status, duration, started_at, recipient_number, transcript, summary").order("started_at", { ascending: false }),
       supabase.from("contacts").select("campaign_id, phone_number, first_name, child_names"),
       supabase.from("do_not_call").select("phone_number"),
