@@ -200,15 +200,18 @@ export default function OutcomesTab() {
       attemptMap[cl.id] = phoneCallCounts[phone];
     }
 
-    // Compute outcome counts from ACTUAL call_logs (not call_outcomes table)
+    // Filter out retry calls (attempt > 1) — those belong in the Retry CSV tab
+    const firstAttemptLogs = campCallLogs.filter((cl) => (attemptMap[cl.id] || 1) === 1);
+
+    // Compute outcome counts from first-attempt call_logs only
     const liveOutcomeCounts: Record<string, number> = {};
-    for (const cl of campCallLogs) {
+    for (const cl of firstAttemptLogs) {
       const result = getCallResult(cl);
       liveOutcomeCounts[result] = (liveOutcomeCounts[result] || 0) + 1;
     }
 
     // Filter
-    const filteredLogs = campCallLogs.filter((cl) => {
+    const filteredLogs = firstAttemptLogs.filter((cl) => {
       if (filterOutcome !== "ALL") {
         const result = getCallResult(cl);
         const filterMap: Record<string, string[]> = {
@@ -236,7 +239,7 @@ export default function OutcomesTab() {
     // Export to CSV
     const handleExportCSV = () => {
       const headers = ["Time", "Contact", "Phone", "Children", "Attempt", "Result", "Duration (s)", "Transcript", "AI Summary"];
-      const rows = campCallLogs.map((cl) => {
+      const rows = firstAttemptLogs.map((cl) => {
         const contact = getContactForLog(cl);
         const result = getCallResult(cl);
         const transcriptText = formatTranscript(cl.transcript) || "";
