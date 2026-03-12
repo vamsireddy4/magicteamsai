@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Download, RefreshCw, Search, Clock, ArrowLeft, Phone } from "lucide-react";
 
-interface Campaign { id: string; venue_name: string; round: number; status: string; }
+interface Campaign { id: string; venue_name: string; round: number; status: string; agent_id: string | null; phone_config_id: string | null; }
 interface CallLog {
   id: string; status: string; duration: number | null; started_at: string;
   recipient_number: string | null; transcript: any; summary: string | null;
@@ -50,7 +50,7 @@ export default function RetryCSVTab() {
   const fetchData = useCallback(async () => {
     if (!user) return;
     const [campaignsRes, callLogsRes, contactsRes, dncRes] = await Promise.all([
-      supabase.from("campaigns").select("id, venue_name, round, status").order("venue_name"),
+      supabase.from("campaigns").select("id, venue_name, round, status, agent_id, phone_config_id").order("venue_name"),
       supabase.from("call_logs").select("id, status, duration, started_at, recipient_number, transcript, summary").order("started_at", { ascending: false }),
       supabase.from("contacts").select("campaign_id, phone_number, first_name, child_names"),
       supabase.from("do_not_call").select("phone_number"),
@@ -269,6 +269,11 @@ export default function RetryCSVTab() {
       const campaign = campaigns.find((c) => c.id === retryCampaignId);
       if (!campaign) throw new Error("Campaign not found");
 
+      if (!campaign.agent_id || !campaign.phone_config_id) {
+        toast({ title: "Campaign not configured", description: "Please assign an agent and phone number to this campaign in the Campaigns tab before retrying.", variant: "destructive" });
+        setRetrying(false);
+        return;
+      }
       // Get contacts for this campaign that had VOICEMAIL or NO ANSWER
       const campContacts = contacts.filter((c) => c.campaign_id === retryCampaignId);
       const campPhones = new Set(campContacts.map((c) => c.phone_number));
