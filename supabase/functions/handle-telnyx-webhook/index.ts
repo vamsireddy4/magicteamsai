@@ -57,12 +57,12 @@ Deno.serve(async (req) => {
           },
           body: JSON.stringify({
             stream_url: callState.join_url,
-            stream_track: "inbound_track",
+            stream_track: "both_tracks",
             stream_bidirectional_mode: "rtp",
-            stream_codec: "L16",
-            stream_bidirectional_codec: "L16",
-            stream_bidirectional_sampling_rate: 16000,
-            stream_bidirectional_target_legs: "opposite",
+            stream_codec: "PCMU",
+            stream_bidirectional_codec: "PCMU",
+            stream_bidirectional_sampling_rate: 8000,
+            stream_bidirectional_target_legs: "self",
           }),
         }
       );
