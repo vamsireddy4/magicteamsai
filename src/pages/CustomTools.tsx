@@ -4,17 +4,11 @@ import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Wrench, Loader2, Code2 } from "lucide-react";
-
-const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+import { Trash2, Wrench, Loader2, Code2 } from "lucide-react";
+import CreateToolDialog from "@/components/custom-tools/CreateToolDialog";
 
 interface AgentToolRow {
   id: string;
@@ -43,19 +37,6 @@ export default function CustomTools() {
   const [tools, setTools] = useState<AgentToolRow[]>([]);
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const [form, setForm] = useState({
-    name: "",
-    description: "",
-    agent_id: "" as string,
-    http_method: "POST",
-    http_url: "",
-    http_headers: "{}",
-    http_body_template: "{}",
-    parameters: "[]",
-  });
 
   const fetchData = async () => {
     if (!user) return;
@@ -76,43 +57,6 @@ export default function CustomTools() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user]);
-
-  const handleCreate = async () => {
-    if (!user || !form.name || !form.agent_id || !form.http_url) return;
-    setSaving(true);
-
-    let headers = {}, bodyTemplate = {}, params: any[] = [];
-    try {
-      headers = JSON.parse(form.http_headers);
-      bodyTemplate = JSON.parse(form.http_body_template);
-      params = JSON.parse(form.parameters);
-    } catch {
-      toast({ title: "Invalid JSON", description: "Check your headers, body template, or parameters JSON.", variant: "destructive" });
-      setSaving(false);
-      return;
-    }
-
-    const { error } = await supabase.from("agent_tools").insert({
-      user_id: user.id,
-      agent_id: form.agent_id,
-      name: form.name,
-      description: form.description,
-      http_method: form.http_method,
-      http_url: form.http_url,
-      http_headers: headers,
-      http_body_template: bodyTemplate,
-      parameters: params,
-    } as any);
-    setSaving(false);
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Tool created" });
-      setForm({ name: "", description: "", agent_id: "", http_method: "POST", http_url: "", http_headers: "{}", http_body_template: "{}", parameters: "[]" });
-      setDialogOpen(false);
-      fetchData();
-    }
-  };
 
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from("agent_tools").delete().eq("id", id);
@@ -139,68 +83,7 @@ export default function CustomTools() {
             <h1 className="text-3xl font-bold tracking-tight">Custom Tools</h1>
             <p className="text-muted-foreground mt-1">Define HTTP tools your AI agents can trigger during calls.</p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button><Plus className="h-4 w-4 mr-2" /> Add Tool</Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Create Custom Tool</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Tool Name</Label>
-                  <Input placeholder="e.g. check_availability" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-                  <p className="text-xs text-muted-foreground">The name the AI uses to invoke this tool.</p>
-                </div>
-                <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Textarea placeholder="Describe what this tool does so the AI knows when to use it..." value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Agent</Label>
-                  <Select value={form.agent_id} onValueChange={v => setForm({ ...form, agent_id: v })}>
-                    <SelectTrigger><SelectValue placeholder="Select an agent" /></SelectTrigger>
-                    <SelectContent>
-                      {agents.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-[120px_1fr]">
-                  <div className="space-y-2">
-                    <Label>Method</Label>
-                    <Select value={form.http_method} onValueChange={v => setForm({ ...form, http_method: v })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {HTTP_METHODS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>URL</Label>
-                    <Input placeholder="https://api.example.com/check" value={form.http_url} onChange={e => setForm({ ...form, http_url: e.target.value })} />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Headers (JSON)</Label>
-                  <Textarea className="font-mono text-xs" placeholder='{"Authorization": "Bearer xxx"}' value={form.http_headers} onChange={e => setForm({ ...form, http_headers: e.target.value })} rows={3} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Body Template (JSON)</Label>
-                  <Textarea className="font-mono text-xs" placeholder='{"query": "{{user_input}}"}' value={form.http_body_template} onChange={e => setForm({ ...form, http_body_template: e.target.value })} rows={3} />
-                  <p className="text-xs text-muted-foreground">Use {"{{param}}"} placeholders for dynamic values.</p>
-                </div>
-                <div className="space-y-2">
-                  <Label>Parameters (JSON array)</Label>
-                  <Textarea className="font-mono text-xs" placeholder='[{"name": "date", "type": "string", "description": "The date to check"}]' value={form.parameters} onChange={e => setForm({ ...form, parameters: e.target.value })} rows={3} />
-                  <p className="text-xs text-muted-foreground">Define parameters the AI should extract from conversation.</p>
-                </div>
-                <Button onClick={handleCreate} disabled={saving || !form.name || !form.agent_id || !form.http_url} className="w-full">
-                  {saving ? "Creating..." : "Create Tool"}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+          {user && <CreateToolDialog agents={agents} userId={user.id} onCreated={fetchData} />}
         </div>
 
         {loading ? (
