@@ -665,6 +665,36 @@ export type Database = {
           },
         ]
       }
+      telnyx_call_state: {
+        Row: {
+          agent_id: string | null
+          call_control_id: string
+          created_at: string
+          id: string
+          join_url: string
+          telnyx_api_key: string
+          user_id: string | null
+        }
+        Insert: {
+          agent_id?: string | null
+          call_control_id: string
+          created_at?: string
+          id?: string
+          join_url: string
+          telnyx_api_key: string
+          user_id?: string | null
+        }
+        Update: {
+          agent_id?: string | null
+          call_control_id?: string
+          created_at?: string
+          id?: string
+          join_url?: string
+          telnyx_api_key?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string

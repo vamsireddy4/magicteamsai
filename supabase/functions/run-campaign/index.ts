@@ -68,19 +68,21 @@ async function placeCall(
       const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
       const telnyxConnectionId = (phoneConfig.telnyx_connection_id || "").trim();
       if (!telnyxApiKey || !telnyxConnectionId) throw new Error("Telnyx credentials missing");
+      const webhookUrl = `${supabaseUrl}/functions/v1/handle-telnyx-webhook`;
       const resp = await fetch("https://api.telnyx.com/v2/calls", {
         method: "POST",
         headers: { "Authorization": `Bearer ${telnyxApiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           connection_id: telnyxConnectionId, to: recipientNumber, from: phoneConfig.phone_number,
-          stream_url: bridgeUrl, stream_track: "inbound_track",
-          stream_bidirectional_mode: "rtp", stream_codec: "L16",
-          stream_bidirectional_codec: "L16", stream_bidirectional_sampling_rate: 16000,
-          stream_bidirectional_target_legs: "opposite", timeout_secs: 90,
+          webhook_url: webhookUrl, timeout_secs: 90,
         }),
       });
       if (!resp.ok) throw new Error(`Telnyx error: ${await resp.text()}`);
       callSid = (await resp.json()).data?.call_control_id || "";
+      await supabase.from("telnyx_call_state").insert({
+        call_control_id: callSid, join_url: bridgeUrl,
+        telnyx_api_key: telnyxApiKey, agent_id: agent.id, user_id: userId,
+      });
     } else {
       const twiml = `<Response><Connect><Stream url="${bridgeUrl.split('?')[0]}"><Parameter name="agent_id" value="${agent.id}"/></Stream></Connect></Response>`;
       const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
@@ -123,19 +125,22 @@ async function placeCall(
       const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
       const telnyxConnectionId = (phoneConfig.telnyx_connection_id || "").trim();
       if (!telnyxApiKey || !telnyxConnectionId) throw new Error("Telnyx credentials missing");
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const webhookUrl = `${supabaseUrl}/functions/v1/handle-telnyx-webhook`;
       const resp = await fetch("https://api.telnyx.com/v2/calls", {
         method: "POST",
         headers: { "Authorization": `Bearer ${telnyxApiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           connection_id: telnyxConnectionId, to: recipientNumber, from: phoneConfig.phone_number,
-          stream_url: joinUrl, stream_track: "inbound_track",
-          stream_bidirectional_mode: "rtp", stream_codec: "L16",
-          stream_bidirectional_codec: "L16", stream_bidirectional_sampling_rate: 16000,
-          stream_bidirectional_target_legs: "opposite", timeout_secs: 90,
+          webhook_url: webhookUrl, timeout_secs: 90,
         }),
       });
       if (!resp.ok) throw new Error(`Telnyx error: ${await resp.text()}`);
       callSid = (await resp.json()).data?.call_control_id || "";
+      await supabase.from("telnyx_call_state").insert({
+        call_control_id: callSid, join_url: joinUrl,
+        telnyx_api_key: telnyxApiKey, agent_id: agent.id, user_id: userId,
+      });
     } else {
       const twiml = `<Response><Connect><Stream url="${joinUrl}"/></Connect></Response>`;
       const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
