@@ -332,7 +332,6 @@ export default function OutcomesTab() {
   }
 
   // ─── Campaign List View ───
-  const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
 
   return (
     <div className="space-y-6">
