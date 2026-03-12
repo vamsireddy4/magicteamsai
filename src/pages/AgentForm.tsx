@@ -187,12 +187,11 @@ export default function AgentForm() {
         </div>
 
         <Tabs defaultValue="general" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="general" className="flex items-center gap-2"><Settings className="h-4 w-4" /><span className="hidden sm:inline">General</span></TabsTrigger>
             <TabsTrigger value="knowledge" className="flex items-center gap-2" disabled={!isEditing}><BookOpen className="h-4 w-4" /><span className="hidden sm:inline">Knowledge</span></TabsTrigger>
             <TabsTrigger value="tools" className="flex items-center gap-2" disabled={!isEditing}><Wrench className="h-4 w-4" /><span className="hidden sm:inline">Tools</span></TabsTrigger>
             <TabsTrigger value="webhooks" className="flex items-center gap-2" disabled={!isEditing}><Webhook className="h-4 w-4" /><span className="hidden sm:inline">Webhooks</span></TabsTrigger>
-            <TabsTrigger value="calendar" className="flex items-center gap-2" disabled={!isEditing}><CalendarDays className="h-4 w-4" /><span className="hidden sm:inline">Calendar</span></TabsTrigger>
           </TabsList>
 
           <TabsContent value="general" className="mt-6">
