@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Loader2, Search, Settings, BookOpen, Wrench, Webhook } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
@@ -90,6 +91,7 @@ export default function AgentForm() {
   const [loadingVoices, setLoadingVoices] = useState(true);
   const [voiceSearch, setVoiceSearch] = useState("");
   const [useCustomVoice, setUseCustomVoice] = useState(false);
+  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
 
   const [form, setForm] = useState({
     name: "",
@@ -204,9 +206,20 @@ export default function AgentForm() {
                     <Input id="name" placeholder="e.g. Front Desk Receptionist" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="prompt">System Prompt</Label>
-                    <Textarea id="prompt" placeholder="Describe how your receptionist should behave..." value={form.system_prompt} onChange={e => setForm({ ...form, system_prompt: e.target.value })} rows={6} required />
-                    <p className="text-xs text-muted-foreground">Instructions that define your receptionist's personality and behavior.</p>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="prompt">System Prompt</Label>
+                      <Button type="button" variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => setPromptDialogOpen(true)}>
+                        Expand ↗
+                      </Button>
+                    </div>
+                    <Textarea id="prompt" placeholder="Describe how your receptionist should behave..." value={form.system_prompt} onChange={e => setForm({ ...form, system_prompt: e.target.value })} rows={6} required className="cursor-pointer" onClick={() => setPromptDialogOpen(true)} readOnly />
+                    <p className="text-xs text-muted-foreground">Click to expand and edit the full prompt.</p>
+                    <Dialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen}>
+                      <DialogContent className="sm:max-w-2xl max-h-[80vh]">
+                        <DialogHeader><DialogTitle>System Prompt</DialogTitle></DialogHeader>
+                        <Textarea value={form.system_prompt} onChange={e => setForm({ ...form, system_prompt: e.target.value })} rows={20} className="min-h-[400px] text-sm" />
+                      </DialogContent>
+                    </Dialog>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5"><Label>Active</Label><p className="text-xs text-muted-foreground">Enable this agent to receive calls</p></div>
