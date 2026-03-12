@@ -12,7 +12,6 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState({ agents: 0, calls: 0, phones: 0, totalDuration: 0 });
   const [recentCalls, setRecentCalls] = useState<any[]>([]);
-  const [syncing, setSyncing] = useState(false);
 
   const fetchData = async () => {
     if (!user) return;
@@ -34,24 +33,18 @@ export default function Dashboard() {
     setRecentCalls(recentRes.data || []);
   };
 
-  const syncCallData = async () => {
-    setSyncing(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("sync-call-data");
-      if (error) throw error;
-      toast.success(`Synced ${data.updated} call(s) from Ultravox`);
-      await fetchData();
-    } catch (e: any) {
-      toast.error("Failed to sync: " + (e.message || "Unknown error"));
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   useEffect(() => {
     if (!user) return;
     // Auto-sync on load
-    syncCallData();
+    supabase.functions.invoke("sync-call-data").then(() => fetchData());
+
+    const channel = supabase
+      .channel('dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_logs' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'agents' }, () => fetchData())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [user]);
 
   const formatDuration = (seconds: number) => {
