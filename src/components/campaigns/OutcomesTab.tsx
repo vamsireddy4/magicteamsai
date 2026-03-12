@@ -32,7 +32,7 @@ interface Campaign {
 interface CallLog {
   id: string; status: string; duration: number | null; started_at: string;
   ended_at: string | null; recipient_number: string | null; caller_number: string | null;
-  direction: string; transcript: any; ultravox_call_id: string | null;
+  direction: string; transcript: any; ultravox_call_id: string | null; summary: string | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
