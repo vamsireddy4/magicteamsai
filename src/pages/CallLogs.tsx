@@ -130,10 +130,6 @@ export default function CallLogs() {
             <h1 className="text-3xl font-bold tracking-tight">Call History</h1>
             <p className="text-muted-foreground mt-1">View all inbound and outbound calls with transcripts.</p>
           </div>
-          <Button variant="outline" size="sm" onClick={syncCallData} disabled={syncing}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Syncing..." : "Sync Call Data"}
-          </Button>
         </div>
 
         <Card className="flex-1 min-h-0 flex flex-col">
