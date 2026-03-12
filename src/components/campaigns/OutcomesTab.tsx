@@ -69,6 +69,7 @@ export default function OutcomesTab() {
   // Add dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addForm, setAddForm] = useState({ campaign_id: "", phone_number: "", parent_name: "", child_names: "", venue_name: "", outcome: "PENDING", transcript: "", summary: "", attempt_number: "1" });
+  const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
 
   const syncCallData = async () => {
     setSyncing(true);
