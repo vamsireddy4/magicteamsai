@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Download, ShieldCheck, RefreshCw, Search, Clock, ArrowLeft } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Download, RefreshCw, Search, Clock, ArrowLeft, Phone } from "lucide-react";
 
 interface Campaign { id: string; venue_name: string; round: number; status: string; }
 interface CallLog {
