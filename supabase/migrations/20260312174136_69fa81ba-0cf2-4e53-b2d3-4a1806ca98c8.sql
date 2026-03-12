@@ -1,0 +1,10 @@
+ALTER PUBLICATION supabase_realtime ADD TABLE public.agents;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.phone_configs;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.knowledge_base_items;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.webhooks;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.scheduled_calls;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.call_outcomes;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.agent_tools;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.calendar_integrations;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.campaigns;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.contacts;

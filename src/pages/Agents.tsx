@@ -33,7 +33,14 @@ export default function Agents() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchAgents(); }, [user]);
+  useEffect(() => {
+    fetchAgents();
+    const channel = supabase
+      .channel('agents-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'agents' }, () => fetchAgents())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   const deleteAgent = async (id: string) => {
     const { error } = await supabase.from("agents").delete().eq("id", id);

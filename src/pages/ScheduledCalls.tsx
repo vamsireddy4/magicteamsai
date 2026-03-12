@@ -64,7 +64,14 @@ export default function ScheduledCalls() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, [user]);
+  useEffect(() => {
+    fetchData();
+    const channel = supabase
+      .channel('scheduled-calls-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'scheduled_calls' }, () => fetchData())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   const handleCreate = async () => {
     if (!user || !form.recipient_number || !form.agent_id) return;

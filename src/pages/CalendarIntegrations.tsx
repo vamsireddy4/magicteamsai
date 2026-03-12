@@ -78,7 +78,14 @@ export default function CalendarIntegrations() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, [user]);
+  useEffect(() => {
+    fetchData();
+    const channel = supabase
+      .channel('calendar-integrations-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'calendar_integrations' }, () => fetchData())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   const connectedProviders = integrations.map(i => i.provider);
 

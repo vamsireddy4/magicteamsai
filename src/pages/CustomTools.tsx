@@ -68,7 +68,14 @@ export default function CustomTools() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, [user]);
+  useEffect(() => {
+    fetchData();
+    const channel = supabase
+      .channel('custom-tools-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_tools' }, () => fetchData())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   const handleCreate = async () => {
     if (!user || !form.name || !form.agent_id || !form.http_url) return;
