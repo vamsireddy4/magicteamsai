@@ -44,19 +44,8 @@ export default function CustomTools() {
   const [tools, setTools] = useState<AgentToolRow[]>([]);
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
 
-  const [form, setForm] = useState({
-    name: "",
-    description: "",
-    agent_id: "" as string,
-    http_method: "POST",
-    http_url: "",
-    http_headers: "{}",
-    http_body_template: "{}",
-    parameters: "[]",
-  });
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const fetchData = async () => {
     if (!user) return;
