@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.summarize-call]
 verify_jwt = false
+
+[functions.handle-telnyx-webhook]
+verify_jwt = false
