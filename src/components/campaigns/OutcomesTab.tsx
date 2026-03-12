@@ -69,7 +69,6 @@ export default function OutcomesTab() {
   // Add dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addForm, setAddForm] = useState({ campaign_id: "", phone_number: "", parent_name: "", child_names: "", venue_name: "", outcome: "PENDING", transcript: "", summary: "", attempt_number: "1" });
-  const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
 
   const syncCallData = async () => {
     setSyncing(true);
@@ -332,6 +331,7 @@ export default function OutcomesTab() {
   }
 
   // ─── Campaign List View ───
+  const allOutcomeCounts = outcomes.reduce((acc, o) => { acc[o.outcome] = (acc[o.outcome] || 0) + 1; return acc; }, {} as Record<string, number>);
 
   return (
     <div className="space-y-6">
@@ -362,6 +362,18 @@ export default function OutcomesTab() {
         </Dialog>
       </div>
 
+      {/* Global Outcome Summary */}
+      <div className="grid gap-3 grid-cols-3">
+        {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
+          <Card key={o}>
+            <CardContent className="pt-4 pb-3 text-center">
+              <p className="text-2xl font-bold">{allOutcomeCounts[o] || 0}</p>
+              <Badge className={`${OUTCOME_COLORS[o]} mt-1`} variant="secondary">{o.replace("_", " ")}</Badge>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       {/* Campaign Cards */}
       {loading ? <div className="p-8 text-center text-muted-foreground">Loading...</div>
         : campaigns.length === 0 ? <div className="p-8 text-center text-muted-foreground">No campaigns found.</div>
@@ -373,14 +385,17 @@ export default function OutcomesTab() {
               const progress = camp.total_contacts > 0 ? Math.round((camp.calls_made / camp.total_contacts) * 100) : 0;
 
               return (
-                <Card key={camp.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setExpandedCampaignId(expandedCampaignId === camp.id ? null : camp.id)}>
+                <Card key={camp.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedCampaign(camp)}>
                   <CardContent className="pt-5 pb-4 space-y-3">
                     <div className="flex items-start justify-between">
                       <div>
                         <h3 className="font-semibold text-base">{camp.venue_name}</h3>
                         {camp.venue_location && <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5"><MapPin className="h-3 w-3" /> {camp.venue_location}</p>}
                       </div>
-                      <Badge className={STATUS_COLORS[camp.status] || ""} variant="secondary">{camp.status}</Badge>
+                      <div className="flex gap-1.5">
+                        <Badge className={STATUS_COLORS[camp.status] || ""} variant="secondary">{camp.status}</Badge>
+                        <Badge variant="outline">R{camp.round}</Badge>
+                      </div>
                     </div>
 
                     <div className="space-y-1">
@@ -391,29 +406,16 @@ export default function OutcomesTab() {
                       <Progress value={progress} className="h-1.5" />
                     </div>
 
-                    {expandedCampaignId === camp.id && (
-                      <div className="grid gap-2 grid-cols-3 pt-2 border-t">
-                        {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
-                          <div key={o} className="text-center p-2 rounded-md bg-muted/50">
-                            <p className="text-lg font-bold">{counts[o] || 0}</p>
-                            <Badge className={`${OUTCOME_COLORS[o]} text-[10px] px-1.5 py-0`} variant="secondary">{o.replace("_", " ")}</Badge>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {expandedCampaignId !== camp.id && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) =>
-                          (counts[o] || 0) > 0 ? (
-                            <Badge key={o} className={`${OUTCOME_COLORS[o]} text-[10px] px-1.5 py-0`} variant="secondary">
-                              {o.replace("_", " ")} {counts[o]}
-                            </Badge>
-                          ) : null
-                        )}
-                        {campOutcomes.length === 0 && <span className="text-xs text-muted-foreground">No outcomes yet</span>}
-                      </div>
-                    )}
+                    <div className="flex flex-wrap gap-1.5">
+                      {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) =>
+                        (counts[o] || 0) > 0 ? (
+                          <Badge key={o} className={`${OUTCOME_COLORS[o]} text-[10px] px-1.5 py-0`} variant="secondary">
+                            {o.replace("_", " ")} {counts[o]}
+                          </Badge>
+                        ) : null
+                      )}
+                      {campOutcomes.length === 0 && <span className="text-xs text-muted-foreground">No outcomes yet</span>}
+                    </div>
 
                     <div className="flex gap-3 text-xs text-muted-foreground pt-1 border-t">
                       {camp.age_range && <span>{camp.age_range}</span>}
