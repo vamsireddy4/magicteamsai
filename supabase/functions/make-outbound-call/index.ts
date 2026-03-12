@@ -184,8 +184,9 @@ Deno.serve(async (req) => {
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
-        // Telnyx: pass agent_id in stream_url query params (Telnyx preserves them)
         const telnyxBridgeUrl = `${supabaseUrl}/functions/v1/gemini-voice-bridge?agent_id=${agent.id}`.replace("https://", "wss://");
+        const webhookUrl = `${supabaseUrl}/functions/v1/handle-telnyx-webhook`;
+
         const telnyxResponse = await fetch("https://api.telnyx.com/v2/calls", {
           method: "POST",
           headers: { "Authorization": `Bearer ${telnyxApiKey}`, "Content-Type": "application/json" },
@@ -193,13 +194,8 @@ Deno.serve(async (req) => {
             connection_id: telnyxConnectionId,
             to: recipient_number,
             from: phoneConfig.phone_number,
-            stream_url: telnyxBridgeUrl,
-            stream_track: "inbound_track",
-            stream_bidirectional_mode: "rtp",
-            stream_codec: "L16",
-            stream_bidirectional_codec: "L16",
-            stream_bidirectional_sampling_rate: 16000,
-            stream_bidirectional_target_legs: "opposite",
+            webhook_url: webhookUrl,
+            timeout_secs: 90,
           }),
         });
         if (!telnyxResponse.ok) {
@@ -210,6 +206,15 @@ Deno.serve(async (req) => {
         }
         const telnyxData = await telnyxResponse.json();
         callSid = telnyxData.data?.call_control_id || "";
+
+        // Store state for webhook to start streaming on answer
+        await supabase.from("telnyx_call_state").insert({
+          call_control_id: callSid,
+          join_url: telnyxBridgeUrl,
+          telnyx_api_key: telnyxApiKey,
+          agent_id: agent.id,
+          user_id: user.id,
+        });
       } else {
         // Twilio: pass agent_id via <Parameter> (Twilio strips query params from Stream URLs)
         const twiml = `<Response><Connect><Stream url="${bridgeUrl}"><Parameter name="agent_id" value="${agent.id}"/></Stream></Connect></Response>`;
