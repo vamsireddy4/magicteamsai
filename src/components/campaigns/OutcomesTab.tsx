@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, FileText, Loader2, ArrowLeft, MapPin, Calendar, Clock, Sparkles } from "lucide-react";
+import { Plus, Search, Loader2, ArrowLeft, MapPin, Calendar, Clock, Sparkles, Download } from "lucide-react";
 
 interface Outcome {
   id: string; campaign_id: string; phone_number: string; parent_name: string | null;
@@ -46,6 +46,7 @@ const OUTCOME_COLORS: Record<string, string> = {
   ANSWERED: "bg-green-100 text-green-800", DECLINED: "bg-red-100 text-red-800",
   FLAGGED_REVIEW: "bg-yellow-100 text-yellow-800", VOICEMAIL: "bg-blue-100 text-blue-800",
   NO_ANSWER: "bg-muted text-muted-foreground", PENDING: "bg-muted text-muted-foreground",
+  "NO ANSWER": "bg-muted text-muted-foreground", FAILED: "bg-red-100 text-red-800",
 };
 
 const OUTCOMES = ["ALL", "ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"];
@@ -59,17 +60,14 @@ export default function OutcomesTab() {
   const [contacts, setContacts] = useState<{ campaign_id: string; phone_number: string; first_name: string; child_names: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Drill-down state
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [filterOutcome, setFilterOutcome] = useState("ALL");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCallLog, setSelectedCallLog] = useState<CallLog | null>(null);
 
-  // AI Summary state
   const [summaries, setSummaries] = useState<Record<string, string>>({});
   const [summarizing, setSummarizing] = useState<Record<string, boolean>>({});
 
-  // Add dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addForm, setAddForm] = useState({ campaign_id: "", phone_number: "", parent_name: "", child_names: "", venue_name: "", outcome: "PENDING", transcript: "", summary: "", attempt_number: "1" });
 
@@ -88,16 +86,13 @@ export default function OutcomesTab() {
     setLoading(false);
   }, [user]);
 
-  // Initial fetch + realtime subscription
   useEffect(() => {
     fetchData();
-
     const channel = supabase
       .channel('outcomes-call-logs')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'call_logs' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'call_outcomes' }, () => fetchData())
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
 
@@ -135,7 +130,6 @@ export default function OutcomesTab() {
     }
   };
 
-  // Helpers
   const getOutcomesForCampaign = (campaignId: string) => outcomes.filter((o) => o.campaign_id === campaignId);
   const getOutcomeCounts = (campOutcomes: Outcome[]) =>
     campOutcomes.reduce((acc, o) => { acc[o.outcome] = (acc[o.outcome] || 0) + 1; return acc; }, {} as Record<string, number>);
@@ -171,16 +165,24 @@ export default function OutcomesTab() {
     return text.length > maxLen ? text.slice(0, maxLen) + "…" : text;
   };
 
+  const getCallResult = (cl: CallLog) => {
+    if (cl.status === "completed" && (cl.duration || 0) > 10) return "ANSWERED";
+    if (cl.status === "completed" && (cl.duration || 0) <= 10) return "VOICEMAIL";
+    if (["no-answer", "canceled", "busy"].includes(cl.status)) return "NO ANSWER";
+    if (cl.status === "failed") return "FAILED";
+    if (["initiated", "in-progress", "ringing", "queued"].includes(cl.status)) return "PENDING";
+    return cl.status.toUpperCase();
+  };
+
   // ─── Campaign Detail View ───
   if (selectedCampaign) {
     const campContacts = contacts.filter((c) => c.campaign_id === selectedCampaign.id);
     const campPhones = new Set(campContacts.map((c) => c.phone_number));
     const campCallLogs = callLogs.filter((cl) => cl.recipient_number && campPhones.has(cl.recipient_number));
 
-    // Compute attempt numbers per recipient_number
+    // Attempt numbers
     const attemptMap: Record<string, number> = {};
     const phoneCallCounts: Record<string, number> = {};
-    // Sort by started_at ascending to assign attempt numbers
     const sortedLogs = [...campCallLogs].sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
     for (const cl of sortedLogs) {
       const phone = cl.recipient_number || "";
@@ -188,17 +190,26 @@ export default function OutcomesTab() {
       attemptMap[cl.id] = phoneCallCounts[phone];
     }
 
-    // Outcome summary cards
-    const campOutcomes = getOutcomesForCampaign(selectedCampaign.id);
-    const campOutcomeCounts = getOutcomeCounts(campOutcomes);
+    // Compute outcome counts from ACTUAL call_logs (not call_outcomes table)
+    const liveOutcomeCounts: Record<string, number> = {};
+    for (const cl of campCallLogs) {
+      const result = getCallResult(cl);
+      liveOutcomeCounts[result] = (liveOutcomeCounts[result] || 0) + 1;
+    }
 
     // Filter
     const filteredLogs = campCallLogs.filter((cl) => {
       if (filterOutcome !== "ALL") {
-        if (filterOutcome === "ANSWERED" && !(cl.status === "completed" && (cl.duration || 0) > 10)) return false;
-        if (filterOutcome === "VOICEMAIL" && !(cl.status === "completed" && (cl.duration || 0) <= 10)) return false;
-        if (filterOutcome === "NO_ANSWER" && !["no-answer", "canceled", "busy"].includes(cl.status)) return false;
-        if (filterOutcome === "DECLINED" && cl.status !== "failed") return false;
+        const result = getCallResult(cl);
+        const filterMap: Record<string, string[]> = {
+          ANSWERED: ["ANSWERED"],
+          VOICEMAIL: ["VOICEMAIL"],
+          NO_ANSWER: ["NO ANSWER"],
+          DECLINED: ["FAILED", "DECLINED"],
+          PENDING: ["PENDING"],
+          FLAGGED_REVIEW: ["FLAGGED_REVIEW"],
+        };
+        if (filterMap[filterOutcome] && !filterMap[filterOutcome].includes(result)) return false;
       }
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
@@ -212,12 +223,37 @@ export default function OutcomesTab() {
 
     const getContactForLog = (cl: CallLog) => campContacts.find((c) => c.phone_number === cl.recipient_number);
 
-    const getCallResult = (cl: CallLog) => {
-      if (cl.status === "completed" && (cl.duration || 0) > 10) return "ANSWERED";
-      if (cl.status === "completed" && (cl.duration || 0) <= 10) return "VOICEMAIL";
-      if (["no-answer", "canceled", "busy"].includes(cl.status)) return "NO ANSWER";
-      if (cl.status === "failed") return "FAILED";
-      return cl.status.toUpperCase();
+    // Export to CSV
+    const handleExportCSV = () => {
+      const headers = ["Time", "Contact", "Phone", "Children", "Attempt", "Result", "Duration (s)", "Transcript", "AI Summary"];
+      const rows = campCallLogs.map((cl) => {
+        const contact = getContactForLog(cl);
+        const result = getCallResult(cl);
+        const transcriptText = formatTranscript(cl.transcript) || "";
+        const summary = summaries[cl.id] || "";
+        const attempt = attemptMap[cl.id] || 1;
+        return [
+          new Date(cl.started_at).toLocaleString(),
+          contact?.first_name || "",
+          cl.recipient_number || "",
+          contact?.child_names || "",
+          attempt > 1 ? `Retry #${attempt}` : "1st",
+          result,
+          cl.duration || 0,
+          `"${transcriptText.replace(/"/g, '""')}"`,
+          `"${summary.replace(/"/g, '""')}"`,
+        ].join(",");
+      });
+
+      const csvContent = [headers.join(","), ...rows].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${selectedCampaign.venue_name}_outcomes.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Exported to CSV" });
     };
 
     return (
@@ -231,22 +267,31 @@ export default function OutcomesTab() {
             <div className="flex items-center gap-3">
               <h2 className="text-xl font-bold">{selectedCampaign.venue_name}</h2>
               <Badge className={STATUS_COLORS[selectedCampaign.status] || ""} variant="secondary">{selectedCampaign.status}</Badge>
-              <Badge variant="outline">Round {selectedCampaign.round}</Badge>
             </div>
             {selectedCampaign.venue_location && (
               <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1"><MapPin className="h-3 w-3" /> {selectedCampaign.venue_location}</p>
             )}
           </div>
+          <Button variant="outline" size="sm" className="gap-1" onClick={handleExportCSV}>
+            <Download className="h-4 w-4" /> Export to Sheets
+          </Button>
         </div>
 
-        {/* Outcome Summary Cards */}
+        {/* Outcome Summary Cards — computed from live call_logs */}
         <div className="grid gap-3 grid-cols-3">
-          {["ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"].map((o) => (
-            <Card key={o} className={`cursor-pointer hover:shadow-sm transition-shadow ${filterOutcome === o ? "ring-2 ring-primary" : ""}`}
-              onClick={() => setFilterOutcome(filterOutcome === o ? "ALL" : o)}>
+          {[
+            { key: "ANSWERED", label: "ANSWERED" },
+            { key: "FAILED", label: "DECLINED" },
+            { key: "NO ANSWER", label: "NO ANSWER" },
+            { key: "PENDING", label: "PENDING" },
+            { key: "VOICEMAIL", label: "VOICEMAIL" },
+            { key: "FLAGGED_REVIEW", label: "FLAGGED REVIEW" },
+          ].map(({ key, label }) => (
+            <Card key={key} className={`cursor-pointer hover:shadow-sm transition-shadow ${filterOutcome === key ? "ring-2 ring-primary" : ""}`}
+              onClick={() => setFilterOutcome(filterOutcome === key ? "ALL" : key)}>
               <CardContent className="pt-4 pb-3 text-center">
-                <p className="text-2xl font-bold">{campOutcomeCounts[o] || 0}</p>
-                <Badge className={`${OUTCOME_COLORS[o]} mt-1`} variant="secondary">{o.replace("_", " ")}</Badge>
+                <p className="text-2xl font-bold">{liveOutcomeCounts[key] || 0}</p>
+                <Badge className={`${OUTCOME_COLORS[key] || "bg-muted text-muted-foreground"} mt-1`} variant="secondary">{label}</Badge>
               </CardContent>
             </Card>
           ))}
@@ -264,8 +309,9 @@ export default function OutcomesTab() {
               <SelectItem value="ALL">All Results</SelectItem>
               <SelectItem value="ANSWERED">Answered</SelectItem>
               <SelectItem value="VOICEMAIL">Voicemail</SelectItem>
-              <SelectItem value="NO_ANSWER">No Answer</SelectItem>
+              <SelectItem value="NO ANSWER">No Answer</SelectItem>
               <SelectItem value="DECLINED">Failed</SelectItem>
+              <SelectItem value="PENDING">Pending</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -310,7 +356,7 @@ export default function OutcomesTab() {
                             )}
                           </TableCell>
                           <TableCell><Badge className={OUTCOME_COLORS[result] || "bg-muted text-muted-foreground"} variant="secondary">{result}</Badge></TableCell>
-                          <TableCell className="text-sm flex items-center gap-1"><Clock className="h-3 w-3 text-muted-foreground" /> {formatDuration(cl.duration)}</TableCell>
+                          <TableCell className="text-sm whitespace-nowrap"><Clock className="h-3 w-3 text-muted-foreground inline mr-1" />{formatDuration(cl.duration)}</TableCell>
                           <TableCell className="max-w-[150px]">
                             {transcriptText ? (
                               <span className="text-xs text-muted-foreground line-clamp-2">{truncateText(transcriptText, 80)}</span>
@@ -320,7 +366,12 @@ export default function OutcomesTab() {
                           </TableCell>
                           <TableCell className="max-w-[180px]" onClick={(e) => e.stopPropagation()}>
                             {summary ? (
-                              <span className="text-xs text-muted-foreground line-clamp-2">{truncateText(summary, 100)}</span>
+                              <button
+                                className="text-xs text-muted-foreground line-clamp-2 text-left hover:text-foreground transition-colors cursor-pointer"
+                                onClick={() => setSelectedCallLog(cl)}
+                              >
+                                {truncateText(summary, 100)}
+                              </button>
                             ) : transcriptText ? (
                               <Button
                                 variant="ghost"
@@ -355,6 +406,7 @@ export default function OutcomesTab() {
               const contact = getContactForLog(selectedCallLog);
               const transcriptText = formatTranscript(selectedCallLog.transcript);
               const summary = summaries[selectedCallLog.id];
+              const attempt = attemptMap[selectedCallLog.id] || 1;
               return (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-3 text-sm">
@@ -366,13 +418,13 @@ export default function OutcomesTab() {
                     <div><span className="text-muted-foreground">Duration:</span> {formatDuration(selectedCallLog.duration)}</div>
                     <div><span className="text-muted-foreground">Started:</span> {new Date(selectedCallLog.started_at).toLocaleString()}</div>
                     {selectedCallLog.ended_at && <div><span className="text-muted-foreground">Ended:</span> {new Date(selectedCallLog.ended_at).toLocaleString()}</div>}
-                    <div><span className="text-muted-foreground">Attempt:</span> {attemptMap[selectedCallLog.id] > 1 ? `Retry #${attemptMap[selectedCallLog.id]}` : "1st"}</div>
+                    <div><span className="text-muted-foreground">Attempt:</span> {attempt > 1 ? `Retry #${attempt}` : "1st"}</div>
                     {selectedCallLog.caller_number && <div><span className="text-muted-foreground">From:</span> {selectedCallLog.caller_number}</div>}
                   </div>
                   {summary && (
                     <div>
                       <p className="text-sm font-medium mb-1">AI Summary</p>
-                      <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">{summary}</p>
+                      <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg whitespace-pre-wrap">{summary}</p>
                     </div>
                   )}
                   {!summary && transcriptText && (
@@ -400,7 +452,7 @@ export default function OutcomesTab() {
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle>Add Call Outcome</DialogTitle></DialogHeader>
             <form onSubmit={handleAddOutcome} className="space-y-4">
-              <div className="space-y-2"><Label>Campaign</Label><Select value={addForm.campaign_id} onValueChange={(v) => { const camp = campaigns.find((c) => c.id === v); setAddForm({ ...addForm, campaign_id: v, venue_name: camp?.venue_name || "" }); }}><SelectTrigger><SelectValue placeholder="Select campaign" /></SelectTrigger><SelectContent>{campaigns.map((c) => <SelectItem key={c.id} value={c.id}>{c.venue_name} (R{c.round})</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>Campaign</Label><Select value={addForm.campaign_id} onValueChange={(v) => { const camp = campaigns.find((c) => c.id === v); setAddForm({ ...addForm, campaign_id: v, venue_name: camp?.venue_name || "" }); }}><SelectTrigger><SelectValue placeholder="Select campaign" /></SelectTrigger><SelectContent>{campaigns.map((c) => <SelectItem key={c.id} value={c.id}>{c.venue_name}</SelectItem>)}</SelectContent></Select></div>
               <div className="grid gap-4 grid-cols-2">
                 <div className="space-y-2"><Label>Phone Number *</Label><Input value={addForm.phone_number} onChange={(e) => setAddForm({ ...addForm, phone_number: e.target.value })} required /></div>
                 <div className="space-y-2"><Label>Outcome *</Label><Select value={addForm.outcome} onValueChange={(v) => setAddForm({ ...addForm, outcome: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{OUTCOMES.filter((o) => o !== "ALL").map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent></Select></div>
@@ -417,7 +469,6 @@ export default function OutcomesTab() {
         </Dialog>
       </div>
 
-      {/* Campaign Cards */}
       {loading ? <div className="p-8 text-center text-muted-foreground">Loading...</div>
         : campaigns.length === 0 ? <div className="p-8 text-center text-muted-foreground">No campaigns found.</div>
         : (
