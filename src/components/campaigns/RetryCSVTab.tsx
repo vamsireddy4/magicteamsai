@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Download, ShieldCheck, RefreshCw, Search, Clock, ArrowLeft } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Download, RefreshCw, Search, Clock, ArrowLeft, Phone } from "lucide-react";
 
 interface Campaign { id: string; venue_name: string; round: number; status: string; }
 interface CallLog {
@@ -43,6 +44,8 @@ export default function RetryCSVTab() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [retryCampaignId, setRetryCampaignId] = useState<string>("");
+  const [retrying, setRetrying] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -258,10 +261,79 @@ export default function RetryCSVTab() {
   }
 
   // ─── Campaign Cards View ───
-  const campaignEntries = Array.from(retryByCampaign.entries());
+
+  const handleRetryCalls = async () => {
+    if (!retryCampaignId || !user) return;
+    setRetrying(true);
+    try {
+      const campaign = campaigns.find((c) => c.id === retryCampaignId);
+      if (!campaign) throw new Error("Campaign not found");
+
+      // Get contacts for this campaign that had VOICEMAIL or NO ANSWER
+      const campContacts = contacts.filter((c) => c.campaign_id === retryCampaignId);
+      const campPhones = new Set(campContacts.map((c) => c.phone_number));
+      const campRetryCandidates = callLogs.filter((cl) => {
+        if (!cl.recipient_number || !campPhones.has(cl.recipient_number)) return false;
+        const result = getCallResult(cl);
+        return result === "VOICEMAIL" || result === "NO ANSWER";
+      });
+      const retryPhones = new Set(campRetryCandidates.map((cl) => cl.recipient_number));
+      const retryContactIds = campContacts.filter((c) => retryPhones.has(c.phone_number)).map((c) => c.phone_number);
+
+      if (retryContactIds.length === 0) {
+        toast({ title: "No contacts to retry", description: "All contacts were answered or declined.", variant: "destructive" });
+        return;
+      }
+
+      // Find contact IDs to retry
+      const { data: contactRows } = await supabase
+        .from("contacts")
+        .select("id, phone_number")
+        .eq("campaign_id", retryCampaignId)
+        .in("phone_number", Array.from(retryPhones));
+
+      if (!contactRows || contactRows.length === 0) {
+        toast({ title: "No contacts found", variant: "destructive" });
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("run-campaign", {
+        body: { campaign_id: retryCampaignId, contact_ids: contactRows.map((c) => c.id) },
+      });
+      if (error) throw error;
+      toast({ title: "Retry calls started", description: `Retrying ${contactRows.length} contacts from ${campaign.venue_name}` });
+    } catch (err: any) {
+      toast({ title: "Retry failed", description: err.message, variant: "destructive" });
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
+      {/* Select campaign & retry bar */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex gap-3 items-end flex-wrap">
+            <div className="flex-1 min-w-[200px] space-y-1">
+              <p className="text-sm font-medium">Select Campaign to Retry</p>
+              <Select value={retryCampaignId} onValueChange={setRetryCampaignId}>
+                <SelectTrigger><SelectValue placeholder="Choose a campaign..." /></SelectTrigger>
+                <SelectContent>
+                  {campaigns.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.venue_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleRetryCalls} disabled={!retryCampaignId || retrying}>
+              <Phone className={`h-4 w-4 mr-2 ${retrying ? "animate-pulse" : ""}`} />
+              {retrying ? "Retrying..." : "Retry Calls"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {campaigns.length === 0 ? (
         <div className="py-12 text-center text-muted-foreground">No campaigns found.</div>
       ) : (
@@ -285,13 +357,6 @@ export default function RetryCSVTab() {
           })}
         </div>
       )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4" /> Do-Not-Call List</CardTitle>
-          <CardDescription>{dncList.length} numbers on the global do-not-call list. Automatically excluded from retry CSVs.</CardDescription>
-        </CardHeader>
-      </Card>
     </div>
   );
 }
