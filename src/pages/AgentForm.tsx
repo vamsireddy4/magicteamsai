@@ -135,6 +135,7 @@ export default function AgentForm() {
             model: (data as any).model || "fixie-ai/ultravox-v0.7",
             ai_provider: (data as any).ai_provider || "ultravox",
           });
+          setUltravoxAgentId((data as any).ultravox_agent_id || null);
         }
       });
     }
