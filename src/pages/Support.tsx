@@ -19,7 +19,7 @@ const supportCards = [
     icon: Bell,
     title: "Product Updates",
     description: "Stay informed about the latest changes and improvements",
-    href: "#",
+    href: "https://magicteamsai.userjot.com/updates?cursor=1&limit=10",
   },
   {
     icon: MessageCircle,
