@@ -256,7 +256,7 @@ Deno.serve(async (req) => {
       temperature: Number(agent.temperature),
       languageHint: agent.language_hint || "en",
       maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
-      firstSpeaker: agent.first_speaker || "FIRST_SPEAKER_AGENT",
+      firstSpeakerSettings: { mode: agent.first_speaker || "FIRST_SPEAKER_AGENT" },
     };
 
     if (selectedTools.length > 0) {
