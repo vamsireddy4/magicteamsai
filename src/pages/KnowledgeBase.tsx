@@ -34,7 +34,7 @@ interface KBItem {
 export default function KnowledgeBase() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [items, setItems] = useState<Tables<"knowledge_base_items">[]>([]);
+  const [items, setItems] = useState<KBItem[]>([]);
   const [agents, setAgents] = useState<Tables<"agents">[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
