@@ -96,8 +96,25 @@ export default function CreateAppointmentToolDialog({
     setAppointmentTypes(appointmentTypes.filter((_, i) => i !== index));
   };
 
-  const handleFinish = () => {
-    // For now, just close and notify — the tool config is stored in the agent's context
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
+
+  const handleFinish = async () => {
+    setSaving(true);
+    const { error } = await supabase.from("appointment_tools" as any).insert({
+      user_id: userId,
+      agent_id: agentId,
+      calendar_integration_id: connectedForSource?.id || null,
+      name: toolName.trim(),
+      provider: selectedSource,
+      business_hours: businessHours,
+      appointment_types: appointmentTypes,
+    } as any);
+    setSaving(false);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+      return;
+    }
     onToolCreated();
     handleClose(false);
   };
