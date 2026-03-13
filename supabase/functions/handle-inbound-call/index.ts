@@ -193,6 +193,34 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Inject call forwarding/transfer tool if forwarding numbers exist
+    if (forwardingNumbers && forwardingNumbers.length > 0) {
+      const transferUrl = `${supabaseUrl}/functions/v1/transfer-call`;
+      const numbersList = forwardingNumbers.map((fn: any) => `${fn.phone_number}${fn.label ? ` (${fn.label})` : ""}`).join(", ");
+      
+      systemPrompt += `\n\n--- CALL FORWARDING ---`;
+      systemPrompt += `\nYou can transfer the caller to a human agent if they request it or if you cannot help them.`;
+      systemPrompt += `\nAvailable transfer destinations: ${numbersList}`;
+      systemPrompt += `\nUse the transferCall tool to transfer the call. Always confirm with the caller before transferring.\n`;
+
+      ultravoxTools.push({
+        temporaryTool: {
+          modelToolName: "transferCall",
+          description: `Transfer the current call to a human agent. Available destinations: ${numbersList}. Always confirm with the caller before transferring.`,
+          dynamicParameters: [
+            { name: "destination_number", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: `Phone number to transfer to. Must be one of: ${forwardingNumbers.map((fn: any) => fn.phone_number).join(", ")}` }, required: true },
+          ],
+          http: {
+            baseUrlPattern: transferUrl,
+            httpMethod: "POST",
+          },
+          automaticParameters: [
+            { name: "call_sid", location: "PARAMETER_LOCATION_BODY", value: callSid },
+            { name: "provider", location: "PARAMETER_LOCATION_BODY", value: provider },
+          ],
+        },
+      });
+
     const aiProvider = (agent as any).ai_provider || "ultravox";
     let streamUrl = "";
     let ultravoxCallId = "";
