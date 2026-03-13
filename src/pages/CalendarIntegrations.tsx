@@ -95,12 +95,22 @@ export default function CalendarIntegrations() {
     setSaving(true);
 
     const provider = PROVIDERS.find(p => p.id === selectedProvider);
+    // Separate config fields from direct columns
+    const configData: Record<string, string> = {};
+    const providerFields = PROVIDERS.find(p => p.id === selectedProvider)?.fields || [];
+    for (const field of providerFields) {
+      if ((field as any).isConfig && form[field.key]) {
+        configData[field.key] = form[field.key];
+      }
+    }
+
     const { error } = await supabase.from("calendar_integrations").insert({
       user_id: user.id,
       provider: selectedProvider,
       display_name: provider?.name || selectedProvider,
       api_key: form.api_key || null,
       calendar_id: form.calendar_id || null,
+      config: configData,
     } as any);
 
     setSaving(false);
