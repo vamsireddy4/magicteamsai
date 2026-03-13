@@ -283,24 +283,36 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
                 ) : (
                   <>
                     <div className="flex items-center gap-2">
-                      <Input
-                        type="date"
-                        value={availabilityDate}
-                        onChange={e => setAvailabilityDate(e.target.value)}
-                        className="flex-1"
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => fetchAvailability(viewTool, availabilityDate)}
-                        disabled={loadingAvailability}
-                      >
-                        {loadingAvailability ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <><RefreshCw className="h-4 w-4 mr-1" /> Check</>
-                        )}
-                      </Button>
+                      <div className="flex-1 space-y-1">
+                        <Label className="text-xs text-muted-foreground">From</Label>
+                        <Input
+                          type="date"
+                          value={availabilityFromDate}
+                          onChange={e => setAvailabilityFromDate(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <Label className="text-xs text-muted-foreground">To</Label>
+                        <Input
+                          type="date"
+                          value={availabilityToDate}
+                          onChange={e => setAvailabilityToDate(e.target.value)}
+                        />
+                      </div>
+                      <div className="pt-5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fetchAvailability(viewTool, availabilityFromDate)}
+                          disabled={loadingAvailability}
+                        >
+                          {loadingAvailability ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <><RefreshCw className="h-4 w-4 mr-1" /> Check</>
+                          )}
+                        </Button>
+                      </div>
                     </div>
 
                     {loadingAvailability && (
