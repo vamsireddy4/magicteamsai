@@ -111,7 +111,7 @@ export default function Auth() {
           </div>
         </div>
         <p className="text-sm text-primary-foreground/50">
-          Powered by Ultravox AI
+          Powered by MagicTeams AI
         </p>
       </div>
 
