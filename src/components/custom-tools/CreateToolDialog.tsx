@@ -105,8 +105,7 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
     setSaving(true);
 
     const parameters = dynamicParams.map((p) => {
-      let schemaObj = {};
-      try { schemaObj = JSON.parse(p.schema); } catch {}
+      const schemaObj = { type: p.type, description: p.description };
       return { name: p.name, location: p.location.toLowerCase(), required: p.required, schema: schemaObj };
     });
 
