@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Trash2, CheckCircle2 } from "lucide-react";
+import { Loader2, Trash2, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import googleCalendarLogo from "@/assets/google-calendar-logo.png";
 import calcomLogo from "@/assets/calcom-logo.png";
 import gohighlevelLogo from "@/assets/gohighlevel-logo.png";
@@ -84,6 +84,7 @@ export default function CalendarIntegrations() {
   const [calUsername, setCalUsername] = useState("");
   const [calSelectedEventType, setCalSelectedEventType] = useState<string>("");
   const [calStep, setCalStep] = useState<"api_key" | "select_event">("api_key");
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
 
   const fetchData = async () => {
     if (!user) return;
@@ -261,36 +262,64 @@ export default function CalendarIntegrations() {
                 <h2 className="text-lg font-semibold">Connected Calendars</h2>
                 {integrations.map(integration => {
                   const provider = PROVIDERS.find(p => p.id === integration.provider);
+                  const isExpanded = expandedCard === integration.id;
                   return (
-                    <Card key={integration.id}>
-                      <CardContent className="flex items-center justify-between p-4">
-                        <div className="flex items-center gap-4">
-                          <img src={provider?.logo} alt={provider?.name} className="h-8 w-8 rounded object-contain" />
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{integration.display_name}</span>
-                              <Badge variant={integration.is_active ? "default" : "secondary"}>
-                                {integration.is_active ? "Active" : "Inactive"}
-                              </Badge>
+                    <Card
+                      key={integration.id}
+                      className="cursor-pointer transition-colors hover:bg-muted/50"
+                      onClick={() => setExpandedCard(isExpanded ? null : integration.id)}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <img src={provider?.logo} alt={provider?.name} className="h-8 w-8 rounded object-contain" />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{integration.display_name}</span>
+                                <Badge variant={integration.is_active ? "default" : "secondary"}>
+                                  {integration.is_active ? "Active" : "Inactive"}
+                                </Badge>
+                              </div>
                             </div>
-                            <p className="text-sm text-muted-foreground">
-                              {integration.provider === "cal_com"
-                                ? `Event Type: ${integration.calendar_id} · Username: ${(integration.config as any)?.username || "N/A"}`
-                                : `Calendar: ${integration.calendar_id || "Default"}`}
-                              {" · API Key: ••••" + (integration.api_key?.slice(-4) || "N/A")}
-                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                            <Switch
+                              checked={integration.is_active}
+                              onCheckedChange={(e) => { e; toggleActive(integration.id, integration.is_active); }}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleDisconnect(integration.id); }}>
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button variant="outline" size="sm" onClick={() => handleTestConnection(integration)} disabled={testing === integration.id}>
-                            {testing === integration.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
-                            Test
-                          </Button>
-                          <Switch checked={integration.is_active} onCheckedChange={() => toggleActive(integration.id, integration.is_active)} />
-                          <Button variant="ghost" size="icon" onClick={() => handleDisconnect(integration.id)}>
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
+                        {isExpanded && (
+                          <div className="mt-4 pt-4 border-t border-border space-y-2 text-sm">
+                            {integration.provider === "cal_com" && (
+                              <>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Username</span>
+                                  <span className="font-medium">{(integration.config as any)?.username || "N/A"}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Event Type ID</span>
+                                  <span className="font-medium">{integration.calendar_id || "N/A"}</span>
+                                </div>
+                              </>
+                            )}
+                            {integration.provider !== "cal_com" && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Calendar ID</span>
+                                <span className="font-medium">{integration.calendar_id || "Default"}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">API Key</span>
+                              <span className="font-medium">••••{integration.api_key?.slice(-4) || "N/A"}</span>
+                            </div>
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   );
