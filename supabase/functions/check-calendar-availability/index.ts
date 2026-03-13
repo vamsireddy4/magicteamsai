@@ -34,7 +34,16 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { provider, integration_id, test, date, duration_minutes = 30 } = body;
+    const { provider, integration_id, test, date, duration_minutes = 30, fetch_event_types, api_key } = body;
+
+    // Direct Cal.com API key lookup (no integration record needed)
+    if (provider === "cal_com" && fetch_event_types && api_key) {
+      const result = await handleCalComDirect(api_key, { fetch_event_types: true });
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const { data: integration, error: intError } = await supabase
       .from("calendar_integrations")
