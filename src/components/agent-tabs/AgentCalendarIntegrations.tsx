@@ -100,6 +100,13 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
     return () => { supabase.removeChannel(channel); };
   }, [agentId]);
 
+  // Auto-fetch availability when tab switches or dates change
+  useEffect(() => {
+    if (viewTab === "availability" && viewTool?.calendar_integration_id) {
+      fetchAvailability(viewTool, availabilityFromDate);
+    }
+  }, [viewTab, availabilityFromDate, availabilityToDate, viewTool]);
+
   const fetchAvailability = useCallback(async (tool: AppointmentTool, date: string) => {
     if (!tool.calendar_integration_id) {
       setAvailabilityData({ error: "No calendar connected to this tool" });
