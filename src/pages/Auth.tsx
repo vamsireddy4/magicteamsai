@@ -21,12 +21,14 @@ export default function Auth() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const { loading: authLoading } = useAuth();
+
   // Redirect authenticated users
   useEffect(() => {
-    if (user && !loading) {
+    if (user) {
       navigate("/dashboard", { replace: true });
     }
-  }, [user, loading, navigate]);
+  }, [user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,7 +36,6 @@ export default function Auth() {
     try {
       if (isLogin) {
         await signIn(email, password);
-        navigate("/dashboard");
       } else {
         await signUp(email, password, fullName);
         toast({
