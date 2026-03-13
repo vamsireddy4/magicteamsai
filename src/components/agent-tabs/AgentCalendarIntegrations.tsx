@@ -329,7 +329,7 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
                           </div>
                         ) : availabilityData.events ? (
                           <>
-                            <h4 className="font-semibold text-sm">Events on {availabilityDate}</h4>
+                            <h4 className="font-semibold text-sm">Events ({availabilityFromDate} to {availabilityToDate})</h4>
                             {availabilityData.events.length === 0 ? (
                               <p className="text-sm text-muted-foreground">No events — calendar is free all day.</p>
                             ) : (
