@@ -299,20 +299,6 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
                           onChange={e => setAvailabilityToDate(e.target.value)}
                         />
                       </div>
-                      <div className="pt-5">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => fetchAvailability(viewTool, availabilityFromDate)}
-                          disabled={loadingAvailability}
-                        >
-                          {loadingAvailability ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <><RefreshCw className="h-4 w-4 mr-1" /> Check</>
-                          )}
-                        </Button>
-                      </div>
                     </div>
 
                     {loadingAvailability && (
@@ -353,11 +339,17 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
                               <p className="text-sm text-muted-foreground">No available slots found.</p>
                             ) : Array.isArray(availabilityData.slots) ? (
                               <div className="grid grid-cols-3 gap-2">
-                                {availabilityData.slots.map((slot: any, i: number) => (
-                                  <div key={i} className="rounded-md border px-2 py-1.5 text-xs text-center font-medium">
-                                    {typeof slot === "string" ? new Date(slot).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : JSON.stringify(slot)}
-                                  </div>
-                                ))}
+                                {availabilityData.slots.map((slot: any, i: number) => {
+                                  const slotTime = typeof slot === "string" ? slot : (slot.time || slot.start || "");
+                                  const slotDate = typeof slot === "object" && slot.date ? slot.date : "";
+                                  const dt = slotTime ? new Date(slotTime) : null;
+                                  return (
+                                    <div key={i} className="rounded-md border px-2 py-1.5 text-xs text-center font-medium">
+                                      {slotDate && <div className="text-muted-foreground">{new Date(slotDate + "T00:00:00").toLocaleDateString([], { day: '2-digit', month: 'short' })}</div>}
+                                      {dt ? dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : JSON.stringify(slot)}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             ) : (
                               <pre className="text-xs bg-muted p-2 rounded overflow-auto">{JSON.stringify(availabilityData.slots, null, 2)}</pre>
@@ -376,7 +368,7 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
                     {!availabilityData && !loadingAvailability && (
                       <div className="text-center py-6 text-sm text-muted-foreground">
                         <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        <p>Select a date and click Check to view live calendar availability.</p>
+                        <p>Loading availability...</p>
                       </div>
                     )}
                   </>
