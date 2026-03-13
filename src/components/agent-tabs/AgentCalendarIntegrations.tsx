@@ -157,25 +157,9 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
               })}
             </div>
           )}
-
-          <div className="grid gap-3 sm:grid-cols-3">
-            {PROVIDERS.map(provider => {
-              const isConnected = connectedProviders.includes(provider.id);
-              return (
-                <Card key={provider.id} className={isConnected ? "opacity-60" : ""}>
-                  <CardContent className="p-4 flex flex-col items-center text-center gap-2">
-                    <img src={provider.logo} alt={provider.name} className="h-10 w-10 rounded object-contain" />
-                    <span className="font-medium text-sm">{provider.name}</span>
-                    <p className="text-xs text-muted-foreground">{provider.description}</p>
-                    <Button size="sm" variant={isConnected ? "outline" : "default"} disabled={isConnected}
-                      onClick={() => { setSelectedProvider(provider.id); setForm({}); setDialogOpen(true); }}>
-                      {isConnected ? "Connected" : "Connect"}
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+          <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Add Calendar
+          </Button>
         </>
       )}
 
