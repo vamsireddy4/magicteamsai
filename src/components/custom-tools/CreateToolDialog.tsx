@@ -27,13 +27,13 @@ interface Agent {
 }
 
 interface ToolParam {
-  paramType: "Dynamic" | "Static";
+  paramType: "Automatic" | "Static";
   name: string;
   description: string;
   required: boolean;
   type: string;
   location: string;
-  value: string; // only used for Static
+  value: string; // used for Static value or Automatic known value
 }
 
 interface CreateToolDialogProps {
@@ -63,7 +63,7 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
   const [params, setParams] = useState<ToolParam[]>([]);
   const [addingParam, setAddingParam] = useState(false);
   const [editParam, setEditParam] = useState<ToolParam>({
-    paramType: "Dynamic",
+    paramType: "Automatic",
     name: "",
     description: "",
     required: false,
@@ -74,7 +74,7 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
 
   const resetEditParam = () => {
     setEditParam({
-      paramType: "Dynamic",
+      paramType: "Automatic",
       name: "",
       description: "",
       required: false,
@@ -152,7 +152,7 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
     }
     setSaving(true);
 
-    const dynamicParams = params.filter((p) => p.paramType === "Dynamic");
+    const dynamicParams = params.filter((p) => p.paramType === "Automatic");
     const staticParamsList = params.filter((p) => p.paramType === "Static");
 
     const parameters = dynamicParams.map((p) => ({
@@ -206,28 +206,19 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
           {/* Parameter type */}
           <div className="space-y-2">
             <Label className="text-muted-foreground text-sm">Parameter type</Label>
-            <Select value={editParam.paramType} onValueChange={(v) => setEditParam({ ...editParam, paramType: v as "Dynamic" | "Static" })}>
+            <Select value={editParam.paramType} onValueChange={(v) => setEditParam({ ...editParam, paramType: v as "Automatic" | "Static" })}>
               <SelectTrigger className="bg-background">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Dynamic">
-                  <div className="flex flex-col items-start">
-                    <span className="font-medium">Dynamic</span>
-                  </div>
+                <SelectItem value="Automatic">
+                  <span className="font-medium">{"{ } "}Automatic</span>
                 </SelectItem>
                 <SelectItem value="Static">
-                  <div className="flex flex-col items-start">
-                    <span className="font-medium">Static</span>
-                  </div>
+                  <span className="font-medium">{"{ } "}Static</span>
                 </SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
-              {editParam.paramType === "Dynamic"
-                ? "The model automatically chooses and fills in the value at runtime."
-                : "A fixed value defined at tool creation that the model cannot change (or even view)."}
-            </p>
           </div>
 
           {/* Parameter name */}
@@ -241,75 +232,6 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
             />
           </div>
 
-          {/* Description */}
-          <div className="space-y-2">
-            <Label className="text-muted-foreground text-sm">Description</Label>
-            <Input
-              placeholder={editParam.paramType === "Dynamic" ? "e.g. Name of the company" : "e.g. API authentication key"}
-              value={editParam.description}
-              onChange={(e) => setEditParam({ ...editParam, description: e.target.value })}
-              className="bg-background"
-            />
-          </div>
-
-          {/* Value (Static only) */}
-          {editParam.paramType === "Static" && (
-            <div className="space-y-2">
-              <Label className="text-muted-foreground text-sm">Value<span className="text-destructive">*</span></Label>
-              <Input
-                placeholder="e.g. sk-xxx..."
-                value={editParam.value}
-                onChange={(e) => setEditParam({ ...editParam, value: e.target.value })}
-                className="bg-background"
-              />
-            </div>
-          )}
-
-          {/* Required (Dynamic only) */}
-          {editParam.paramType === "Dynamic" && (
-            <div className="space-y-2">
-              <Label className="text-muted-foreground text-sm font-semibold">Required</Label>
-              <p className="text-xs text-muted-foreground">This parameter is needed for the tool to function</p>
-              <div className="flex gap-0 rounded-md border overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setEditParam({ ...editParam, required: true })}
-                  className={cn(
-                    "flex-1 py-2.5 text-sm font-medium transition-colors",
-                    editParam.required
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-background text-foreground hover:bg-muted"
-                  )}
-                >
-                  Yes
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEditParam({ ...editParam, required: false })}
-                  className={cn(
-                    "flex-1 py-2.5 text-sm font-medium transition-colors border-l",
-                    !editParam.required
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-background text-foreground hover:bg-muted"
-                  )}
-                >
-                  No
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Type */}
-          <div className="space-y-2">
-            <Label className="text-muted-foreground text-sm">Type:<span className="text-destructive">*</span></Label>
-            <Select value={editParam.type} onValueChange={(v) => setEditParam({ ...editParam, type: v })}>
-              <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {PARAM_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
           {/* Location */}
           <div className="space-y-2">
             <Label className="text-muted-foreground text-sm">Location:<span className="text-destructive">*</span></Label>
@@ -320,6 +242,36 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
               </SelectContent>
             </Select>
           </div>
+
+          {/* Known Value (Automatic only) */}
+          {editParam.paramType === "Automatic" && (
+            <div className="space-y-2">
+              <Label className="text-muted-foreground text-sm">Known Value:<span className="text-destructive">*</span></Label>
+              <Select value={editParam.value} onValueChange={(v) => setEditParam({ ...editParam, value: v })}>
+                <SelectTrigger className="bg-background"><SelectValue placeholder="Select a Known Value" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="call.id">call.id</SelectItem>
+                  <SelectItem value="call.caller_number">call.caller_number</SelectItem>
+                  <SelectItem value="call.recipient_number">call.recipient_number</SelectItem>
+                  <SelectItem value="agent.name">agent.name</SelectItem>
+                  <SelectItem value="agent.id">agent.id</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Value (Static only) */}
+          {editParam.paramType === "Static" && (
+            <div className="space-y-2">
+              <Label className="text-muted-foreground text-sm">Value</Label>
+              <Input
+                placeholder="e.g. Ultravox"
+                value={editParam.value}
+                onChange={(e) => setEditParam({ ...editParam, value: e.target.value })}
+                className="bg-background"
+              />
+            </div>
+          )}
 
           {/* Save button */}
           <div className="flex justify-end pt-2">
@@ -355,21 +307,16 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
                     <span className="font-medium text-sm text-foreground">{param.name}</span>
                     <span className={cn(
                       "text-xs px-2 py-0.5 rounded-full border",
-                      param.paramType === "Dynamic"
+                      param.paramType === "Automatic"
                         ? "bg-primary/10 text-primary border-primary/20"
                         : "bg-muted text-muted-foreground border-border"
                     )}>
                       {param.paramType}
                     </span>
-                    {param.required && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20">
-                        Required
-                      </span>
-                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {param.type} · {param.location}
-                    {param.description && ` · ${param.description}`}
+                    {param.location}
+                    {param.value && ` · ${param.value}`}
                   </p>
                 </div>
                 <Button variant="ghost" size="sm" className="text-destructive h-8 w-8 p-0 shrink-0" onClick={() => removeParam(i)}>
