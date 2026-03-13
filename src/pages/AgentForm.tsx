@@ -188,26 +188,6 @@ export default function AgentForm() {
     if (!isEditing) navigate("/agents");
   };
 
-  const handleSyncUltravox = async () => {
-    if (!id || !user) return;
-    setSyncing(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("sync-ultravox-agent", {
-        body: { agent_id: id },
-      });
-      if (error) throw error;
-      if (data?.ultravox_agent_id) {
-        setUltravoxAgentId(data.ultravox_agent_id);
-        toast({ title: "Synced with backend", description: `Bot ID: ${data.ultravox_agent_id}` });
-      } else if (data?.skipped) {
-        toast({ title: "Skipped", description: "This agent doesn't use Ultravox" });
-      }
-    } catch (err: any) {
-      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   const allVoices = useMemo(() => {
     if (form.ai_provider === "gemini") {
