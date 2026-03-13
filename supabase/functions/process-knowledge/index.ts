@@ -107,15 +107,82 @@ Deno.serve(async (req) => {
         }
 
         const fileName = item.file_path.toLowerCase();
-        if (fileName.endsWith(".txt") || fileName.endsWith(".md")) {
-          rawText = await fileData.text();
-        } else if (fileName.endsWith(".pdf")) {
-          // For PDF, extract text as best effort
-          rawText = await fileData.text();
-        } else if (fileName.endsWith(".doc") || fileName.endsWith(".docx")) {
-          // For DOC/DOCX, extract text as best effort
-          rawText = await fileData.text();
+        const isPdf = fileName.endsWith(".pdf");
+        const isDoc = fileName.endsWith(".doc") || fileName.endsWith(".docx");
+
+        if (isPdf || isDoc) {
+          // For binary documents (PDF/DOC), convert to base64 and send directly to Gemini
+          const arrayBuffer = await fileData.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = "";
+          for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          const base64Data = btoa(binary);
+          const mimeType = isPdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+          // Use Gemini directly with the file as inline data
+          const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${lovableApiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "google/gemini-2.5-flash",
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "You are a knowledge extraction assistant. Your job is to extract and structure ALL key information from the provided document into clean, organized text that an AI phone agent can reference during calls. Include all important facts, details, policies, FAQs, pricing, contact info, services, procedures, and any other relevant information. Organize with clear headings and bullet points. Be thorough - do not omit any useful information. Output plain text only, no markdown formatting.",
+                },
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "image_url",
+                      image_url: {
+                        url: `data:${mimeType};base64,${base64Data}`,
+                      },
+                    },
+                    {
+                      type: "text",
+                      text: "Extract and structure all key information from this document.",
+                    },
+                  ],
+                },
+              ],
+            }),
+          });
+
+          if (!aiResponse.ok) {
+            const errText = await aiResponse.text();
+            console.error("AI gateway error for document:", aiResponse.status, errText);
+            await supabase
+              .from("knowledge_base_items")
+              .update({ processing_status: "failed" })
+              .eq("id", knowledge_item_id);
+            return new Response(
+              JSON.stringify({ error: `AI processing failed: ${aiResponse.status}` }),
+              { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+
+          const aiData = await aiResponse.json();
+          const extractedContent = aiData.choices?.[0]?.message?.content || "";
+          const finalContent = extractedContent.slice(0, 15000);
+
+          await supabase
+            .from("knowledge_base_items")
+            .update({ content: finalContent, processing_status: "completed" })
+            .eq("id", knowledge_item_id);
+
+          return new Response(
+            JSON.stringify({ success: true, content_length: finalContent.length }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
         } else {
+          // Plain text files (txt, md, csv, etc.)
           rawText = await fileData.text();
         }
       } catch (e) {
