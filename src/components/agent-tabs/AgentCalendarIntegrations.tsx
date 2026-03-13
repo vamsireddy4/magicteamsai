@@ -128,31 +128,17 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
       ) : (
         <>
           {integrations.length > 0 && (
-            <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
               {integrations.map(integration => {
                 const provider = PROVIDERS.find(p => p.id === integration.provider);
                 return (
-                  <Card key={integration.id}>
-                    <CardContent className="flex items-center justify-between p-3">
-                      <div className="flex items-center gap-3">
-                        <img src={provider?.logo} alt={provider?.name} className="h-7 w-7 rounded object-contain" />
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm">{integration.display_name}</span>
-                            <Badge variant={integration.is_active ? "default" : "secondary"}>{integration.is_active ? "Active" : "Inactive"}</Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground">Calendar: {integration.calendar_id || "Default"}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" onClick={() => handleTest(integration)} disabled={testing === integration.id}>
-                          {testing === integration.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}Test
-                        </Button>
-                        <Switch checked={integration.is_active} onCheckedChange={() => toggleActive(integration.id, integration.is_active)} />
-                        <Button variant="ghost" size="icon" onClick={() => handleDisconnect(integration.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <div key={integration.id} className="flex items-center gap-2 rounded-md border px-3 py-1.5">
+                    <img src={provider?.logo} alt={provider?.name} className="h-5 w-5 rounded object-contain" />
+                    <span className="text-sm font-medium">{integration.display_name}</span>
+                    <Badge variant={integration.is_active ? "default" : "secondary"} className="text-xs">
+                      {integration.is_active ? "Active" : "Inactive"}
+                    </Badge>
+                  </div>
                 );
               })}
             </div>
