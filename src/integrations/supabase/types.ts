@@ -135,6 +135,63 @@ export type Database = {
           },
         ]
       }
+      appointment_tools: {
+        Row: {
+          agent_id: string
+          appointment_types: Json
+          business_hours: Json
+          calendar_integration_id: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          provider: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          agent_id: string
+          appointment_types?: Json
+          business_hours?: Json
+          calendar_integration_id?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          provider: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          agent_id?: string
+          appointment_types?: Json
+          business_hours?: Json
+          calendar_integration_id?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          provider?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointment_tools_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_tools_calendar_integration_id_fkey"
+            columns: ["calendar_integration_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_integrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       calendar_integrations: {
         Row: {
           access_token: string | null
