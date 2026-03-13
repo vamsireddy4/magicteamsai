@@ -37,6 +37,7 @@ export default function AgentKnowledgeBase({ agentId, userId }: Props) {
   const [items, setItems] = useState<KBItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [viewItem, setViewItem] = useState<KBItem | null>(null);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
