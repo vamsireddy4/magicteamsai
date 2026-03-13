@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Plus, Trash2, Pencil, Calendar, RefreshCw } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, Calendar } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import CreateAppointmentToolDialog from "./CreateAppointmentToolDialog";
 import googleCalendarLogo from "@/assets/google-calendar-logo.png";
