@@ -25,6 +25,7 @@ interface ForwardingNumber {
   id: string;
   phone_number: string;
   label: string | null;
+  priority: number;
 }
 
 
