@@ -58,7 +58,11 @@ Deno.serve(async (req) => {
     if (item.type === "website" && item.website_url) {
       // Fetch webpage HTML
       try {
-        const res = await fetch(item.website_url, {
+        let url = item.website_url.trim();
+        if (!/^https?:\/\//i.test(url)) {
+          url = "https://" + url;
+        }
+        const res = await fetch(url, {
           headers: { "User-Agent": "Mozilla/5.0 (compatible; KnowledgeBot/1.0)" },
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
