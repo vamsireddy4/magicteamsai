@@ -63,7 +63,7 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
   const [params, setParams] = useState<ToolParam[]>([]);
   const [addingParam, setAddingParam] = useState(false);
   const [editParam, setEditParam] = useState<ToolParam>({
-    paramType: "Automatic",
+    paramType: "Dynamic",
     name: "",
     description: "",
     required: false,
@@ -74,7 +74,7 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
 
   const resetEditParam = () => {
     setEditParam({
-      paramType: "Automatic",
+      paramType: "Dynamic",
       name: "",
       description: "",
       required: false,
