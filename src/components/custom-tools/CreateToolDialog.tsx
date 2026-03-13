@@ -351,8 +351,10 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
                     <span className="font-medium text-sm text-foreground">{param.name}</span>
                     <span className={cn(
                       "text-xs px-2 py-0.5 rounded-full border",
-                      param.paramType === "Automatic"
+                      param.paramType === "Dynamic"
                         ? "bg-primary/10 text-primary border-primary/20"
+                        : param.paramType === "Automatic"
+                        ? "bg-accent/50 text-accent-foreground border-accent/30"
                         : "bg-muted text-muted-foreground border-border"
                     )}>
                       {param.paramType}
