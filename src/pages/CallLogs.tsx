@@ -20,6 +20,7 @@ interface CallLog {
   started_at: string;
   ended_at: string | null;
   transcript: Json | null;
+  summary: string | null;
   ultravox_call_id: string | null;
   twilio_call_sid: string | null;
   agents: { name: string } | null;
@@ -107,7 +108,14 @@ export default function CallLogs() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      setCallSummary(data.summary);
+      const summary = data.summary;
+      setCallSummary(summary);
+
+      // Save summary to database
+      await supabase.from("call_logs").update({ summary }).eq("id", callId);
+
+      // Update local state so it persists across dialog reopens
+      setCalls(prev => prev.map(c => c.id === callId ? { ...c, summary } : c));
     } catch (e: any) {
       toast.error("Summary failed: " + (e.message || "Unknown error"));
     } finally {
@@ -117,7 +125,7 @@ export default function CallLogs() {
 
   const handleSelectCall = (call: CallLog) => {
     setSelectedCall(call);
-    setCallSummary(null);
+    setCallSummary(call.summary || null);
   };
 
   return (
