@@ -32,8 +32,6 @@ export default function CallLogs() {
   const [loading, setLoading] = useState(true);
   const [selectedCall, setSelectedCall] = useState<CallLog | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [summarizing, setSummarizing] = useState(false);
-  const [callSummary, setCallSummary] = useState<string | null>(null);
 
   const fetchCalls = () => {
     if (!user) return;
