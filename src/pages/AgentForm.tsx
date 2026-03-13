@@ -103,7 +103,6 @@ export default function AgentForm() {
   const [forwardingNumbers, setForwardingNumbers] = useState<ForwardingNumber[]>([]);
   const [newFwdLabel, setNewFwdLabel] = useState("");
   const [newFwdNumber, setNewFwdNumber] = useState("");
-  const [ultravoxAgentId, setUltravoxAgentId] = useState<string | null>(null);
   
   const [form, setForm] = useState({
     name: "",
