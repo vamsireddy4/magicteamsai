@@ -30,6 +30,7 @@ const navItems = [
   { href: "/phone-config", label: "Phone Integration", icon: Phone },
   { href: "/call-logs", label: "Call History", icon: History },
   { href: "/calendar-integrations", label: "Calendars", icon: Calendar },
+  { href: "/support", label: "Support", icon: HelpCircle },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
