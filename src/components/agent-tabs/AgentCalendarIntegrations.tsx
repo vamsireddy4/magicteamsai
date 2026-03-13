@@ -70,7 +70,12 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
   const [saving, setSaving] = useState(false);
 
   // Live availability state
-  const [availabilityDate, setAvailabilityDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [availabilityFromDate, setAvailabilityFromDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [availabilityToDate, setAvailabilityToDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().split("T")[0];
+  });
   const [availabilityData, setAvailabilityData] = useState<any>(null);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [viewTab, setViewTab] = useState("config");
@@ -123,7 +128,9 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
     setViewTool(tool);
     setViewTab("config");
     setAvailabilityData(null);
-    setAvailabilityDate(new Date().toISOString().split("T")[0]);
+    setAvailabilityFromDate(new Date().toISOString().split("T")[0]);
+    const d = new Date(); d.setDate(d.getDate() + 7);
+    setAvailabilityToDate(d.toISOString().split("T")[0]);
   };
 
   const toggleTool = async (id: string, current: boolean) => {
@@ -276,24 +283,36 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
                 ) : (
                   <>
                     <div className="flex items-center gap-2">
-                      <Input
-                        type="date"
-                        value={availabilityDate}
-                        onChange={e => setAvailabilityDate(e.target.value)}
-                        className="flex-1"
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => fetchAvailability(viewTool, availabilityDate)}
-                        disabled={loadingAvailability}
-                      >
-                        {loadingAvailability ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <><RefreshCw className="h-4 w-4 mr-1" /> Check</>
-                        )}
-                      </Button>
+                      <div className="flex-1 space-y-1">
+                        <Label className="text-xs text-muted-foreground">From</Label>
+                        <Input
+                          type="date"
+                          value={availabilityFromDate}
+                          onChange={e => setAvailabilityFromDate(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <Label className="text-xs text-muted-foreground">To</Label>
+                        <Input
+                          type="date"
+                          value={availabilityToDate}
+                          onChange={e => setAvailabilityToDate(e.target.value)}
+                        />
+                      </div>
+                      <div className="pt-5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fetchAvailability(viewTool, availabilityFromDate)}
+                          disabled={loadingAvailability}
+                        >
+                          {loadingAvailability ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <><RefreshCw className="h-4 w-4 mr-1" /> Check</>
+                          )}
+                        </Button>
+                      </div>
                     </div>
 
                     {loadingAvailability && (
@@ -310,7 +329,7 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
                           </div>
                         ) : availabilityData.events ? (
                           <>
-                            <h4 className="font-semibold text-sm">Events on {availabilityDate}</h4>
+                            <h4 className="font-semibold text-sm">Events ({availabilityFromDate} to {availabilityToDate})</h4>
                             {availabilityData.events.length === 0 ? (
                               <p className="text-sm text-muted-foreground">No events — calendar is free all day.</p>
                             ) : (
@@ -329,7 +348,7 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
                           </>
                         ) : availabilityData.slots ? (
                           <>
-                            <h4 className="font-semibold text-sm">Available Slots on {availabilityDate}</h4>
+                            <h4 className="font-semibold text-sm">Available Slots ({availabilityFromDate} to {availabilityToDate})</h4>
                             {(Array.isArray(availabilityData.slots) && availabilityData.slots.length === 0) ? (
                               <p className="text-sm text-muted-foreground">No available slots found.</p>
                             ) : Array.isArray(availabilityData.slots) ? (
