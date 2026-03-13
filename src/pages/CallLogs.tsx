@@ -5,9 +5,8 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PhoneIncoming, PhoneOutgoing, History, Copy, Check, Sparkles, Loader2 } from "lucide-react";
+import { PhoneIncoming, PhoneOutgoing, History, Copy, Check, Sparkles, Loader2, Clock, User } from "lucide-react";
 import { toast } from "sonner";
 import type { Json } from "@/integrations/supabase/types";
 
@@ -131,84 +130,83 @@ export default function CallLogs() {
           </div>
         </div>
 
-        <Card className="flex-1 min-h-0 flex flex-col">
-          {loading ? (
-            <CardContent className="p-6">
-              <div className="animate-pulse space-y-3">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="h-12 bg-muted rounded" />
-                ))}
-              </div>
-            </CardContent>
-          ) : calls.length === 0 ? (
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="h-20 bg-muted rounded-lg animate-pulse" />
+            ))}
+          </div>
+        ) : calls.length === 0 ? (
+          <Card>
             <CardContent className="flex flex-col items-center justify-center py-16">
               <History className="h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-1">No calls yet</h3>
               <p className="text-sm text-muted-foreground">Calls will appear here once your agents start receiving them.</p>
             </CardContent>
-          ) : (
-            <div className="overflow-auto flex-1 min-h-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Direction</TableHead>
-                    <TableHead>Call ID</TableHead>
-                    <TableHead>Phone Number</TableHead>
-                    <TableHead>Agent</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Date & Time</TableHead>
-                    <TableHead>Transcript</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {calls.map((call) => (
-                    <TableRow
-                      key={call.id}
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => handleSelectCall(call)}
-                    >
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {call.direction === "inbound" ? (
-                            <PhoneIncoming className="h-4 w-4 text-accent-foreground" />
-                          ) : (
-                            <PhoneOutgoing className="h-4 w-4 text-primary" />
-                          )}
-                          <span className="capitalize text-sm">{call.direction}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-mono text-xs text-muted-foreground" title={getCallId(call)}>
-                          {shortId(getCallId(call))}
-                        </span>
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {calls.map((call) => (
+              <Card
+                key={call.id}
+                className="cursor-pointer hover:border-primary/40 transition-colors"
+                onClick={() => handleSelectCall(call)}
+              >
+                <CardContent className="flex items-center gap-4 p-4">
+                  {/* Direction icon */}
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+                    call.direction === "inbound" ? "bg-accent" : "bg-primary/10"
+                  }`}>
+                    {call.direction === "inbound" ? (
+                      <PhoneIncoming className="h-4 w-4 text-accent-foreground" />
+                    ) : (
+                      <PhoneOutgoing className="h-4 w-4 text-primary" />
+                    )}
+                  </div>
+
+                  {/* Main info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <p className="font-medium text-sm truncate font-mono">
                         {call.direction === "inbound" ? call.caller_number : call.recipient_number}
-                      </TableCell>
-                      <TableCell className="text-sm">{call.agents?.name || "—"}</TableCell>
-                      <TableCell>
-                        <Badge variant={statusColor(call.status) as any}>{call.status}</Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">{formatDuration(call.duration)}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        <div>{formatDate(call.started_at)}</div>
-                        <div className="text-xs">{formatTime(call.started_at)}</div>
-                      </TableCell>
-                      <TableCell>
-                        {call.transcript ? (
-                          <Badge variant="outline" className="text-xs">Available</Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </Card>
+                      </p>
+                      <Badge variant={statusColor(call.status) as any} className="text-[10px] shrink-0">
+                        {call.status}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span className="capitalize">{call.direction}</span>
+                      {call.agents?.name && (
+                        <>
+                          <span>·</span>
+                          <span className="flex items-center gap-1">
+                            <User className="h-3 w-3" />
+                            {call.agents.name}
+                          </span>
+                        </>
+                      )}
+                      {call.transcript && (
+                        <>
+                          <span>·</span>
+                          <Badge variant="outline" className="text-[10px] h-4">Transcript</Badge>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Duration & time */}
+                  <div className="text-right shrink-0">
+                    <p className="font-mono text-sm font-medium">{formatDuration(call.duration)}</p>
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">
+                      <Clock className="h-3 w-3" />
+                      <span>{formatDate(call.started_at)}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
 
         {/* Call details dialog */}
         <Dialog open={!!selectedCall} onOpenChange={() => setSelectedCall(null)}>
