@@ -152,8 +152,8 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
     }
     setSaving(true);
 
-    const dynamicParams = params.filter((p) => p.paramType === "Automatic");
-    const staticParamsList = params.filter((p) => p.paramType === "Static");
+    const dynamicParams = params.filter((p) => p.paramType === "Dynamic");
+    const staticParamsList = params.filter((p) => p.paramType === "Static" || p.paramType === "Automatic");
 
     const parameters = dynamicParams.map((p) => ({
       name: p.name,
