@@ -157,49 +157,51 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
               })}
             </div>
           )}
-
-          <div className="grid gap-3 sm:grid-cols-3">
-            {PROVIDERS.map(provider => {
-              const isConnected = connectedProviders.includes(provider.id);
-              return (
-                <Card key={provider.id} className={isConnected ? "opacity-60" : ""}>
-                  <CardContent className="p-4 flex flex-col items-center text-center gap-2">
-                    <img src={provider.logo} alt={provider.name} className="h-10 w-10 rounded object-contain" />
-                    <span className="font-medium text-sm">{provider.name}</span>
-                    <p className="text-xs text-muted-foreground">{provider.description}</p>
-                    <Button size="sm" variant={isConnected ? "outline" : "default"} disabled={isConnected}
-                      onClick={() => { setSelectedProvider(provider.id); setForm({}); setDialogOpen(true); }}>
-                      {isConnected ? "Connected" : "Connect"}
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+          <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Add Calendar
+          </Button>
         </>
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) { setSelectedProvider(null); setForm({}); } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {currentProviderConfig && <img src={currentProviderConfig.logo} alt="" className="h-6 w-6 rounded object-contain" />}
-              Connect {currentProviderConfig?.name}
+              {selectedProvider ? `Connect ${currentProviderConfig?.name}` : "Add Calendar"}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            {currentProviderConfig?.fields.map(field => (
-              <div key={field.key} className="space-y-2">
-                <Label>{field.label}</Label>
-                <Input type={field.key === "api_key" ? "password" : "text"} placeholder={field.placeholder}
-                  value={form[field.key] || ""} onChange={e => setForm({ ...form, [field.key]: e.target.value })} />
-                <p className="text-xs text-muted-foreground">{field.help}</p>
-              </div>
-            ))}
-            <Button onClick={handleConnect} disabled={saving || !form.api_key} className="w-full">
-              {saving ? "Connecting..." : `Connect ${currentProviderConfig?.name}`}
-            </Button>
-          </div>
+          {!selectedProvider ? (
+            <div className="space-y-2">
+              {PROVIDERS.filter(p => !connectedProviders.includes(p.id)).map(provider => (
+                <button key={provider.id} className="w-full flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors text-left"
+                  onClick={() => { setSelectedProvider(provider.id); setForm({}); }}>
+                  <img src={provider.logo} alt={provider.name} className="h-8 w-8 rounded object-contain" />
+                  <div>
+                    <div className="font-medium text-sm">{provider.name}</div>
+                    <div className="text-xs text-muted-foreground">{provider.description}</div>
+                  </div>
+                </button>
+              ))}
+              {PROVIDERS.every(p => connectedProviders.includes(p.id)) && (
+                <p className="text-sm text-muted-foreground text-center py-4">All providers are already connected.</p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {currentProviderConfig?.fields.map(field => (
+                <div key={field.key} className="space-y-2">
+                  <Label>{field.label}</Label>
+                  <Input type={field.key === "api_key" ? "password" : "text"} placeholder={field.placeholder}
+                    value={form[field.key] || ""} onChange={e => setForm({ ...form, [field.key]: e.target.value })} />
+                  <p className="text-xs text-muted-foreground">{field.help}</p>
+                </div>
+              ))}
+              <Button onClick={handleConnect} disabled={saving || !form.api_key} className="w-full">
+                {saving ? "Connecting..." : `Connect ${currentProviderConfig?.name}`}
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
