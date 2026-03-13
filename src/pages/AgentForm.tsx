@@ -14,12 +14,18 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Loader2, Search, Settings, BookOpen, Wrench, Webhook, Copy } from "lucide-react";
+import { ArrowLeft, Loader2, Search, Settings, BookOpen, Wrench, Webhook, Copy, Plus, Trash2, PhoneForwarded } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import AgentKnowledgeBase from "@/components/agent-tabs/AgentKnowledgeBase";
 import AgentCustomTools from "@/components/agent-tabs/AgentCustomTools";
 import AgentWebhooks from "@/components/agent-tabs/AgentWebhooks";
 import AgentCalendarIntegrations from "@/components/agent-tabs/AgentCalendarIntegrations";
+
+interface ForwardingNumber {
+  id: string;
+  phone_number: string;
+  label: string | null;
+}
 
 
 interface UltravoxVoice {
@@ -94,6 +100,9 @@ export default function AgentForm() {
   const [useCustomVoice, setUseCustomVoice] = useState(false);
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
   const [ultravoxAgentId, setUltravoxAgentId] = useState<string | null>(null);
+  const [forwardingNumbers, setForwardingNumbers] = useState<ForwardingNumber[]>([]);
+  const [newFwdLabel, setNewFwdLabel] = useState("");
+  const [newFwdNumber, setNewFwdNumber] = useState("");
   
   const [form, setForm] = useState({
     name: "",
@@ -149,6 +158,10 @@ export default function AgentForm() {
           }
         }
       });
+
+      // Fetch forwarding numbers
+      supabase.from("call_forwarding_numbers").select("id, phone_number, label").eq("agent_id", id)
+        .then(({ data }) => setForwardingNumbers(data || []));
     }
   }, [user, id]);
 
@@ -423,6 +436,60 @@ export default function AgentForm() {
                   )}
                 </CardContent>
               </Card>
+
+              {isEditing && id && user && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <PhoneForwarded className="h-5 w-5" />
+                      Call Forwarding
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Add phone numbers the AI agent can transfer calls to. The agent will offer to transfer when appropriate.
+                    </p>
+                    {forwardingNumbers.length > 0 && (
+                      <div className="space-y-2">
+                        {forwardingNumbers.map(fwd => (
+                          <div key={fwd.id} className="flex items-center gap-3 rounded-md border p-3">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{fwd.phone_number}</p>
+                              {fwd.label && <p className="text-xs text-muted-foreground">{fwd.label}</p>}
+                            </div>
+                            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-destructive hover:text-destructive" onClick={async () => {
+                              await supabase.from("call_forwarding_numbers").delete().eq("id", fwd.id);
+                              setForwardingNumbers(prev => prev.filter(f => f.id !== fwd.id));
+                              toast({ title: "Forwarding number removed" });
+                            }}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <Input placeholder="Label (e.g. Sales)" value={newFwdLabel} onChange={e => setNewFwdLabel(e.target.value)} className="w-32 shrink-0" />
+                      <Input placeholder="+1234567890" value={newFwdNumber} onChange={e => setNewFwdNumber(e.target.value)} className="flex-1" />
+                      <Button type="button" variant="outline" size="icon" className="shrink-0" disabled={!newFwdNumber.trim()} onClick={async () => {
+                        const { data: inserted, error } = await supabase.from("call_forwarding_numbers").insert({
+                          agent_id: id,
+                          user_id: user.id,
+                          phone_number: newFwdNumber.trim(),
+                          label: newFwdLabel.trim() || null,
+                        }).select("id, phone_number, label").single();
+                        if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+                        if (inserted) setForwardingNumbers(prev => [...prev, inserted]);
+                        setNewFwdNumber("");
+                        setNewFwdLabel("");
+                        toast({ title: "Forwarding number added" });
+                      }}>
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               <div className="flex gap-3">
                 <Button type="submit" disabled={loading}>{loading ? "Saving..." : isEditing ? "Update Agent" : "Create Agent"}</Button>

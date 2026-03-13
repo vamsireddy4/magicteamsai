@@ -191,6 +191,7 @@ Deno.serve(async (req) => {
       .eq("is_active", true);
 
     if (appointmentTools && appointmentTools.length > 0) {
+      // ... keep existing code
       const checkAvailabilityUrl = `${supabaseUrl}/functions/v1/check-calendar-availability`;
       const bookAppointmentUrl = `${supabaseUrl}/functions/v1/book-calendar-appointment`;
 
@@ -244,6 +245,33 @@ Deno.serve(async (req) => {
           },
         });
       }
+    }
+
+    // Fetch call forwarding numbers and inject transfer tool
+    const { data: forwardingNumbers } = await supabase
+      .from("call_forwarding_numbers")
+      .select("*")
+      .eq("agent_id", agent.id);
+
+    if (forwardingNumbers && forwardingNumbers.length > 0) {
+      const transferUrl = `${supabaseUrl}/functions/v1/transfer-call`;
+      const numbersList = forwardingNumbers.map((fn: any) => `${fn.phone_number}${fn.label ? ` (${fn.label})` : ""}`).join(", ");
+
+      systemPrompt += `\n\n--- CALL FORWARDING ---`;
+      systemPrompt += `\nYou can transfer the caller to a human agent if they request it or if you cannot help them.`;
+      systemPrompt += `\nAvailable transfer destinations: ${numbersList}`;
+      systemPrompt += `\nUse the transferCall tool to transfer the call. Always confirm with the caller before transferring.\n`;
+
+      selectedTools.push({
+        temporaryTool: {
+          modelToolName: "transferCall",
+          description: `Transfer the current call to a human agent. Available destinations: ${numbersList}. Always confirm with the caller before transferring.`,
+          dynamicParameters: [
+            { name: "destination_number", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: `Phone number to transfer to. Must be one of: ${forwardingNumbers.map((fn: any) => fn.phone_number).join(", ")}` }, required: true },
+          ],
+          http: { baseUrlPattern: transferUrl, httpMethod: "POST" },
+        },
+      });
     }
 
     // Fetch webhooks for this agent

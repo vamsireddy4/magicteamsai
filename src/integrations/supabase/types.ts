@@ -243,6 +243,41 @@ export type Database = {
         }
         Relationships: []
       }
+      call_forwarding_numbers: {
+        Row: {
+          agent_id: string
+          created_at: string
+          id: string
+          label: string | null
+          phone_number: string
+          user_id: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          id?: string
+          label?: string | null
+          phone_number: string
+          user_id: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          id?: string
+          label?: string | null
+          phone_number?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_forwarding_numbers_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       call_logs: {
         Row: {
           agent_id: string | null

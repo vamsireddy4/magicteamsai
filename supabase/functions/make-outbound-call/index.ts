@@ -111,11 +111,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch knowledge base, agent tools, and appointment tools in parallel
-    const [{ data: kbItems }, { data: agentTools }, { data: appointmentTools }] = await Promise.all([
+    // Fetch knowledge base, agent tools, appointment tools, and forwarding numbers in parallel
+    const [{ data: kbItems }, { data: agentTools }, { data: appointmentTools }, { data: forwardingNumbers }] = await Promise.all([
       supabase.from("knowledge_base_items").select("*").eq("agent_id", agent.id),
       supabase.from("agent_tools").select("*").eq("agent_id", agent.id).eq("is_active", true),
       supabase.from("appointment_tools").select("*, calendar_integrations(*)").eq("agent_id", agent.id).eq("is_active", true),
+      supabase.from("call_forwarding_numbers").select("*").eq("agent_id", agent.id),
     ]);
 
     let systemPrompt = agent.system_prompt;
@@ -229,6 +230,35 @@ Deno.serve(async (req) => {
     }
 
     const provider = phoneConfig.provider || "twilio";
+
+    // Inject call forwarding/transfer tool if forwarding numbers exist
+    if (forwardingNumbers && forwardingNumbers.length > 0) {
+      const transferUrl = `${supabaseUrl}/functions/v1/transfer-call`;
+      const numbersList = forwardingNumbers.map((fn: any) => `${fn.phone_number}${fn.label ? ` (${fn.label})` : ""}`).join(", ");
+      
+      systemPrompt += `\n\n--- CALL FORWARDING ---`;
+      systemPrompt += `\nYou can transfer the caller to a human agent if they request it or if you cannot help them.`;
+      systemPrompt += `\nAvailable transfer destinations: ${numbersList}`;
+      systemPrompt += `\nUse the transferCall tool to transfer the call. Always confirm with the caller before transferring.\n`;
+
+      ultravoxTools.push({
+        temporaryTool: {
+          modelToolName: "transferCall",
+          description: `Transfer the current call to a human agent. Available destinations: ${numbersList}. Always confirm with the caller before transferring.`,
+          dynamicParameters: [
+            { name: "destination_number", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: `Phone number to transfer to. Must be one of: ${forwardingNumbers.map((fn: any) => fn.phone_number).join(", ")}` }, required: true },
+          ],
+          http: {
+            baseUrlPattern: transferUrl,
+            httpMethod: "POST",
+          },
+          automaticParameters: [
+            { name: "provider", location: "PARAMETER_LOCATION_BODY", value: provider },
+          ],
+        },
+      });
+    }
+
     const aiProvider = (agent as any).ai_provider || "ultravox";
 
     let callSid = "";
