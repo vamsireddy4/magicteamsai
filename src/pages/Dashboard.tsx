@@ -35,13 +35,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!user) return;
-    // Auto-sync on load
-    supabase.functions.invoke("sync-call-data").then(() => fetchData());
+    fetchData();
 
     const channel = supabase
       .channel('dashboard-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'call_logs' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'agents' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'phone_configs' }, () => fetchData())
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
