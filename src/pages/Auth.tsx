@@ -17,11 +17,9 @@ export default function Auth() {
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const { signIn, signUp, signInWithGoogle, user } = useAuth();
+  const { signIn, signUp, signInWithGoogle, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-
-  const { loading: authLoading } = useAuth();
 
   // Redirect authenticated users
   useEffect(() => {
