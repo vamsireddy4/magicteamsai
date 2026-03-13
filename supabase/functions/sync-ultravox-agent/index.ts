@@ -201,8 +201,11 @@ Deno.serve(async (req) => {
       modelName = `fixie-ai/${modelName}`;
     }
 
+    // Sanitize name for Ultravox: only alphanumeric, underscore, hyphen, max 64 chars
+    const sanitizedName = agent.name.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 64);
+
     const ultravoxAgentBody: any = {
-      name: agent.name,
+      name: sanitizedName,
       systemPrompt,
       model: modelName,
       voice: agent.voice,
