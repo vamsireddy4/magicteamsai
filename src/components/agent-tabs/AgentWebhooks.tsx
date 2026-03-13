@@ -30,7 +30,7 @@ interface Props {
   userId: string;
 }
 
-export default function AgentWebhooks({ agentId, userId }: Props) {
+export default function AgentWebhooks({ agentId, agentName, userId }: Props) {
   const { toast } = useToast();
   const [webhooks, setWebhooks] = useState<WebhookRow[]>([]);
   const [loading, setLoading] = useState(true);
