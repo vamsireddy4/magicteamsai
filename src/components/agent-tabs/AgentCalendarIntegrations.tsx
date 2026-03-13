@@ -348,7 +348,7 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
                           </>
                         ) : availabilityData.slots ? (
                           <>
-                            <h4 className="font-semibold text-sm">Available Slots on {availabilityDate}</h4>
+                            <h4 className="font-semibold text-sm">Available Slots ({availabilityFromDate} to {availabilityToDate})</h4>
                             {(Array.isArray(availabilityData.slots) && availabilityData.slots.length === 0) ? (
                               <p className="text-sm text-muted-foreground">No available slots found.</p>
                             ) : Array.isArray(availabilityData.slots) ? (
