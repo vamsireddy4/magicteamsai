@@ -55,15 +55,29 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch agent
-    const { data: agent, error: agentError } = await supabase
-      .from("agents")
-      .select("*")
-      .eq("id", agent_id)
-      .eq("user_id", userId)
-      .single();
+    // Fetch agent (with retry for race condition on new creation)
+    let agent: any = null;
+    let agentError: any = null;
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await supabase
+        .from("agents")
+        .select("*")
+        .eq("id", agent_id)
+        .eq("user_id", userId)
+        .single();
+      agent = result.data;
+      agentError = result.error;
+
+      if (agent) break;
+      if (attempt === 0) {
+        console.log("Agent not found on first attempt, retrying in 1s...");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
 
     if (agentError || !agent) {
+      console.error(`Agent not found after retries: ${agent_id}, user: ${userId}`);
       return new Response(
         JSON.stringify({ error: "Agent not found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
