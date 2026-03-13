@@ -233,6 +233,7 @@ Deno.serve(async (req) => {
             updated++;
 
             // Update corresponding call_outcome based on call status
+            const finalStatus = (updateData.status as string) ?? call.status;
             const duration = (updateData.duration as number) ?? call.duration;
             console.log(`Call ${call.id}: finalStatus=${finalStatus}, duration=${duration}, recipient=${call.recipient_number}`);
             
