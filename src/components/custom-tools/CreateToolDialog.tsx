@@ -277,7 +277,7 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
                   className={cn(
                     "flex-1 py-2.5 text-sm font-medium transition-colors",
                     editParam.required
-                      ? "bg-foreground text-background"
+                      ? "bg-primary text-primary-foreground"
                       : "bg-background text-foreground hover:bg-muted"
                   )}
                 >
@@ -289,7 +289,7 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
                   className={cn(
                     "flex-1 py-2.5 text-sm font-medium transition-colors border-l",
                     !editParam.required
-                      ? "bg-foreground text-background"
+                      ? "bg-primary text-primary-foreground"
                       : "bg-background text-foreground hover:bg-muted"
                   )}
                 >
