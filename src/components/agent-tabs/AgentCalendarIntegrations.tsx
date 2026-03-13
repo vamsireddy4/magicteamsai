@@ -70,7 +70,12 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
   const [saving, setSaving] = useState(false);
 
   // Live availability state
-  const [availabilityDate, setAvailabilityDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [availabilityFromDate, setAvailabilityFromDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [availabilityToDate, setAvailabilityToDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().split("T")[0];
+  });
   const [availabilityData, setAvailabilityData] = useState<any>(null);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [viewTab, setViewTab] = useState("config");
