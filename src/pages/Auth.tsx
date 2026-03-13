@@ -36,7 +36,6 @@ export default function Auth() {
     try {
       if (isLogin) {
         await signIn(email, password);
-        navigate("/dashboard");
       } else {
         await signUp(email, password, fullName);
         toast({
