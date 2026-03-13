@@ -47,6 +47,7 @@ const App = () => (
             
             <Route path="/custom-tools" element={<ProtectedRoute><CustomTools /></ProtectedRoute>} />
             <Route path="/calendar-integrations" element={<ProtectedRoute><CalendarIntegrations /></ProtectedRoute>} />
+            <Route path="/support" element={<ProtectedRoute><Support /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><UserSettings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
