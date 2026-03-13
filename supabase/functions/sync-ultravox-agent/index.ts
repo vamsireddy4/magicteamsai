@@ -260,7 +260,9 @@ Deno.serve(async (req) => {
     }
 
     // Sanitize name for Ultravox: only alphanumeric, underscore, hyphen, max 64 chars
-    const sanitizedName = agent.name.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 64);
+    // Append short agent ID suffix to ensure uniqueness across agents with the same display name
+    const idSuffix = agent.id.replace(/-/g, '').substring(0, 8);
+    const sanitizedName = (agent.name.replace(/[^a-zA-Z0-9_-]/g, '_') + '_' + idSuffix).substring(0, 64);
 
     // Build the correct Ultravox Agent API body with callTemplate nesting
     const callTemplate: any = {
