@@ -281,6 +281,31 @@ export default function AgentForm() {
               <Card>
                 <CardHeader><CardTitle>AI Provider & Model</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
+                  {isEditing && form.ai_provider === "ultravox" && (
+                    <div className="rounded-lg border bg-muted/50 p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-semibold">Bot ID</Label>
+                        <Button type="button" variant="outline" size="sm" onClick={handleSyncUltravox} disabled={syncing}>
+                          {syncing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                          {syncing ? "Syncing..." : ultravoxAgentId ? "Re-sync" : "Sync Now"}
+                        </Button>
+                      </div>
+                      {ultravoxAgentId ? (
+                        <div className="flex items-center gap-2">
+                          <code className="text-xs bg-background px-2 py-1 rounded border flex-1 truncate">{ultravoxAgentId}</code>
+                          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => {
+                            navigator.clipboard.writeText(ultravoxAgentId);
+                            toast({ title: "Bot ID copied" });
+                          }}>
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Not synced yet. Save the agent or click "Sync Now" to generate a Bot ID.</p>
+                      )}
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <Label>AI Provider</Label>
                     <Select value={form.ai_provider} onValueChange={val => {
