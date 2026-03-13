@@ -93,7 +93,8 @@ export default function AgentForm() {
   const [voiceSearch, setVoiceSearch] = useState("");
   const [useCustomVoice, setUseCustomVoice] = useState(false);
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
-
+  const [ultravoxAgentId, setUltravoxAgentId] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [form, setForm] = useState({
     name: "",
     system_prompt: "You are a helpful and friendly receptionist. Answer questions about the business, take messages, and help callers with their needs.",
