@@ -98,6 +98,9 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
     setHttpMethod("GET");
     setHttpUrl("");
     setParams([]);
+    setAgentEndBehavior("Default");
+    setStaticResponseEnabled(false);
+    setStaticResponseMessage("");
     setAddingParam(false);
     resetEditParam();
     setStep(0);
