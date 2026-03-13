@@ -97,15 +97,17 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fetch agent tools
+    // Fetch agent tools (custom HTTP tools)
     const { data: agentTools } = await supabase
       .from("agent_tools")
       .select("*")
       .eq("agent_id", agent.id)
       .eq("is_active", true);
 
-    // Build Ultravox tools
+    // Build Ultravox selectedTools array
     const selectedTools: any[] = [];
+
+    // Custom HTTP tools
     if (agentTools && agentTools.length > 0) {
       for (const tool of agentTools) {
         const dynamicParameters: any[] = [];
@@ -119,7 +121,35 @@ Deno.serve(async (req) => {
             });
           }
         }
-        selectedTools.push({
+
+        // Build static parameters from headers and body template
+        const staticParameters: any[] = [];
+        if (tool.http_headers && typeof tool.http_headers === "object") {
+          const headers = tool.http_headers as Record<string, string>;
+          for (const [headerName, headerValue] of Object.entries(headers)) {
+            if (headerName && headerValue) {
+              staticParameters.push({
+                name: headerName,
+                location: "PARAMETER_LOCATION_HEADER",
+                value: headerValue,
+              });
+            }
+          }
+        }
+        if (tool.http_body_template && typeof tool.http_body_template === "object") {
+          const bodyTemplate = tool.http_body_template as Record<string, any>;
+          for (const [key, value] of Object.entries(bodyTemplate)) {
+            if (key) {
+              staticParameters.push({
+                name: key,
+                location: "PARAMETER_LOCATION_BODY",
+                value: String(value),
+              });
+            }
+          }
+        }
+
+        const toolDef: any = {
           temporaryTool: {
             modelToolName: tool.name,
             description: tool.description,
@@ -129,7 +159,13 @@ Deno.serve(async (req) => {
               httpMethod: tool.http_method,
             },
           },
-        });
+        };
+
+        if (staticParameters.length > 0) {
+          toolDef.temporaryTool.staticParameters = staticParameters;
+        }
+
+        selectedTools.push(toolDef);
       }
     }
 
@@ -169,7 +205,7 @@ Deno.serve(async (req) => {
               { name: "date", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Date (YYYY-MM-DD)" }, required: true },
             ],
             http: { baseUrlPattern: checkAvailabilityUrl, httpMethod: "POST" },
-            automaticParameters: [
+            staticParameters: [
               { name: "provider", location: "PARAMETER_LOCATION_BODY", value: apptTool.provider },
               { name: "integration_id", location: "PARAMETER_LOCATION_BODY", value: integration.id },
             ],
@@ -187,7 +223,7 @@ Deno.serve(async (req) => {
               { name: "duration_minutes", location: "PARAMETER_LOCATION_BODY", schema: { type: "number", description: "Duration in min" }, required: false },
             ],
             http: { baseUrlPattern: bookAppointmentUrl, httpMethod: "POST" },
-            automaticParameters: [
+            staticParameters: [
               { name: "provider", location: "PARAMETER_LOCATION_BODY", value: apptTool.provider },
               { name: "integration_id", location: "PARAMETER_LOCATION_BODY", value: integration.id },
             ],
@@ -196,6 +232,14 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Fetch webhooks for this agent
+    const { data: webhooks } = await supabase
+      .from("webhooks")
+      .select("*")
+      .eq("agent_id", agent.id)
+      .eq("is_active", true);
+
+    // Build model name
     let modelName = agent.model || "fixie-ai/ultravox-v0.7";
     if (modelName && !modelName.includes("/")) {
       modelName = `fixie-ai/${modelName}`;
@@ -204,19 +248,27 @@ Deno.serve(async (req) => {
     // Sanitize name for Ultravox: only alphanumeric, underscore, hyphen, max 64 chars
     const sanitizedName = agent.name.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 64);
 
-    const ultravoxAgentBody: any = {
-      name: sanitizedName,
+    // Build the correct Ultravox Agent API body with callTemplate nesting
+    const callTemplate: any = {
       systemPrompt,
       model: modelName,
       voice: agent.voice,
       temperature: Number(agent.temperature),
       languageHint: agent.language_hint || "en",
       maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
+      firstSpeaker: agent.first_speaker || "FIRST_SPEAKER_AGENT",
     };
 
     if (selectedTools.length > 0) {
-      ultravoxAgentBody.selectedTools = selectedTools;
+      callTemplate.selectedTools = selectedTools;
     }
+
+    const ultravoxAgentBody: any = {
+      name: sanitizedName,
+      callTemplate,
+    };
+
+    console.log(`Ultravox request body: ${JSON.stringify(ultravoxAgentBody).substring(0, 500)}`);
 
     let ultravoxAgentId = agent.ultravox_agent_id;
     let response: Response;
@@ -234,13 +286,12 @@ Deno.serve(async (req) => {
       });
 
       if (!response.ok) {
-        // If agent not found on Ultravox, create a new one
         if (response.status === 404) {
           console.log("Ultravox agent not found, creating new one");
           ultravoxAgentId = null;
         } else {
           const errorText = await response.text();
-          console.error(`Ultravox update error: ${errorText}`);
+          console.error(`Ultravox update error (${response.status}): ${errorText}`);
           return new Response(
             JSON.stringify({ error: "Failed to update Ultravox agent", details: errorText }),
             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -263,7 +314,7 @@ Deno.serve(async (req) => {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`Ultravox create error: ${errorText}`);
+        console.error(`Ultravox create error (${response.status}): ${errorText}`);
         return new Response(
           JSON.stringify({ error: "Failed to create Ultravox agent", details: errorText }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -272,6 +323,7 @@ Deno.serve(async (req) => {
     }
 
     const ultravoxData = await response!.json();
+    console.log(`Ultravox response: ${JSON.stringify(ultravoxData).substring(0, 500)}`);
     const newUltravoxAgentId = ultravoxData.agentId || ultravoxData.agent_id || ultravoxData.id;
 
     console.log(`Ultravox agent synced: ${newUltravoxAgentId}`);
@@ -282,6 +334,38 @@ Deno.serve(async (req) => {
         .from("agents")
         .update({ ultravox_agent_id: newUltravoxAgentId })
         .eq("id", agent.id);
+    }
+
+    // Sync webhooks to Ultravox if any
+    if (webhooks && webhooks.length > 0 && newUltravoxAgentId) {
+      for (const wh of webhooks) {
+        try {
+          const whBody: any = {
+            url: wh.url,
+            events: wh.events || ["call.completed"],
+            agentId: newUltravoxAgentId,
+          };
+          if (wh.secret) {
+            whBody.secret = wh.secret;
+          }
+          const whResp = await fetch("https://api.ultravox.ai/api/webhooks", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-API-Key": ultravoxApiKey,
+            },
+            body: JSON.stringify(whBody),
+          });
+          if (!whResp.ok) {
+            const whErr = await whResp.text();
+            console.error(`Webhook sync error for ${wh.name}: ${whErr}`);
+          } else {
+            console.log(`Webhook synced: ${wh.name}`);
+          }
+        } catch (whError: any) {
+          console.error(`Webhook sync exception for ${wh.name}: ${whError.message}`);
+        }
+      }
     }
 
     return new Response(
