@@ -26,7 +26,7 @@ const supportCards = [
     title: "WhatsApp Support",
     badge: "24/7",
     description: "Get instant support from our team via WhatsApp",
-    href: "#",
+    href: "https://api.whatsapp.com/send/?phone=%2B971547857926&text&type=phone_number&app_absent=0",
   },
 ];
 
