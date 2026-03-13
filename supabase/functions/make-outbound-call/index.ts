@@ -111,10 +111,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch knowledge base and agent tools in parallel
-    const [{ data: kbItems }, { data: agentTools }] = await Promise.all([
+    // Fetch knowledge base, agent tools, and appointment tools in parallel
+    const [{ data: kbItems }, { data: agentTools }, { data: appointmentTools }] = await Promise.all([
       supabase.from("knowledge_base_items").select("*").eq("agent_id", agent.id),
       supabase.from("agent_tools").select("*").eq("agent_id", agent.id).eq("is_active", true),
+      supabase.from("appointment_tools").select("*, calendar_integrations(*)").eq("agent_id", agent.id).eq("is_active", true),
     ]);
 
     let systemPrompt = agent.system_prompt;
