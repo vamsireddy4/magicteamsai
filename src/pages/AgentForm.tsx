@@ -125,8 +125,10 @@ export default function AgentForm() {
     });
 
     if (isEditing) {
-      supabase.from("agents").select("*").eq("id", id).single().then(({ data }) => {
+      supabase.from("agents").select("*").eq("id", id).single().then(async ({ data }) => {
         if (data) {
+          const existingBotId = (data as any).ultravox_agent_id || null;
+
           setForm({
             name: data.name, system_prompt: data.system_prompt, voice: data.voice,
             temperature: Number(data.temperature), first_speaker: data.first_speaker,
@@ -135,7 +137,16 @@ export default function AgentForm() {
             model: (data as any).model || "fixie-ai/ultravox-v0.7",
             ai_provider: (data as any).ai_provider || "ultravox",
           });
-          setUltravoxAgentId((data as any).ultravox_agent_id || null);
+          setUltravoxAgentId(existingBotId);
+
+          if ((data as any).ai_provider === "ultravox" && !existingBotId) {
+            const { data: syncData } = await supabase.functions.invoke("sync-ultravox-agent", {
+              body: { agent_id: data.id },
+            });
+            if (syncData?.ultravox_agent_id) {
+              setUltravoxAgentId(syncData.ultravox_agent_id);
+            }
+          }
         }
       });
     }
