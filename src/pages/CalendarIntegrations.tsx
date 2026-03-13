@@ -44,8 +44,9 @@ const PROVIDERS = [
     logo: calcomLogo,
     description: "Check availability and create bookings via Cal.com.",
     fields: [
-      { key: "api_key", label: "Cal.com API Key", placeholder: "cal_live_...", help: "Find your API key in Cal.com → Settings → Developer → API Keys." },
-      { key: "calendar_id", label: "Event Type ID", placeholder: "123456", help: "The numeric event type ID from your Cal.com booking page URL." },
+      { key: "api_key", label: "Cal.com API Key (v2)", placeholder: "cal_live_...", help: "Create a v2 API key in Cal.com → Settings → Developer → API Keys. Must be a v2 key." },
+      { key: "calendar_id", label: "Event Type ID", placeholder: "123456", help: "The numeric event type ID from your Cal.com event type URL (e.g. cal.com/username/event-name → go to Event Type settings to find the ID)." },
+      { key: "username", label: "Cal.com Username", placeholder: "johndoe", help: "Your Cal.com username (shown in your booking URL: cal.com/username).", isConfig: true },
     ],
   },
   {

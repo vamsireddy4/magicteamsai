@@ -69,42 +69,52 @@ Deno.serve(async (req) => {
 });
 
 async function bookGoogleCalendar(integration: any, opts: any) {
-  // Note: Google Calendar API key is read-only. Booking requires OAuth.
-  // For now, return a message about this limitation.
   return {
     success: false,
     message: "Google Calendar booking requires OAuth credentials (not just an API key). Please use a service account or OAuth flow for write access.",
   };
 }
 
+// Cal.com v2 API booking
 async function bookCalCom(integration: any, opts: any) {
   const apiKey = integration.api_key;
   const eventTypeId = integration.calendar_id;
 
-  const res = await fetch("https://api.cal.com/v1/bookings?apiKey=" + apiKey, {
+  if (!eventTypeId || isNaN(Number(eventTypeId))) {
+    throw new Error("Cal.com booking requires a valid numeric Event Type ID. Please update your calendar integration settings.");
+  }
+
+  const res = await fetch("https://api.cal.com/v2/bookings", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "cal-api-version": "2024-08-13",
+      Authorization: `Bearer ${apiKey}`,
+    },
     body: JSON.stringify({
       eventTypeId: parseInt(eventTypeId),
       start: opts.start_time,
-      end: opts.end_time,
-      responses: {
+      attendee: {
         name: opts.attendee_name || "Guest",
         email: opts.attendee_email || "guest@example.com",
-        phone: opts.attendee_phone,
-        notes: opts.notes,
+        timeZone: "UTC",
+        language: "en",
       },
-      timeZone: "UTC",
+      metadata: {
+        phone: opts.attendee_phone || "",
+        notes: opts.notes || "",
+      },
     }),
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(`Cal.com booking error: ${err.message || res.statusText}`);
+    const errBody = await res.text();
+    console.error("Cal.com v2 booking error:", res.status, errBody);
+    throw new Error(`Cal.com booking error (${res.status}): ${errBody}`);
   }
 
   const data = await res.json();
-  return { success: true, booking: data };
+  return { success: true, booking: data.data || data };
 }
 
 async function bookGoHighLevel(integration: any, opts: any) {
