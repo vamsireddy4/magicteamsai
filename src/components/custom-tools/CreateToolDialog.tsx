@@ -162,14 +162,27 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
     setSaving(true);
 
     const dynamicParams = params.filter((p) => p.paramType === "Dynamic");
-    const staticParamsList = params.filter((p) => p.paramType === "Static" || p.paramType === "Automatic");
+    const automaticParams = params.filter((p) => p.paramType === "Automatic");
+    const staticParamsList = params.filter((p) => p.paramType === "Static");
 
-    const parameters = dynamicParams.map((p) => ({
+    // Dynamic parameters for the parameters array
+    const dynamicParameters = dynamicParams.map((p) => ({
+      paramType: "dynamic",
       name: p.name,
       location: locationToApi(p.location),
       required: p.required,
       schema: { type: p.type.toLowerCase(), description: p.description },
     }));
+
+    // Automatic parameters for the parameters array
+    const automaticParameters = automaticParams.map((p) => ({
+      paramType: "automatic",
+      name: p.name,
+      location: locationToApi(p.location),
+      knownValue: p.value,
+    }));
+
+    const parameters = [...dynamicParameters, ...automaticParameters];
 
     const headers: Record<string, string> = {};
     const bodyTemplate: Record<string, any> = {};
@@ -177,6 +190,14 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
       if (p.location === "Header") headers[p.name] = p.value;
       else bodyTemplate[p.name] = p.value;
     });
+
+    // Store advanced settings in body template metadata
+    if (agentEndBehavior !== "Default") {
+      bodyTemplate.__agentEndBehavior = agentEndBehavior;
+    }
+    if (staticResponseEnabled && staticResponseMessage) {
+      bodyTemplate.__staticResponse = staticResponseMessage;
+    }
 
     const { error } = await supabase.from("agent_tools").insert({
       user_id: userId,
@@ -195,6 +216,14 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Tool created" });
+      // Trigger Ultravox sync so the tool is immediately registered
+      try {
+        await supabase.functions.invoke("sync-ultravox-agent", {
+          body: { agent_id: agentId },
+        });
+      } catch (syncErr) {
+        console.error("Ultravox sync after tool creation failed:", syncErr);
+      }
       resetForm();
       setOpen(false);
       onCreated();
