@@ -157,9 +157,9 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
               })}
             </div>
           )}
-          <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-1" /> Add Calendar
-          </Button>
+          {integrations.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">No calendars connected. Go to Calendar Integrations to add one.</p>
+          )}
         </>
       )}
 
