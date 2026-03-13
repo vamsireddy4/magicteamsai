@@ -33,13 +33,8 @@ const supportCards = [
 export default function Support() {
   return (
     <DashboardLayout>
-      <div className="space-y-2">
-        <h1 className="text-2xl font-bold tracking-tight">SUPPORT</h1>
-        <div className="h-px bg-border" />
-      </div>
-
       <div className="flex flex-col items-center py-12">
-        <h2 className="text-3xl font-bold tracking-tight text-center">Support & Resources</h2>
+        <h1 className="text-3xl font-bold tracking-tight text-center">Support & Resources</h1>
         <p className="mt-2 text-muted-foreground text-center">
           Get help, share feedback, and stay updated with Magic Teams
         </p>
