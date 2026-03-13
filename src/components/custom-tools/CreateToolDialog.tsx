@@ -471,8 +471,9 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
                 <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Default">Default</SelectItem>
-                  <SelectItem value="Hang Up">Hang Up</SelectItem>
-                  <SelectItem value="Continue">Continue</SelectItem>
+                  <SelectItem value="Speaks">Speaks</SelectItem>
+                  <SelectItem value="Listens">Listens</SelectItem>
+                  <SelectItem value="Speaks Once">Speaks Once</SelectItem>
                 </SelectContent>
               </Select>
             </div>
