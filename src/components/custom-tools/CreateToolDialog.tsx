@@ -11,8 +11,8 @@ import { Plus, Trash2, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
-const PARAM_LOCATIONS = ["Body", "Header", "Query String"];
-const PARAM_TYPES = ["String", "Number", "Integer", "Boolean"];
+const PARAM_LOCATIONS = ["Body", "Query String", "Path", "Header"];
+const PARAM_TYPES = ["String", "Number", "Integer", "Boolean", "Custom"];
 
 const STEPS = [
   { label: "Info", description: "Name & description" },
