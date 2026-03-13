@@ -251,7 +251,8 @@ Deno.serve(async (req) => {
     const { data: forwardingNumbers } = await supabase
       .from("call_forwarding_numbers")
       .select("*")
-      .eq("agent_id", agent.id);
+      .eq("agent_id", agent.id)
+      .order("priority", { ascending: true });
 
     if (forwardingNumbers && forwardingNumbers.length > 0) {
       const transferUrl = `${supabaseUrl}/functions/v1/transfer-call`;

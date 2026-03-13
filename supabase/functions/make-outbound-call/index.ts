@@ -234,26 +234,26 @@ Deno.serve(async (req) => {
     // Inject call forwarding/transfer tool if forwarding numbers exist
     if (forwardingNumbers && forwardingNumbers.length > 0) {
       const transferUrl = `${supabaseUrl}/functions/v1/transfer-call`;
-      const numbersList = forwardingNumbers.map((fn: any) => `${fn.phone_number}${fn.label ? ` (${fn.label})` : ""}`).join(", ");
+      const numbersList = forwardingNumbers.map((fn: any, i: number) => `${i + 1}. ${fn.phone_number}${fn.label ? ` (${fn.label})` : ""}`).join(", ");
       
       systemPrompt += `\n\n--- CALL FORWARDING ---`;
       systemPrompt += `\nYou can transfer the caller to a human agent if they request it or if you cannot help them.`;
-      systemPrompt += `\nAvailable transfer destinations: ${numbersList}`;
-      systemPrompt += `\nUse the transferCall tool to transfer the call. Always confirm with the caller before transferring.\n`;
+      systemPrompt += `\nAvailable transfer destinations (in priority order): ${numbersList}`;
+      systemPrompt += `\nUse the transferCall tool to initiate the transfer. The system will automatically try each number in order — if the first person is busy or doesn't answer, it will try the next one.`;
+      systemPrompt += `\nAlways confirm with the caller before transferring.\n`;
 
       ultravoxTools.push({
         temporaryTool: {
           modelToolName: "transferCall",
-          description: `Transfer the current call to a human agent. Available destinations: ${numbersList}. Always confirm with the caller before transferring.`,
-          dynamicParameters: [
-            { name: "destination_number", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: `Phone number to transfer to. Must be one of: ${forwardingNumbers.map((fn: any) => fn.phone_number).join(", ")}` }, required: true },
-          ],
+          description: `Transfer the current call to a human agent. The system will automatically try numbers in priority order: ${numbersList}. If the first person is busy, it tries the next. Always confirm with the caller before transferring.`,
+          dynamicParameters: [],
           http: {
             baseUrlPattern: transferUrl,
             httpMethod: "POST",
           },
           automaticParameters: [
             { name: "provider", location: "PARAMETER_LOCATION_BODY", value: provider },
+            { name: "agent_id", location: "PARAMETER_LOCATION_BODY", value: agent.id },
           ],
         },
       });
