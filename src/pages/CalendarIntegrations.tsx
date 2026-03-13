@@ -84,6 +84,7 @@ export default function CalendarIntegrations() {
   const [calUsername, setCalUsername] = useState("");
   const [calSelectedEventType, setCalSelectedEventType] = useState<string>("");
   const [calStep, setCalStep] = useState<"api_key" | "select_event">("api_key");
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
 
   const fetchData = async () => {
     if (!user) return;
