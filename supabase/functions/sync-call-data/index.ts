@@ -128,6 +128,12 @@ Deno.serve(async (req) => {
             updateData.status = "completed";
           }
 
+          // Fetch summary from Ultravox instead of AI
+          if (data.shortSummary || data.summary) {
+            updateData.summary = data.shortSummary || data.summary;
+            console.log(`Fetched Ultravox summary for call ${call.id}`);
+          }
+
           if (call.transcript === null && messagesRes && messagesRes.ok) {
             const messagesData = await messagesRes.json();
             const messages = messagesData.results || messagesData;
@@ -225,71 +231,6 @@ Deno.serve(async (req) => {
             errors.push(`Failed to update call ${call.id}: ${updateError.message}`);
           } else {
             updated++;
-
-            // Auto-generate AI summary if call has a transcript and no summary yet
-            const hasTranscript = updateData.transcript || call.transcript;
-            const finalStatus = (updateData.status as string) || call.status;
-            if (hasTranscript && finalStatus === "completed") {
-              try {
-                // Check if summary already exists
-                const { data: existingCall } = await supabase
-                  .from("call_logs")
-                  .select("summary, transcript")
-                  .eq("id", call.id)
-                  .single();
-
-                if (existingCall && !existingCall.summary && existingCall.transcript) {
-                  const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
-                  if (lovableApiKey) {
-                    let transcriptText = "";
-                    if (Array.isArray(existingCall.transcript)) {
-                      transcriptText = (existingCall.transcript as any[])
-                        .map((msg: any) => `${msg.role === "agent" ? "Agent" : "Caller"}: ${msg.text}`)
-                        .join("\n");
-                    } else {
-                      transcriptText = JSON.stringify(existingCall.transcript);
-                    }
-
-                    const systemPrompt = `You are an expert call analyst. Analyze the following phone call transcript and provide a concise summary including:
-1. **Purpose**: What the call was about (1 sentence)
-2. **Key Points**: The main topics discussed (2-4 bullet points)
-3. **Outcome**: What was resolved or agreed upon
-4. **Action Items**: Any follow-up actions mentioned
-5. **Sentiment**: Overall caller sentiment (positive/neutral/negative)
-
-Keep the summary concise and actionable. Use plain text, no markdown headers.`;
-
-                    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-                      method: "POST",
-                      headers: {
-                        Authorization: `Bearer ${lovableApiKey}`,
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({
-                        model: "google/gemini-2.5-flash",
-                        messages: [
-                          { role: "system", content: systemPrompt },
-                          { role: "user", content: `Transcript:\n${transcriptText}` },
-                        ],
-                      }),
-                    });
-
-                    if (aiResponse.ok) {
-                      const aiData = await aiResponse.json();
-                      const summary = aiData.choices?.[0]?.message?.content;
-                      if (summary) {
-                        await supabase.from("call_logs").update({ summary }).eq("id", call.id);
-                        console.log(`Auto-generated summary for call ${call.id}`);
-                      }
-                    } else {
-                      console.error(`AI summary failed for call ${call.id}: ${aiResponse.status}`);
-                    }
-                  }
-                }
-              } catch (sumErr) {
-                console.error(`Summary generation error for call ${call.id}:`, sumErr);
-              }
-            }
 
             // Update corresponding call_outcome based on call status
             const duration = (updateData.duration as number) ?? call.duration;
