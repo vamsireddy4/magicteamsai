@@ -26,9 +26,9 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/agents", label: "Agents", icon: Bot },
+  { href: "/outbound-call", label: "Outbound Call", icon: PhoneCall },
   { href: "/phone-config", label: "Phone Integration", icon: Phone },
   { href: "/call-logs", label: "Call History", icon: History },
-  { href: "/outbound-call", label: "Outbound Call", icon: PhoneCall },
   { href: "/calendar-integrations", label: "Calendars", icon: Calendar },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
