@@ -116,7 +116,7 @@ Deno.serve(async (req) => {
       supabase.from("knowledge_base_items").select("*").eq("agent_id", agent.id),
       supabase.from("agent_tools").select("*").eq("agent_id", agent.id).eq("is_active", true),
       supabase.from("appointment_tools").select("*, calendar_integrations(*)").eq("agent_id", agent.id).eq("is_active", true),
-      supabase.from("call_forwarding_numbers").select("*").eq("agent_id", agent.id),
+      supabase.from("call_forwarding_numbers").select("*").eq("agent_id", agent.id).order("priority", { ascending: true }),
     ]);
 
     let systemPrompt = agent.system_prompt;
