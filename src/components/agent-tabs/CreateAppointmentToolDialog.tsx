@@ -323,8 +323,8 @@ export default function CreateAppointmentToolDialog({
               Next
             </Button>
           ) : (
-            <Button onClick={handleFinish} disabled={!canFinish}>
-              Create Tool
+            <Button onClick={handleFinish} disabled={!canFinish || saving}>
+              {saving ? "Creating..." : "Create Tool"}
             </Button>
           )}
         </div>
