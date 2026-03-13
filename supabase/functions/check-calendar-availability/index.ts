@@ -147,19 +147,24 @@ async function handleCalComDirect(apiKey: string, opts: any) {
   const meData = await meRes.json();
   const username = meData.data?.username || meData.data?.name || "";
 
-  // Fetch event types from /v2/event-types
-  const etRes = await fetch("https://api.cal.com/v2/event-types", { headers: authHeaders });
+  // Fetch event types from /v2/event-types (requires cal-api-version: 2024-06-14)
+  const etHeaders = {
+    "Content-Type": "application/json",
+    "cal-api-version": "2024-06-14",
+    Authorization: `Bearer ${apiKey}`,
+  };
+  const etRes = await fetch("https://api.cal.com/v2/event-types", { headers: etHeaders });
   if (!etRes.ok) {
     const errBody = await etRes.text();
     console.error("Cal.com v2 /event-types error:", etRes.status, errBody);
     throw new Error(`Cal.com API error (${etRes.status}): ${errBody}`);
   }
   const etData = await etRes.json();
-  const eventTypes = (etData.data || []).map((et: any) => ({
+  const eventTypes = (etData.data?.eventTypes || etData.data || []).map((et: any) => ({
     id: et.id,
     title: et.title || et.slug,
     slug: et.slug,
-    length: et.length,
+    length: et.lengthInMinutes || et.length,
   }));
 
   return {
