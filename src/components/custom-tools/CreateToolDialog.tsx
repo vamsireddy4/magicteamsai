@@ -290,11 +290,11 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
               <Select value={editParam.value} onValueChange={(v) => setEditParam({ ...editParam, value: v })}>
                 <SelectTrigger className="bg-background"><SelectValue placeholder="Select a Known Value" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="call.id">call.id</SelectItem>
-                  <SelectItem value="call.caller_number">call.caller_number</SelectItem>
-                  <SelectItem value="call.recipient_number">call.recipient_number</SelectItem>
-                  <SelectItem value="agent.name">agent.name</SelectItem>
-                  <SelectItem value="agent.id">agent.id</SelectItem>
+                  <SelectItem value="call.id">Call ID</SelectItem>
+                  <SelectItem value="call.stage_id">Call Stage ID</SelectItem>
+                  <SelectItem value="call.state">Call State</SelectItem>
+                  <SelectItem value="call.conversation_history">Conversation History</SelectItem>
+                  <SelectItem value="call.sample_rate">Sample Rate</SelectItem>
                 </SelectContent>
               </Select>
             </div>
