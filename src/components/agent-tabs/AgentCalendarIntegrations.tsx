@@ -57,22 +57,6 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
         <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
       ) : (
         <>
-          {integrations.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {integrations.map(integration => (
-                <div key={integration.id} className="flex items-center gap-2 rounded-md border px-3 py-1.5">
-                  <img src={PROVIDER_LOGOS[integration.provider]} alt={integration.display_name} className="h-5 w-5 rounded object-contain" />
-                  <span className="text-sm font-medium">{integration.display_name}</span>
-                  <Badge variant={integration.is_active ? "default" : "secondary"} className="text-xs">
-                    {integration.is_active ? "Active" : "Inactive"}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          )}
-          {integrations.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-4">No calendars connected. Add an appointment tool or go to Calendar Integrations.</p>
-          )}
 
           <Button variant="outline" size="sm" onClick={() => setWizardOpen(true)}>
             <Plus className="h-4 w-4 mr-1" /> New Appointment Tool
