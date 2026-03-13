@@ -160,11 +160,11 @@ async function handleCalComDirect(apiKey: string, opts: any) {
     throw new Error(`Cal.com API error (${etRes.status}): ${errBody}`);
   }
   const etData = await etRes.json();
-  const eventTypes = (etData.data || []).map((et: any) => ({
+  const eventTypes = (etData.data?.eventTypes || etData.data || []).map((et: any) => ({
     id: et.id,
     title: et.title || et.slug,
     slug: et.slug,
-    length: et.length,
+    length: et.lengthInMinutes || et.length,
   }));
 
   return {
