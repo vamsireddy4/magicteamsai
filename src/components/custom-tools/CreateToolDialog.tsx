@@ -27,13 +27,13 @@ interface Agent {
 }
 
 interface ToolParam {
-  paramType: "Dynamic" | "Static";
+  paramType: "Automatic" | "Static";
   name: string;
   description: string;
   required: boolean;
   type: string;
   location: string;
-  value: string; // only used for Static
+  value: string; // used for Static value or Automatic known value
 }
 
 interface CreateToolDialogProps {
