@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Trash2, CheckCircle2 } from "lucide-react";
+import { Loader2, Trash2, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import googleCalendarLogo from "@/assets/google-calendar-logo.png";
 import calcomLogo from "@/assets/calcom-logo.png";
 import gohighlevelLogo from "@/assets/gohighlevel-logo.png";
