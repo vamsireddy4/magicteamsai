@@ -7,7 +7,7 @@ const supportCards = [
     title: "Feedback",
     badge: "New",
     description: "Share your thoughts, suggestions, and ideas to help improve Magic Teams",
-    href: "#",
+    href: "https://magicteamsai.userjot.com/board/all?cursor=1&order=top&limit=10",
   },
   {
     icon: MapPin,
