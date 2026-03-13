@@ -7,16 +7,16 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2, Webhook, Globe } from "lucide-react";
 
 const WEBHOOK_EVENTS = [
-  { value: "call.started", label: "Call Started" },
-  { value: "call.completed", label: "Call Completed" },
-  { value: "call.failed", label: "Call Failed" },
-  { value: "call.voicemail", label: "Voicemail Detected" },
-  { value: "transcript.ready", label: "Transcript Ready" },
+  { value: "call.started", label: "Start Call" },
+  { value: "call.ended", label: "End Call" },
+  { value: "call.billed", label: "Billed Call" },
+  { value: "call.joined", label: "Joined Call" },
 ];
 
 interface WebhookRow {
@@ -35,7 +35,12 @@ export default function AgentWebhooks({ agentId, userId }: Props) {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name: "", url: "", events: ["call.completed"] as string[], secret: "" });
+  const [form, setForm] = useState({
+    url: "",
+    events: [] as string[],
+    scope: "agent" as "agent" | "global",
+    secret: "",
+  });
 
   const fetchData = async () => {
     const { data } = await supabase
@@ -60,30 +65,63 @@ export default function AgentWebhooks({ agentId, userId }: Props) {
     setForm(f => ({ ...f, events: f.events.includes(event) ? f.events.filter(e => e !== event) : [...f.events, event] }));
   };
 
-  const handleCreate = async () => {
-    if (!form.name || !form.url) return;
-    setSaving(true);
-    const { error } = await supabase.from("webhooks").insert({
-      user_id: userId, name: form.name, url: form.url, agent_id: agentId, events: form.events, secret: form.secret || null,
-    } as any);
-    setSaving(false);
-    if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
-    else {
-      toast({ title: "Webhook created" });
-      setForm({ name: "", url: "", events: ["call.completed"], secret: "" });
-      setDialogOpen(false);
+  const syncAgentToUltravox = async () => {
+    try {
+      await supabase.functions.invoke("sync-ultravox-agent", {
+        body: { agent_id: agentId },
+      });
+    } catch (err) {
+      console.error("Ultravox sync failed:", err);
     }
+  };
+
+  const handleCreate = async () => {
+    if (!form.url || form.events.length === 0) return;
+    setSaving(true);
+
+    // Generate a name from the URL
+    const urlName = (() => {
+      try { return new URL(form.url).hostname; } catch { return "Webhook"; }
+    })();
+
+    const { error } = await supabase.from("webhooks").insert({
+      user_id: userId,
+      name: urlName,
+      url: form.url,
+      agent_id: form.scope === "agent" ? agentId : null,
+      events: form.events,
+      secret: form.secret || null,
+    } as any);
+
+    if (error) {
+      setSaving(false);
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    // Sync to Ultravox so the webhook is registered there too
+    await syncAgentToUltravox();
+
+    setSaving(false);
+    toast({ title: "Webhook created" });
+    setForm({ url: "", events: [], scope: "agent", secret: "" });
+    setDialogOpen(false);
   };
 
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from("webhooks").delete().eq("id", id);
     if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
-    else { toast({ title: "Webhook deleted" }); fetchData(); }
+    else {
+      toast({ title: "Webhook deleted" });
+      fetchData();
+      syncAgentToUltravox();
+    }
   };
 
   const toggleActive = async (id: string, current: boolean) => {
     await supabase.from("webhooks").update({ is_active: !current } as any).eq("id", id);
     fetchData();
+    syncAgentToUltravox();
   };
 
   return (
@@ -93,26 +131,71 @@ export default function AgentWebhooks({ agentId, userId }: Props) {
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild><Button size="sm"><Plus className="h-4 w-4 mr-2" />Add Webhook</Button></DialogTrigger>
           <DialogContent className="sm:max-w-lg">
-            <DialogHeader><DialogTitle>Create Webhook</DialogTitle></DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2"><Label>Name</Label><Input placeholder="e.g. CRM Integration" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-              <div className="space-y-2"><Label>URL</Label><Input placeholder="https://your-api.com/webhook" value={form.url} onChange={e => setForm({ ...form, url: e.target.value })} /></div>
+            <DialogHeader>
+              <DialogTitle>Add Webhook</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Webhooks allow you to receive real-time notifications about events in your Ultravox account. You can configure webhooks to send HTTP POST requests to a specified URL when certain events occur.
+            </p>
+
+            <div className="space-y-6 pt-2">
+              {/* Destination URL */}
               <div className="space-y-2">
-                <Label>Events</Label>
-                <div className="space-y-2">
+                <Label className="text-foreground font-semibold">Destination URL</Label>
+                <Input
+                  placeholder="https://example.com"
+                  value={form.url}
+                  onChange={e => setForm({ ...form, url: e.target.value })}
+                  className="bg-background"
+                />
+              </div>
+
+              {/* Webhook Types */}
+              <div className="space-y-3">
+                <Label className="text-foreground font-semibold">Select Webhook Types</Label>
+                <div className="space-y-2.5">
                   {WEBHOOK_EVENTS.map(ev => (
-                    <label key={ev.value} className="flex items-center gap-2 text-sm">
-                      <Checkbox checked={form.events.includes(ev.value)} onCheckedChange={() => toggleEvent(ev.value)} />{ev.label}
+                    <label key={ev.value} className="flex items-center gap-3 text-sm cursor-pointer">
+                      <Checkbox
+                        checked={form.events.includes(ev.value)}
+                        onCheckedChange={() => toggleEvent(ev.value)}
+                      />
+                      <span className="text-foreground">{ev.label}</span>
                     </label>
                   ))}
                 </div>
               </div>
+
+              {/* Scope */}
               <div className="space-y-2">
-                <Label>Secret (optional)</Label>
-                <Input placeholder="Signing secret" value={form.secret} onChange={e => setForm({ ...form, secret: e.target.value })} />
+                <Label className="text-foreground font-semibold">Scope</Label>
+                <Select value={form.scope} onValueChange={(v) => setForm({ ...form, scope: v as "agent" | "global" })}>
+                  <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="agent">This Agent</SelectItem>
+                    <SelectItem value="global">Global</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <Button onClick={handleCreate} disabled={saving || !form.name || !form.url || form.events.length === 0} className="w-full">
-                {saving ? "Creating..." : "Create Webhook"}
+
+              {/* Secrets */}
+              <div className="space-y-2">
+                <Label className="text-foreground font-semibold">Secrets</Label>
+                <Input
+                  placeholder="Signing secret (optional)"
+                  value={form.secret}
+                  onChange={e => setForm({ ...form, secret: e.target.value })}
+                  className="bg-background"
+                />
+              </div>
+
+              <Button
+                onClick={handleCreate}
+                disabled={saving || !form.url || form.events.length === 0}
+                className="w-full"
+                variant="secondary"
+              >
+                {saving ? "Saving..." : "Save"}
               </Button>
             </div>
           </DialogContent>
