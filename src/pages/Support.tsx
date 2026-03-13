@@ -13,7 +13,7 @@ const supportCards = [
     icon: MapPin,
     title: "Product Roadmap",
     description: "See what features and improvements are coming to Magic Teams",
-    href: "#",
+    href: "https://magicteamsai.userjot.com/roadmap?cursor=1&limit=10",
   },
   {
     icon: Bell,
