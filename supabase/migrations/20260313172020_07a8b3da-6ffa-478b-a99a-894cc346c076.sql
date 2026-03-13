@@ -1,0 +1,1 @@
+ALTER TABLE public.call_forwarding_numbers ADD COLUMN priority integer NOT NULL DEFAULT 0;
