@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -61,6 +62,11 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
 
   // Parameters
   const [params, setParams] = useState<ToolParam[]>([]);
+
+  // Advanced
+  const [agentEndBehavior, setAgentEndBehavior] = useState("Default");
+  const [staticResponseEnabled, setStaticResponseEnabled] = useState(false);
+  const [staticResponseMessage, setStaticResponseMessage] = useState("");
   const [addingParam, setAddingParam] = useState(false);
   const [editParam, setEditParam] = useState<ToolParam>({
     paramType: "Dynamic",
@@ -93,6 +99,9 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
     setHttpMethod("GET");
     setHttpUrl("");
     setParams([]);
+    setAgentEndBehavior("Default");
+    setStaticResponseEnabled(false);
+    setStaticResponseMessage("");
     setAddingParam(false);
     resetEditParam();
     setStep(0);
@@ -450,12 +459,44 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
         return (
           <div className="space-y-5">
             <div>
-              <h3 className="text-base font-semibold text-foreground mb-1">Advanced Settings</h3>
-              <p className="text-sm text-muted-foreground">Additional configuration options.</p>
+              <h3 className="text-base font-semibold text-foreground mb-1">Advanced</h3>
             </div>
-            <div className="rounded-lg border border-dashed p-8 text-center">
-              <p className="text-sm text-muted-foreground">Advanced settings coming soon.</p>
-              <p className="text-xs text-muted-foreground mt-1">Agent end behavior, static responses, and more.</p>
+            <div className="border-b border-border mb-4" />
+
+            {/* Agent End Behavior */}
+            <div className="space-y-2">
+              <Label className="text-foreground font-semibold">Agent End Behavior</Label>
+              <p className="text-sm text-muted-foreground">Default for how the agent should proceed after the tool is invoked.</p>
+              <Select value={agentEndBehavior} onValueChange={setAgentEndBehavior}>
+                <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Default">Default</SelectItem>
+                  <SelectItem value="Hang Up">Hang Up</SelectItem>
+                  <SelectItem value="Continue">Continue</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Static Response */}
+            <div className="space-y-2 pt-2">
+              <Label className="text-foreground font-semibold">Static Response</Label>
+              <p className="text-sm text-muted-foreground">When enabled, a hardcoded message is returned without waiting for the tool's response.</p>
+              <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
+                <span className="text-sm text-foreground">{staticResponseEnabled ? "Enabled" : "Disabled"}</span>
+                <Switch checked={staticResponseEnabled} onCheckedChange={setStaticResponseEnabled} />
+              </div>
+              {staticResponseEnabled && (
+                <div className="pt-2 space-y-2">
+                  <Label className="text-muted-foreground text-sm">Response Message</Label>
+                  <Textarea
+                    placeholder="Enter the static response message..."
+                    value={staticResponseMessage}
+                    onChange={(e) => setStaticResponseMessage(e.target.value)}
+                    rows={3}
+                    className="bg-background"
+                  />
+                </div>
+              )}
             </div>
           </div>
         );
