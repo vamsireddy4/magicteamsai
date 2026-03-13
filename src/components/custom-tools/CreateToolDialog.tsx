@@ -213,7 +213,7 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
               <SelectContent>
                 <SelectItem value="Dynamic">
                   <div className="flex flex-col items-start">
-                    <span className="font-medium">{ "{ } " }Dynamic</span>
+                    <span className="font-medium">Dynamic</span>
                   </div>
                 </SelectItem>
                 <SelectItem value="Static">
