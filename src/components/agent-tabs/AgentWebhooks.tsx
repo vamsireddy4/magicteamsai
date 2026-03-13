@@ -26,6 +26,7 @@ interface WebhookRow {
 
 interface Props {
   agentId: string;
+  agentName: string;
   userId: string;
 }
 
