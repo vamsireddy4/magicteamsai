@@ -8,20 +8,33 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { Plus, BookOpen, FileText, Globe, Trash2, MessageSquare, Upload, Link } from "lucide-react";
+import { Plus, BookOpen, FileText, Globe, Trash2, Upload, Link, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { Tables } from "@/integrations/supabase/types";
-
-type ContentTab = "files" | "urls";
 
 interface Props {
   agentId: string;
   userId: string;
 }
 
+interface KBItem {
+  id: string;
+  agent_id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  content: string | null;
+  file_path: string | null;
+  website_url: string | null;
+  processing_status: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+type ContentTab = "files" | "urls";
+
 export default function AgentKnowledgeBase({ agentId, userId }: Props) {
   const { toast } = useToast();
-  const [items, setItems] = useState<Tables<"knowledge_base_items">[]>([]);
+  const [items, setItems] = useState<KBItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -38,7 +51,7 @@ export default function AgentKnowledgeBase({ agentId, userId }: Props) {
       .select("*")
       .eq("agent_id", agentId)
       .order("created_at", { ascending: false });
-    setItems(data || []);
+    setItems((data as KBItem[]) || []);
     setLoading(false);
   };
 
@@ -55,12 +68,28 @@ export default function AgentKnowledgeBase({ agentId, userId }: Props) {
     setName(""); setDescription(""); setContentTab("files"); setFiles([]); setWebsiteUrl("");
   };
 
+  const triggerProcessing = async (itemId: string) => {
+    try {
+      const { error } = await supabase.functions.invoke("process-knowledge", {
+        body: { knowledge_item_id: itemId },
+      });
+      if (error) {
+        console.error("Processing error:", error);
+        toast({ title: "Processing warning", description: "Content extraction started but may take a moment.", variant: "default" });
+      }
+    } catch (e) {
+      console.error("Failed to trigger processing:", e);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!name) {
       toast({ title: "Name is required", variant: "destructive" });
       return;
     }
     setSaving(true);
+
+    const insertedIds: string[] = [];
 
     if (contentTab === "files" && files.length > 0) {
       for (const file of files) {
@@ -71,31 +100,39 @@ export default function AgentKnowledgeBase({ agentId, userId }: Props) {
           setSaving(false);
           return;
         }
-        const { error } = await supabase.from("knowledge_base_items").insert({
+        const { data, error } = await supabase.from("knowledge_base_items").insert({
           agent_id: agentId, user_id: userId, type: "document", title: name, content: description || null, file_path: path,
-        });
+        }).select("id").single();
         if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); setSaving(false); return; }
+        if (data) insertedIds.push(data.id);
       }
     } else if (contentTab === "urls" && websiteUrl) {
-      const { error } = await supabase.from("knowledge_base_items").insert({
+      const { data, error } = await supabase.from("knowledge_base_items").insert({
         agent_id: agentId, user_id: userId, type: "website", title: name, content: description || null, website_url: websiteUrl,
-      });
+      }).select("id").single();
       if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); setSaving(false); return; }
+      if (data) insertedIds.push(data.id);
     } else if (description) {
-      const { error } = await supabase.from("knowledge_base_items").insert({
+      const { data, error } = await supabase.from("knowledge_base_items").insert({
         agent_id: agentId, user_id: userId, type: "text", title: name, content: description,
-      });
+      }).select("id").single();
       if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); setSaving(false); return; }
+      if (data) insertedIds.push(data.id);
     } else {
       toast({ title: "Missing content", description: "Upload files, add a URL, or enter a description.", variant: "destructive" });
       setSaving(false);
       return;
     }
 
-    toast({ title: "Knowledge base created" });
+    toast({ title: "Knowledge base created", description: insertedIds.length > 0 && contentTab !== "files" ? "AI is extracting content..." : undefined });
     resetForm();
     setDialogOpen(false);
     setSaving(false);
+
+    // Trigger AI processing for URL and file items
+    for (const id of insertedIds) {
+      triggerProcessing(id);
+    }
   };
 
   const deleteItem = async (id: string) => {
@@ -121,6 +158,19 @@ export default function AgentKnowledgeBase({ agentId, userId }: Props) {
       case "document": return <BookOpen className="h-4 w-4" />;
       case "website": return <Globe className="h-4 w-4" />;
       default: return <FileText className="h-4 w-4" />;
+    }
+  };
+
+  const statusBadge = (status: string | null) => {
+    switch (status) {
+      case "processing":
+        return <Badge variant="secondary" className="text-xs gap-1"><Loader2 className="h-3 w-3 animate-spin" />Processing</Badge>;
+      case "completed":
+        return <Badge variant="default" className="text-xs gap-1 bg-green-600"><CheckCircle2 className="h-3 w-3" />Ready</Badge>;
+      case "failed":
+        return <Badge variant="destructive" className="text-xs gap-1"><XCircle className="h-3 w-3" />Failed</Badge>;
+      default:
+        return <Badge variant="outline" className="text-xs gap-1"><Loader2 className="h-3 w-3 animate-spin" />Pending</Badge>;
     }
   };
 
@@ -213,7 +263,10 @@ export default function AgentKnowledgeBase({ agentId, userId }: Props) {
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">{typeIcon(item.type)}</div>
                   <div>
                     <p className="font-medium text-sm">{item.title}</p>
-                    <Badge variant="outline" className="text-xs">{item.type}</Badge>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <Badge variant="outline" className="text-xs">{item.type}</Badge>
+                      {statusBadge(item.processing_status)}
+                    </div>
                   </div>
                 </div>
                 <Button variant="ghost" size="icon" onClick={() => deleteItem(item.id)}>
