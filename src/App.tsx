@@ -19,6 +19,7 @@ import Webhooks from "./pages/Webhooks";
 import ScheduledCalls from "./pages/ScheduledCalls";
 import CustomTools from "./pages/CustomTools";
 import CalendarIntegrations from "./pages/CalendarIntegrations";
+import Support from "./pages/Support";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -46,6 +47,7 @@ const App = () => (
             
             <Route path="/custom-tools" element={<ProtectedRoute><CustomTools /></ProtectedRoute>} />
             <Route path="/calendar-integrations" element={<ProtectedRoute><CalendarIntegrations /></ProtectedRoute>} />
+            <Route path="/support" element={<ProtectedRoute><Support /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><UserSettings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
