@@ -180,6 +180,19 @@ export default function KnowledgeBase() {
 
   const agentName = (agId: string) => agents.find((a) => a.id === agId)?.name || "Unknown";
 
+  const statusBadge = (status: string | null) => {
+    switch (status) {
+      case "processing":
+        return <Badge variant="secondary" className="text-xs gap-1"><Loader2 className="h-3 w-3 animate-spin" />Processing</Badge>;
+      case "completed":
+        return <Badge variant="default" className="text-xs gap-1 bg-green-600"><CheckCircle2 className="h-3 w-3" />Ready</Badge>;
+      case "failed":
+        return <Badge variant="destructive" className="text-xs gap-1"><XCircle className="h-3 w-3" />Failed</Badge>;
+      default:
+        return <Badge variant="outline" className="text-xs gap-1"><Loader2 className="h-3 w-3 animate-spin" />Pending</Badge>;
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-in">
