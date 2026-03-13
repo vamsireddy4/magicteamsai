@@ -448,12 +448,15 @@ export default function AgentForm() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <p className="text-sm text-muted-foreground">
-                      Add phone numbers the AI agent can transfer calls to. The agent will offer to transfer when appropriate.
+                      Add phone numbers the AI agent can transfer calls to. Numbers are tried in order — if the first person is busy or doesn't answer, the call automatically forwards to the next.
                     </p>
                     {forwardingNumbers.length > 0 && (
                       <div className="space-y-2">
-                        {forwardingNumbers.map(fwd => (
+                        {forwardingNumbers.map((fwd, index) => (
                           <div key={fwd.id} className="flex items-center gap-3 rounded-md border p-3">
+                            <div className="flex items-center justify-center h-8 w-8 rounded-full bg-primary/10 text-primary text-sm font-bold shrink-0">
+                              {index + 1}
+                            </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium truncate">{fwd.phone_number}</p>
                               {fwd.label && <p className="text-xs text-muted-foreground">{fwd.label}</p>}
@@ -473,12 +476,14 @@ export default function AgentForm() {
                       <Input placeholder="Label (e.g. Sales)" value={newFwdLabel} onChange={e => setNewFwdLabel(e.target.value)} className="w-32 shrink-0" />
                       <Input placeholder="+1234567890" value={newFwdNumber} onChange={e => setNewFwdNumber(e.target.value)} className="flex-1" />
                       <Button type="button" variant="outline" size="icon" className="shrink-0" disabled={!newFwdNumber.trim()} onClick={async () => {
+                        const nextPriority = forwardingNumbers.length > 0 ? Math.max(...forwardingNumbers.map(f => f.priority)) + 1 : 0;
                         const { data: inserted, error } = await supabase.from("call_forwarding_numbers").insert({
                           agent_id: id,
                           user_id: user.id,
                           phone_number: newFwdNumber.trim(),
                           label: newFwdLabel.trim() || null,
-                        }).select("id, phone_number, label").single();
+                          priority: nextPriority,
+                        }).select("id, phone_number, label, priority").single();
                         if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
                         if (inserted) setForwardingNumbers(prev => [...prev, inserted]);
                         setNewFwdNumber("");
