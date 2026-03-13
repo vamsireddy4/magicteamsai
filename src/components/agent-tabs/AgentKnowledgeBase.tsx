@@ -37,6 +37,7 @@ export default function AgentKnowledgeBase({ agentId, userId }: Props) {
   const [items, setItems] = useState<KBItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [viewItem, setViewItem] = useState<KBItem | null>(null);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -257,7 +258,7 @@ export default function AgentKnowledgeBase({ agentId, userId }: Props) {
       ) : (
         <div className="space-y-2">
           {items.map(item => (
-            <Card key={item.id}>
+            <Card key={item.id} className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setViewItem(item)}>
               <CardContent className="flex items-center justify-between p-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">{typeIcon(item.type)}</div>
@@ -269,7 +270,7 @@ export default function AgentKnowledgeBase({ agentId, userId }: Props) {
                     </div>
                   </div>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => deleteItem(item.id)}>
+                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}>
                   <Trash2 className="h-4 w-4 text-muted-foreground" />
                 </Button>
               </CardContent>
@@ -277,6 +278,43 @@ export default function AgentKnowledgeBase({ agentId, userId }: Props) {
           ))}
         </div>
       )}
+
+      {/* View Knowledge Item Dialog */}
+      <Dialog open={!!viewItem} onOpenChange={(open) => !open && setViewItem(null)}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {viewItem && typeIcon(viewItem.type)}
+              {viewItem?.title}
+            </DialogTitle>
+          </DialogHeader>
+          {viewItem && (
+            <div className="space-y-4 overflow-y-auto flex-1 pt-2">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">{viewItem.type}</Badge>
+                {statusBadge(viewItem.processing_status)}
+                {viewItem.website_url && (
+                  <a href={viewItem.website_url.startsWith("http") ? viewItem.website_url : `https://${viewItem.website_url}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline truncate max-w-[300px]">
+                    {viewItem.website_url}
+                  </a>
+                )}
+              </div>
+              <Separator />
+              {viewItem.content ? (
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Extracted Content</p>
+                  <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed text-foreground">{viewItem.content}</pre>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                  <Loader2 className="h-6 w-6 animate-spin mb-2" />
+                  <p className="text-sm">Content is still being processed...</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
