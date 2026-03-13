@@ -77,16 +77,27 @@ export default function KnowledgeBase() {
     setWebsiteUrl("");
   };
 
+  const triggerProcessing = async (itemId: string) => {
+    try {
+      const { error } = await supabase.functions.invoke("process-knowledge", {
+        body: { knowledge_item_id: itemId },
+      });
+      if (error) console.error("Processing error:", error);
+    } catch (e) {
+      console.error("Failed to trigger processing:", e);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!user || !agentId || !name) {
       toast({ title: "Missing fields", description: "Name and Agent are required.", variant: "destructive" });
       return;
     }
     setSaving(true);
+    const insertedIds: string[] = [];
 
     if (contentTab === "files" && files.length > 0) {
       for (const file of files) {
-        const ext = file.name.split(".").pop();
         const path = `${user.id}/${Date.now()}-${file.name}`;
         const { error: uploadError } = await supabase.storage
           .from("knowledge-documents")
@@ -96,58 +107,39 @@ export default function KnowledgeBase() {
           setSaving(false);
           return;
         }
-        const { error } = await supabase.from("knowledge_base_items").insert({
-          agent_id: agentId,
-          user_id: user.id,
-          type: "document",
-          title: name,
-          content: description || null,
-          file_path: path,
-        });
-        if (error) {
-          toast({ title: "Error", description: error.message, variant: "destructive" });
-          setSaving(false);
-          return;
-        }
+        const { data, error } = await supabase.from("knowledge_base_items").insert({
+          agent_id: agentId, user_id: user.id, type: "document", title: name, content: description || null, file_path: path,
+        }).select("id").single();
+        if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); setSaving(false); return; }
+        if (data) insertedIds.push(data.id);
       }
     } else if (contentTab === "urls" && websiteUrl) {
-      const { error } = await supabase.from("knowledge_base_items").insert({
-        agent_id: agentId,
-        user_id: user.id,
-        type: "website",
-        title: name,
-        content: description || null,
-        website_url: websiteUrl,
-      });
-      if (error) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
-        setSaving(false);
-        return;
-      }
+      const { data, error } = await supabase.from("knowledge_base_items").insert({
+        agent_id: agentId, user_id: user.id, type: "website", title: name, content: description || null, website_url: websiteUrl,
+      }).select("id").single();
+      if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); setSaving(false); return; }
+      if (data) insertedIds.push(data.id);
     } else if (description) {
-      const { error } = await supabase.from("knowledge_base_items").insert({
-        agent_id: agentId,
-        user_id: user.id,
-        type: "text",
-        title: name,
-        content: description,
-      });
-      if (error) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
-        setSaving(false);
-        return;
-      }
+      const { data, error } = await supabase.from("knowledge_base_items").insert({
+        agent_id: agentId, user_id: user.id, type: "text", title: name, content: description,
+      }).select("id").single();
+      if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); setSaving(false); return; }
+      if (data) insertedIds.push(data.id);
     } else {
       toast({ title: "Missing content", description: "Please upload files, add a URL, or enter a description.", variant: "destructive" });
       setSaving(false);
       return;
     }
 
-    toast({ title: "Knowledge base created" });
+    toast({ title: "Knowledge base created", description: "AI is extracting content..." });
     resetForm();
     setDialogOpen(false);
     setSaving(false);
     fetchData();
+
+    for (const id of insertedIds) {
+      triggerProcessing(id);
+    }
   };
 
   const deleteItem = async (id: string) => {
