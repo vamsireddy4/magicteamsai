@@ -220,6 +220,7 @@ Deno.serve(async (req) => {
           ],
         },
       });
+    }
 
     const aiProvider = (agent as any).ai_provider || "ultravox";
     let streamUrl = "";
