@@ -128,7 +128,9 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
     setViewTool(tool);
     setViewTab("config");
     setAvailabilityData(null);
-    setAvailabilityDate(new Date().toISOString().split("T")[0]);
+    setAvailabilityFromDate(new Date().toISOString().split("T")[0]);
+    const d = new Date(); d.setDate(d.getDate() + 7);
+    setAvailabilityToDate(d.toISOString().split("T")[0]);
   };
 
   const toggleTool = async (id: string, current: boolean) => {
