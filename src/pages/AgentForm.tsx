@@ -154,12 +154,59 @@ export default function AgentForm() {
     if (!user) return;
     setLoading(true);
     const payload = { ...form, user_id: user.id };
-    const { error } = isEditing
-      ? await supabase.from("agents").update(payload).eq("id", id)
-      : await supabase.from("agents").insert(payload);
+
+    let savedAgentId = id;
+
+    if (isEditing) {
+      const { error } = await supabase.from("agents").update(payload).eq("id", id);
+      if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); setLoading(false); return; }
+    } else {
+      const { data: newAgent, error } = await supabase.from("agents").insert(payload).select("id").single();
+      if (error || !newAgent) { toast({ title: "Error", description: error?.message || "Failed to create agent", variant: "destructive" }); setLoading(false); return; }
+      savedAgentId = newAgent.id;
+    }
+
+    // Sync with Ultravox backend
+    if (form.ai_provider === "ultravox" && savedAgentId) {
+      try {
+        const { data: syncData, error: syncError } = await supabase.functions.invoke("sync-ultravox-agent", {
+          body: { agent_id: savedAgentId },
+        });
+        if (syncError) {
+          console.error("Ultravox sync error:", syncError);
+          toast({ title: "Warning", description: "Agent saved but failed to sync with backend. You can retry from the agent page.", variant: "destructive" });
+        } else if (syncData?.ultravox_agent_id) {
+          setUltravoxAgentId(syncData.ultravox_agent_id);
+        }
+      } catch (err) {
+        console.error("Ultravox sync error:", err);
+      }
+    }
+
     setLoading(false);
-    if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
-    else { toast({ title: isEditing ? "Agent updated" : "Agent created" }); navigate("/agents"); }
+    toast({ title: isEditing ? "Agent updated" : "Agent created" });
+    if (!isEditing) navigate("/agents");
+  };
+
+  const handleSyncUltravox = async () => {
+    if (!id || !user) return;
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-ultravox-agent", {
+        body: { agent_id: id },
+      });
+      if (error) throw error;
+      if (data?.ultravox_agent_id) {
+        setUltravoxAgentId(data.ultravox_agent_id);
+        toast({ title: "Synced with backend", description: `Bot ID: ${data.ultravox_agent_id}` });
+      } else if (data?.skipped) {
+        toast({ title: "Skipped", description: "This agent doesn't use Ultravox" });
+      }
+    } catch (err: any) {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const allVoices = useMemo(() => {
