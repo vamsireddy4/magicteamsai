@@ -173,7 +173,7 @@ export default function AgentWebhooks({ agentId, agentName, userId }: Props) {
                 <Select value={form.scope} onValueChange={(v) => setForm({ ...form, scope: v as "agent" | "global" })}>
                   <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="agent">This Agent</SelectItem>
+                    <SelectItem value="agent">{agentName}</SelectItem>
                     <SelectItem value="global">Global</SelectItem>
                   </SelectContent>
                 </Select>
