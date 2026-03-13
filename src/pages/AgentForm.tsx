@@ -254,10 +254,10 @@ export default function AgentForm() {
                     ) : models.length > 0 ? (
                       <Select value={form.model} onValueChange={val => setForm({ ...form, model: val })}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>{models.map(m => <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>)}</SelectContent>
+                        <SelectContent>{models.map(m => <SelectItem key={m.name} value={m.name}>{m.name.replace('fixie-ai/ultravox-', 'MagicTeams ')}</SelectItem>)}</SelectContent>
                       </Select>
                     ) : (
-                      <Input value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} placeholder="fixie-ai/ultravox-v0.7" />
+                      <Input value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} placeholder="MagicTeams v0.7" />
                     )}
                   </div>
 
