@@ -20,6 +20,7 @@ interface CallLog {
   started_at: string;
   ended_at: string | null;
   transcript: Json | null;
+  summary: string | null;
   ultravox_call_id: string | null;
   twilio_call_sid: string | null;
   agents: { name: string } | null;
