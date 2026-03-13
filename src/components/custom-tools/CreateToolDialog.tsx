@@ -19,14 +19,11 @@ interface Agent {
   name: string;
 }
 
-const PARAM_TYPES = ["string", "number", "integer", "boolean"];
-
 interface DynamicParam {
   name: string;
   location: string;
   required: boolean;
-  type: string;
-  description: string;
+  schema: string;
 }
 
 interface StaticParam {
@@ -70,7 +67,7 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
   };
 
   const addDynamicParam = () => {
-    setDynamicParams([...dynamicParams, { name: "", location: "Body", required: false, type: "string", description: "" }]);
+    setDynamicParams([...dynamicParams, { name: "", location: "Body", required: false, schema: "{}" }]);
   };
 
   const removeDynamicParam = (index: number) => {
@@ -105,7 +102,8 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
     setSaving(true);
 
     const parameters = dynamicParams.map((p) => {
-      const schemaObj = { type: p.type, description: p.description };
+      let schemaObj = {};
+      try { schemaObj = JSON.parse(p.schema); } catch {}
       return { name: p.name, location: p.location.toLowerCase(), required: p.required, schema: schemaObj };
     });
 
@@ -209,7 +207,7 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
                   <p className="font-medium text-sm">Parameter {i + 1}</p>
                   <Button variant="ghost" size="sm" className="text-destructive h-auto p-0" onClick={() => removeDynamicParam(i)}>Remove</Button>
                 </div>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <Label className="text-xs">Name</Label>
                     <Input value={param.name} onChange={(e) => updateDynamicParam(i, "name", e.target.value)} />
@@ -223,23 +221,14 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Type</Label>
-                    <Select value={param.type} onValueChange={(v) => updateDynamicParam(i, "type", v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {PARAM_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Checkbox checked={param.required} onCheckedChange={(v) => updateDynamicParam(i, "required", !!v)} id={`req-${i}`} />
                   <Label htmlFor={`req-${i}`} className="text-sm">Required</Label>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Description</Label>
-                  <Input placeholder="Describe what this parameter is for" value={param.description} onChange={(e) => updateDynamicParam(i, "description", e.target.value)} />
+                  <Label className="text-xs">Schema (JSON)</Label>
+                  <Textarea className="font-mono text-xs" value={param.schema} onChange={(e) => updateDynamicParam(i, "schema", e.target.value)} rows={3} />
                 </div>
               </div>
             ))}
