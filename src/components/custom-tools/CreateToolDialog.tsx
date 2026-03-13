@@ -61,6 +61,11 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
 
   // Parameters
   const [params, setParams] = useState<ToolParam[]>([]);
+
+  // Advanced
+  const [agentEndBehavior, setAgentEndBehavior] = useState("Default");
+  const [staticResponseEnabled, setStaticResponseEnabled] = useState(false);
+  const [staticResponseMessage, setStaticResponseMessage] = useState("");
   const [addingParam, setAddingParam] = useState(false);
   const [editParam, setEditParam] = useState<ToolParam>({
     paramType: "Dynamic",
