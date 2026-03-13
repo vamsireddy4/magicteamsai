@@ -370,7 +370,7 @@ export default function AgentForm() {
               <TabsContent value="tools" className="mt-6 space-y-6">
                 <Card>
                   <CardHeader><CardTitle>Appointment Tools</CardTitle></CardHeader>
-                  <CardContent><AgentCalendarIntegrations agentId={id} userId={user.id} /></CardContent>
+                  <CardContent><AgentAppointmentTools agentId={id} userId={user.id} /></CardContent>
                 </Card>
                 <Card>
                   <CardHeader><CardTitle>Custom Tools</CardTitle></CardHeader>
