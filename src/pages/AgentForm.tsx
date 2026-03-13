@@ -14,7 +14,7 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Loader2, Search, Settings, BookOpen, Wrench, Webhook } from "lucide-react";
+import { ArrowLeft, Loader2, Search, Settings, BookOpen, Wrench, Webhook, Copy, RefreshCw } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import AgentKnowledgeBase from "@/components/agent-tabs/AgentKnowledgeBase";
 import AgentCustomTools from "@/components/agent-tabs/AgentCustomTools";
@@ -93,7 +93,8 @@ export default function AgentForm() {
   const [voiceSearch, setVoiceSearch] = useState("");
   const [useCustomVoice, setUseCustomVoice] = useState(false);
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
-
+  const [ultravoxAgentId, setUltravoxAgentId] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [form, setForm] = useState({
     name: "",
     system_prompt: "You are a helpful and friendly receptionist. Answer questions about the business, take messages, and help callers with their needs.",
@@ -134,6 +135,7 @@ export default function AgentForm() {
             model: (data as any).model || "fixie-ai/ultravox-v0.7",
             ai_provider: (data as any).ai_provider || "ultravox",
           });
+          setUltravoxAgentId((data as any).ultravox_agent_id || null);
         }
       });
     }
@@ -152,12 +154,59 @@ export default function AgentForm() {
     if (!user) return;
     setLoading(true);
     const payload = { ...form, user_id: user.id };
-    const { error } = isEditing
-      ? await supabase.from("agents").update(payload).eq("id", id)
-      : await supabase.from("agents").insert(payload);
+
+    let savedAgentId = id;
+
+    if (isEditing) {
+      const { error } = await supabase.from("agents").update(payload).eq("id", id);
+      if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); setLoading(false); return; }
+    } else {
+      const { data: newAgent, error } = await supabase.from("agents").insert(payload).select("id").single();
+      if (error || !newAgent) { toast({ title: "Error", description: error?.message || "Failed to create agent", variant: "destructive" }); setLoading(false); return; }
+      savedAgentId = newAgent.id;
+    }
+
+    // Sync with Ultravox backend
+    if (form.ai_provider === "ultravox" && savedAgentId) {
+      try {
+        const { data: syncData, error: syncError } = await supabase.functions.invoke("sync-ultravox-agent", {
+          body: { agent_id: savedAgentId },
+        });
+        if (syncError) {
+          console.error("Ultravox sync error:", syncError);
+          toast({ title: "Warning", description: "Agent saved but failed to sync with backend. You can retry from the agent page.", variant: "destructive" });
+        } else if (syncData?.ultravox_agent_id) {
+          setUltravoxAgentId(syncData.ultravox_agent_id);
+        }
+      } catch (err) {
+        console.error("Ultravox sync error:", err);
+      }
+    }
+
     setLoading(false);
-    if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
-    else { toast({ title: isEditing ? "Agent updated" : "Agent created" }); navigate("/agents"); }
+    toast({ title: isEditing ? "Agent updated" : "Agent created" });
+    if (!isEditing) navigate("/agents");
+  };
+
+  const handleSyncUltravox = async () => {
+    if (!id || !user) return;
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-ultravox-agent", {
+        body: { agent_id: id },
+      });
+      if (error) throw error;
+      if (data?.ultravox_agent_id) {
+        setUltravoxAgentId(data.ultravox_agent_id);
+        toast({ title: "Synced with backend", description: `Bot ID: ${data.ultravox_agent_id}` });
+      } else if (data?.skipped) {
+        toast({ title: "Skipped", description: "This agent doesn't use Ultravox" });
+      }
+    } catch (err: any) {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const allVoices = useMemo(() => {
@@ -232,6 +281,31 @@ export default function AgentForm() {
               <Card>
                 <CardHeader><CardTitle>AI Provider & Model</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
+                  {isEditing && form.ai_provider === "ultravox" && (
+                    <div className="rounded-lg border bg-muted/50 p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-semibold">Bot ID</Label>
+                        <Button type="button" variant="outline" size="sm" onClick={handleSyncUltravox} disabled={syncing}>
+                          {syncing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                          {syncing ? "Syncing..." : ultravoxAgentId ? "Re-sync" : "Sync Now"}
+                        </Button>
+                      </div>
+                      {ultravoxAgentId ? (
+                        <div className="flex items-center gap-2">
+                          <code className="text-xs bg-background px-2 py-1 rounded border flex-1 truncate">{ultravoxAgentId}</code>
+                          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => {
+                            navigator.clipboard.writeText(ultravoxAgentId);
+                            toast({ title: "Bot ID copied" });
+                          }}>
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Not synced yet. Save the agent or click "Sync Now" to generate a Bot ID.</p>
+                      )}
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <Label>AI Provider</Label>
                     <Select value={form.ai_provider} onValueChange={val => {

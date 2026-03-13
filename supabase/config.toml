@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.process-knowledge]
 verify_jwt = false
+
+[functions.sync-ultravox-agent]
+verify_jwt = false
