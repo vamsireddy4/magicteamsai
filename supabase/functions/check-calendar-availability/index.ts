@@ -15,7 +15,6 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get auth user
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "No authorization header" }), {
@@ -37,7 +36,6 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { provider, integration_id, test, date, duration_minutes = 30 } = body;
 
-    // Fetch the integration
     const { data: integration, error: intError } = await supabase
       .from("calendar_integrations")
       .select("*")
@@ -85,7 +83,6 @@ async function handleGoogleCalendar(integration: any, opts: any) {
   const calendarId = integration.calendar_id || "primary";
 
   if (opts.test) {
-    // Test: fetch calendar metadata
     const res = await fetch(
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}?key=${apiKey}`
     );
@@ -97,7 +94,6 @@ async function handleGoogleCalendar(integration: any, opts: any) {
     return { success: true, calendar: data.summary };
   }
 
-  // Check availability: freebusy query
   const timeMin = opts.date || new Date().toISOString();
   const timeMax = new Date(new Date(timeMin).getTime() + 24 * 60 * 60 * 1000).toISOString();
 
@@ -119,41 +115,89 @@ async function handleGoogleCalendar(integration: any, opts: any) {
   };
 }
 
+// Cal.com v2 API
+const CAL_V2_HEADERS = {
+  "Content-Type": "application/json",
+  "cal-api-version": "2024-08-13",
+};
+
 async function handleCalCom(integration: any, opts: any) {
   const apiKey = integration.api_key;
-  const eventTypeId = integration.calendar_id;
+  const eventTypeId = integration.calendar_id; // numeric event type ID
+  const config = integration.config || {};
+  const username = config.username || "";
+
+  const authHeaders = {
+    ...CAL_V2_HEADERS,
+    Authorization: `Bearer ${apiKey}`,
+  };
 
   if (opts.test) {
-    const res = await fetch("https://api.cal.com/v1/me?apiKey=" + apiKey);
+    // v2 /me endpoint to verify credentials
+    const res = await fetch("https://api.cal.com/v2/me", {
+      headers: authHeaders,
+    });
     if (!res.ok) {
       const errBody = await res.text();
-      console.error("Cal.com test error:", errBody);
-      throw new Error(`Cal.com API error: ${res.statusText} - ${errBody}`);
+      console.error("Cal.com v2 test error:", res.status, errBody);
+      throw new Error(`Cal.com API error (${res.status}): ${errBody}`);
     }
     const data = await res.json();
-    return { success: true, user: data.user?.name || data.user?.email };
+    return { success: true, user: data.data?.name || data.data?.email || "Connected" };
   }
 
-  // Check availability
-  const dateFrom = opts.date || new Date().toISOString().split("T")[0];
-  const dateTo = dateFrom;
-  
-  // Build URL with proper params - eventTypeId is optional for Cal.com v1
-  let url = `https://api.cal.com/v1/availability?apiKey=${apiKey}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
-  if (eventTypeId) {
-    url += `&eventTypeId=${eventTypeId}`;
+  // Check available slots using v2 /slots endpoint
+  const startDate = opts.date || new Date().toISOString().split("T")[0];
+  // Query slots for 7 days ahead to give the agent more options
+  const endDateObj = new Date(startDate);
+  endDateObj.setDate(endDateObj.getDate() + 7);
+  const endDate = endDateObj.toISOString().split("T")[0];
+
+  // Build query params for /v2/slots/available
+  const params = new URLSearchParams({
+    startTime: `${startDate}T00:00:00.000Z`,
+    endTime: `${endDate}T23:59:59.000Z`,
+  });
+
+  // eventTypeId is required for slots endpoint
+  if (eventTypeId && !isNaN(Number(eventTypeId))) {
+    params.set("eventTypeId", eventTypeId);
+  } else if (eventTypeId && username) {
+    // If it's a slug, use eventTypeSlug + username
+    params.set("eventTypeSlug", eventTypeId);
+    params.set("usernameList", username);
+  } else {
+    throw new Error("Cal.com requires a valid Event Type ID (numeric) to check availability. Please update your calendar integration settings.");
   }
 
-  console.log(`Cal.com availability request: dateFrom=${dateFrom}, dateTo=${dateTo}, eventTypeId=${eventTypeId || "none"}`);
+  const url = `https://api.cal.com/v2/slots/available?${params.toString()}`;
+  console.log("Cal.com v2 slots request:", url);
 
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: authHeaders });
   if (!res.ok) {
     const errBody = await res.text();
-    console.error("Cal.com availability error:", res.status, errBody);
+    console.error("Cal.com v2 slots error:", res.status, errBody);
     throw new Error(`Cal.com API error (${res.status}): ${errBody}`);
   }
+
   const data = await res.json();
-  return { success: true, slots: data.slots || data.busy || [] };
+  // v2 returns { status: "success", data: { slots: { "2024-01-01": [...] } } }
+  const slotsObj = data.data?.slots || data.slots || {};
+  
+  // Flatten slots into a simple array for the AI agent
+  const flatSlots: any[] = [];
+  for (const [dateKey, daySlots] of Object.entries(slotsObj)) {
+    if (Array.isArray(daySlots)) {
+      for (const slot of daySlots) {
+        flatSlots.push({
+          date: dateKey,
+          time: (slot as any).time || (slot as any).start,
+        });
+      }
+    }
+  }
+
+  return { success: true, slots: flatSlots };
 }
 
 async function handleGoHighLevel(integration: any, opts: any) {
@@ -171,7 +215,6 @@ async function handleGoHighLevel(integration: any, opts: any) {
     return { success: true, calendar: data.calendar?.name || data.name };
   }
 
-  // Check free slots
   const startDate = opts.date ? new Date(opts.date).getTime() : Date.now();
   const endDate = startDate + 24 * 60 * 60 * 1000;
   const res = await fetch(
