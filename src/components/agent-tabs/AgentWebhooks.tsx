@@ -26,10 +26,11 @@ interface WebhookRow {
 
 interface Props {
   agentId: string;
+  agentName: string;
   userId: string;
 }
 
-export default function AgentWebhooks({ agentId, userId }: Props) {
+export default function AgentWebhooks({ agentId, agentName, userId }: Props) {
   const { toast } = useToast();
   const [webhooks, setWebhooks] = useState<WebhookRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -172,7 +173,7 @@ export default function AgentWebhooks({ agentId, userId }: Props) {
                 <Select value={form.scope} onValueChange={(v) => setForm({ ...form, scope: v as "agent" | "global" })}>
                   <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="agent">This Agent</SelectItem>
+                    <SelectItem value="agent">{agentName}</SelectItem>
                     <SelectItem value="global">Global</SelectItem>
                   </SelectContent>
                 </Select>
