@@ -1,0 +1,1 @@
+ALTER TABLE public.agents ADD COLUMN ultravox_agent_id text DEFAULT NULL;

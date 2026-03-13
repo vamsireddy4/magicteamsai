@@ -87,6 +87,7 @@ export type Database = {
           phone_number_id: string | null
           system_prompt: string
           temperature: number
+          ultravox_agent_id: string | null
           updated_at: string
           user_id: string
           voice: string
@@ -104,6 +105,7 @@ export type Database = {
           phone_number_id?: string | null
           system_prompt?: string
           temperature?: number
+          ultravox_agent_id?: string | null
           updated_at?: string
           user_id: string
           voice?: string
@@ -121,6 +123,7 @@ export type Database = {
           phone_number_id?: string | null
           system_prompt?: string
           temperature?: number
+          ultravox_agent_id?: string | null
           updated_at?: string
           user_id?: string
           voice?: string
