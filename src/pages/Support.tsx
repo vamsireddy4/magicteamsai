@@ -7,26 +7,26 @@ const supportCards = [
     title: "Feedback",
     badge: "New",
     description: "Share your thoughts, suggestions, and ideas to help improve Magic Teams",
-    href: "#",
+    href: "https://magicteamsai.userjot.com/board/all?cursor=1&order=top&limit=10",
   },
   {
     icon: MapPin,
     title: "Product Roadmap",
     description: "See what features and improvements are coming to Magic Teams",
-    href: "#",
+    href: "https://magicteamsai.userjot.com/roadmap?cursor=1&limit=10",
   },
   {
     icon: Bell,
     title: "Product Updates",
     description: "Stay informed about the latest changes and improvements",
-    href: "#",
+    href: "https://magicteamsai.userjot.com/updates?cursor=1&limit=10",
   },
   {
     icon: MessageCircle,
     title: "WhatsApp Support",
     badge: "24/7",
     description: "Get instant support from our team via WhatsApp",
-    href: "#",
+    href: "https://api.whatsapp.com/send/?phone=%2B971547857926&text&type=phone_number&app_absent=0",
   },
 ];
 
@@ -69,10 +69,10 @@ export default function Support() {
             Need immediate assistance? Our support team is available 24/7
           </p>
           <a
-            href="#"
+            href="https://api.whatsapp.com/send/?phone=%2B971547857926&text&type=phone_number&app_absent=0"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background transition-opacity hover:opacity-90"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
           >
             <MessageCircle className="h-4 w-4" />
             Contact Support on WhatsApp
