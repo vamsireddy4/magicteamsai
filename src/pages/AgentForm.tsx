@@ -257,7 +257,7 @@ export default function AgentForm() {
                         <SelectContent>{models.map(m => <SelectItem key={m.name} value={m.name}>{m.name.replace('fixie-ai/ultravox-', 'MagicTeams ')}</SelectItem>)}</SelectContent>
                       </Select>
                     ) : (
-                      <Input value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} <Input value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} placeholder="MagicTeams v0.7" /> />
+                      <Input value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} placeholder="MagicTeams v0.7" />
                     )}
                   </div>
 
