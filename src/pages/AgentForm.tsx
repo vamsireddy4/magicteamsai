@@ -183,14 +183,31 @@ export default function AgentForm() {
         const { data: syncData, error: syncError } = await supabase.functions.invoke("sync-ultravox-agent", {
           body: { agent_id: savedAgentId },
         });
-        if (syncError) {
-          console.error("Ultravox sync error:", syncError);
-          toast({ title: "Warning", description: "Agent saved but failed to sync with backend. You can retry from the agent page.", variant: "destructive" });
+        if (syncError || syncData?.error) {
+          const errMsg = syncError?.message || syncData?.error || "Unknown sync error";
+          console.error("Ultravox sync error:", errMsg, syncData?.details);
+          
+          // Rollback: delete the newly created agent if sync failed on creation
+          if (!isEditing && savedAgentId) {
+            await supabase.from("agents").delete().eq("id", savedAgentId);
+            toast({ title: "Agent creation failed", description: `Backend sync failed: ${errMsg}. The agent was not saved. Please try again.`, variant: "destructive" });
+            setLoading(false);
+            return;
+          }
+          
+          toast({ title: "Warning", description: `Agent saved but backend sync failed: ${errMsg}`, variant: "destructive" });
         } else if (syncData?.ultravox_agent_id) {
           setUltravoxAgentId(syncData.ultravox_agent_id);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Ultravox sync error:", err);
+        // Rollback on creation
+        if (!isEditing && savedAgentId) {
+          await supabase.from("agents").delete().eq("id", savedAgentId);
+          toast({ title: "Agent creation failed", description: "Backend sync failed. The agent was not saved. Please try again.", variant: "destructive" });
+          setLoading(false);
+          return;
+        }
       }
     }
 
