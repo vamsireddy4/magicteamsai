@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.handle-telnyx-webhook]
 verify_jwt = false
+
+[functions.process-knowledge]
+verify_jwt = false

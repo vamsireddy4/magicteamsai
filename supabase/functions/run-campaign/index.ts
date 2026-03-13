@@ -21,7 +21,7 @@ async function placeCall(
     systemPrompt += "\n\n--- KNOWLEDGE BASE ---\n";
     for (const item of kbItems) {
       if (item.content) systemPrompt += `\n## ${item.title}\n${item.content}\n`;
-      if (item.website_url) systemPrompt += `\n## ${item.title}\nRefer to: ${item.website_url}\n`;
+      else if (item.website_url) systemPrompt += `\n## ${item.title}\nRefer to: ${item.website_url}\n`;
     }
   }
 

@@ -123,8 +123,7 @@ Deno.serve(async (req) => {
       for (const item of kbItems) {
         if (item.content) {
           systemPrompt += `\n## ${item.title}\n${item.content}\n`;
-        }
-        if (item.website_url) {
+        } else if (item.website_url) {
           systemPrompt += `\n## ${item.title}\nRefer to: ${item.website_url}\n`;
         }
       }

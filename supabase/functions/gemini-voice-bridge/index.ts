@@ -207,7 +207,7 @@ Deno.serve((req) => {
           prompt += "\n\n--- KNOWLEDGE BASE ---\n";
           for (const item of kbItems) {
             if (item.content) prompt += `\n## ${item.title}\n${item.content}\n`;
-            if (item.website_url) prompt += `\n## ${item.title}\nRefer to: ${item.website_url}\n`;
+            else if (item.website_url) prompt += `\n## ${item.title}\nRefer to: ${item.website_url}\n`;
           }
         }
       }

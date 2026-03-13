@@ -1,0 +1,1 @@
+ALTER TABLE public.knowledge_base_items ADD COLUMN processing_status text DEFAULT 'pending';

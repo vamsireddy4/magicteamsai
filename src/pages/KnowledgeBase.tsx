@@ -11,16 +11,30 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { Plus, BookOpen, FileText, Globe, Trash2, MessageSquare, Upload, Link } from "lucide-react";
+import { Plus, BookOpen, FileText, Globe, Trash2, MessageSquare, Upload, Link, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Tables } from "@/integrations/supabase/types";
 
 type ContentTab = "files" | "urls";
 
+interface KBItem {
+  id: string;
+  agent_id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  content: string | null;
+  file_path: string | null;
+  website_url: string | null;
+  processing_status: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export default function KnowledgeBase() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [items, setItems] = useState<Tables<"knowledge_base_items">[]>([]);
+  const [items, setItems] = useState<KBItem[]>([]);
   const [agents, setAgents] = useState<Tables<"agents">[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -40,7 +54,7 @@ export default function KnowledgeBase() {
       supabase.from("knowledge_base_items").select("*").order("created_at", { ascending: false }),
       supabase.from("agents").select("*"),
     ]);
-    setItems(itemsRes.data || []);
+    setItems((itemsRes.data as KBItem[]) || []);
     setAgents(agentsRes.data || []);
     setLoading(false);
   };
@@ -63,16 +77,27 @@ export default function KnowledgeBase() {
     setWebsiteUrl("");
   };
 
+  const triggerProcessing = async (itemId: string) => {
+    try {
+      const { error } = await supabase.functions.invoke("process-knowledge", {
+        body: { knowledge_item_id: itemId },
+      });
+      if (error) console.error("Processing error:", error);
+    } catch (e) {
+      console.error("Failed to trigger processing:", e);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!user || !agentId || !name) {
       toast({ title: "Missing fields", description: "Name and Agent are required.", variant: "destructive" });
       return;
     }
     setSaving(true);
+    const insertedIds: string[] = [];
 
     if (contentTab === "files" && files.length > 0) {
       for (const file of files) {
-        const ext = file.name.split(".").pop();
         const path = `${user.id}/${Date.now()}-${file.name}`;
         const { error: uploadError } = await supabase.storage
           .from("knowledge-documents")
@@ -82,58 +107,39 @@ export default function KnowledgeBase() {
           setSaving(false);
           return;
         }
-        const { error } = await supabase.from("knowledge_base_items").insert({
-          agent_id: agentId,
-          user_id: user.id,
-          type: "document",
-          title: name,
-          content: description || null,
-          file_path: path,
-        });
-        if (error) {
-          toast({ title: "Error", description: error.message, variant: "destructive" });
-          setSaving(false);
-          return;
-        }
+        const { data, error } = await supabase.from("knowledge_base_items").insert({
+          agent_id: agentId, user_id: user.id, type: "document", title: name, content: description || null, file_path: path,
+        }).select("id").single();
+        if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); setSaving(false); return; }
+        if (data) insertedIds.push(data.id);
       }
     } else if (contentTab === "urls" && websiteUrl) {
-      const { error } = await supabase.from("knowledge_base_items").insert({
-        agent_id: agentId,
-        user_id: user.id,
-        type: "website",
-        title: name,
-        content: description || null,
-        website_url: websiteUrl,
-      });
-      if (error) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
-        setSaving(false);
-        return;
-      }
+      const { data, error } = await supabase.from("knowledge_base_items").insert({
+        agent_id: agentId, user_id: user.id, type: "website", title: name, content: description || null, website_url: websiteUrl,
+      }).select("id").single();
+      if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); setSaving(false); return; }
+      if (data) insertedIds.push(data.id);
     } else if (description) {
-      const { error } = await supabase.from("knowledge_base_items").insert({
-        agent_id: agentId,
-        user_id: user.id,
-        type: "text",
-        title: name,
-        content: description,
-      });
-      if (error) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
-        setSaving(false);
-        return;
-      }
+      const { data, error } = await supabase.from("knowledge_base_items").insert({
+        agent_id: agentId, user_id: user.id, type: "text", title: name, content: description,
+      }).select("id").single();
+      if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); setSaving(false); return; }
+      if (data) insertedIds.push(data.id);
     } else {
       toast({ title: "Missing content", description: "Please upload files, add a URL, or enter a description.", variant: "destructive" });
       setSaving(false);
       return;
     }
 
-    toast({ title: "Knowledge base created" });
+    toast({ title: "Knowledge base created", description: "AI is extracting content..." });
     resetForm();
     setDialogOpen(false);
     setSaving(false);
     fetchData();
+
+    for (const id of insertedIds) {
+      triggerProcessing(id);
+    }
   };
 
   const deleteItem = async (id: string) => {
@@ -173,6 +179,19 @@ export default function KnowledgeBase() {
   };
 
   const agentName = (agId: string) => agents.find((a) => a.id === agId)?.name || "Unknown";
+
+  const statusBadge = (status: string | null) => {
+    switch (status) {
+      case "processing":
+        return <Badge variant="secondary" className="text-xs gap-1"><Loader2 className="h-3 w-3 animate-spin" />Processing</Badge>;
+      case "completed":
+        return <Badge variant="default" className="text-xs gap-1 bg-green-600"><CheckCircle2 className="h-3 w-3" />Ready</Badge>;
+      case "failed":
+        return <Badge variant="destructive" className="text-xs gap-1"><XCircle className="h-3 w-3" />Failed</Badge>;
+      default:
+        return <Badge variant="outline" className="text-xs gap-1"><Loader2 className="h-3 w-3 animate-spin" />Pending</Badge>;
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -359,6 +378,7 @@ export default function KnowledgeBase() {
                       <p className="font-medium text-sm">{item.title}</p>
                       <div className="flex items-center gap-2 mt-0.5">
                         <Badge variant="outline" className="text-xs">{item.type}</Badge>
+                        {statusBadge(item.processing_status)}
                         <span className="text-xs text-muted-foreground">{agentName(item.agent_id)}</span>
                       </div>
                     </div>
