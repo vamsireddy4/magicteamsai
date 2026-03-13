@@ -69,10 +69,10 @@ export default function Support() {
             Need immediate assistance? Our support team is available 24/7
           </p>
           <a
-            href="#"
+            href="https://api.whatsapp.com/send/?phone=%2B971547857926&text&type=phone_number&app_absent=0"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background transition-opacity hover:opacity-90"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
           >
             <MessageCircle className="h-4 w-4" />
             Contact Support on WhatsApp
