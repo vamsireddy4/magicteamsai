@@ -19,6 +19,7 @@ import type { Tables } from "@/integrations/supabase/types";
 import AgentKnowledgeBase from "@/components/agent-tabs/AgentKnowledgeBase";
 import AgentCustomTools from "@/components/agent-tabs/AgentCustomTools";
 import AgentWebhooks from "@/components/agent-tabs/AgentWebhooks";
+import AgentCalendarIntegrations from "@/components/agent-tabs/AgentCalendarIntegrations";
 
 
 interface UltravoxVoice {
