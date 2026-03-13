@@ -121,6 +121,46 @@ const CAL_V2_HEADERS = {
   "cal-api-version": "2024-08-13",
 };
 
+async function handleCalComDirect(apiKey: string, opts: any) {
+  // Direct Cal.com calls using just the API key (no integration record needed)
+  const authHeaders = {
+    ...CAL_V2_HEADERS,
+    Authorization: `Bearer ${apiKey}`,
+  };
+
+  // Fetch username from /v2/me
+  const meRes = await fetch("https://api.cal.com/v2/me", { headers: authHeaders });
+  if (!meRes.ok) {
+    const errBody = await meRes.text();
+    console.error("Cal.com v2 /me error:", meRes.status, errBody);
+    throw new Error(`Cal.com API error (${meRes.status}): ${errBody}`);
+  }
+  const meData = await meRes.json();
+  const username = meData.data?.username || meData.data?.name || "";
+
+  // Fetch event types from /v2/event-types
+  const etRes = await fetch("https://api.cal.com/v2/event-types", { headers: authHeaders });
+  if (!etRes.ok) {
+    const errBody = await etRes.text();
+    console.error("Cal.com v2 /event-types error:", etRes.status, errBody);
+    throw new Error(`Cal.com API error (${etRes.status}): ${errBody}`);
+  }
+  const etData = await etRes.json();
+  const eventTypes = (etData.data || []).map((et: any) => ({
+    id: et.id,
+    title: et.title || et.slug,
+    slug: et.slug,
+    length: et.length,
+  }));
+
+  return {
+    success: true,
+    username,
+    user_name: meData.data?.name || meData.data?.email || "Connected",
+    event_types: eventTypes,
+  };
+}
+
 async function handleCalCom(integration: any, opts: any) {
   const apiKey = integration.api_key;
   const eventTypeId = integration.calendar_id; // numeric event type ID
@@ -133,13 +173,9 @@ async function handleCalCom(integration: any, opts: any) {
   };
 
   if (opts.test) {
-    // v2 /me endpoint to verify credentials
-    const res = await fetch("https://api.cal.com/v2/me", {
-      headers: authHeaders,
-    });
+    const res = await fetch("https://api.cal.com/v2/me", { headers: authHeaders });
     if (!res.ok) {
       const errBody = await res.text();
-      console.error("Cal.com v2 test error:", res.status, errBody);
       throw new Error(`Cal.com API error (${res.status}): ${errBody}`);
     }
     const data = await res.json();
