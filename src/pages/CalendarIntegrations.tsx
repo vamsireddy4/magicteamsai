@@ -2,15 +2,16 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { CalendarDays, Loader2, Trash2, CheckCircle2, XCircle, Plus } from "lucide-react";
+import { Loader2, Trash2, CheckCircle2 } from "lucide-react";
 import googleCalendarLogo from "@/assets/google-calendar-logo.png";
 import calcomLogo from "@/assets/calcom-logo.png";
 import gohighlevelLogo from "@/assets/gohighlevel-logo.png";
@@ -25,6 +26,13 @@ interface CalendarIntegration {
   is_active: boolean;
   config: Record<string, any>;
   created_at: string;
+}
+
+interface CalComEventType {
+  id: number;
+  title: string;
+  slug: string;
+  length?: number;
 }
 
 const PROVIDERS = [
@@ -44,9 +52,7 @@ const PROVIDERS = [
     logo: calcomLogo,
     description: "Check availability and create bookings via Cal.com.",
     fields: [
-      { key: "api_key", label: "Cal.com API Key (v2)", placeholder: "cal_live_...", help: "Create a v2 API key in Cal.com → Settings → Developer → API Keys. Must be a v2 key." },
-      { key: "calendar_id", label: "Event Type ID", placeholder: "123456", help: "The numeric event type ID from your Cal.com event type URL (e.g. cal.com/username/event-name → go to Event Type settings to find the ID)." },
-      { key: "username", label: "Cal.com Username", placeholder: "johndoe", help: "Your Cal.com username (shown in your booking URL: cal.com/username).", isConfig: true },
+      { key: "api_key", label: "Cal.com API Key (v2)", placeholder: "cal_live_...", help: "Create a v2 API key in Cal.com → Settings → Developer → API Keys." },
     ],
   },
   {
@@ -72,6 +78,13 @@ export default function CalendarIntegrations() {
   const [testing, setTesting] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
 
+  // Cal.com auto-fetch state
+  const [calFetching, setCalFetching] = useState(false);
+  const [calEventTypes, setCalEventTypes] = useState<CalComEventType[]>([]);
+  const [calUsername, setCalUsername] = useState("");
+  const [calSelectedEventType, setCalSelectedEventType] = useState<string>("");
+  const [calStep, setCalStep] = useState<"api_key" | "select_event">("api_key");
+
   const fetchData = async () => {
     if (!user) return;
     const { data } = await supabase.from("calendar_integrations").select("*").order("created_at");
@@ -90,19 +103,71 @@ export default function CalendarIntegrations() {
 
   const connectedProviders = integrations.map(i => i.provider);
 
+  const handleCalComFetch = async () => {
+    if (!form.api_key) return;
+    setCalFetching(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("check-calendar-availability", {
+        body: { provider: "cal_com", fetch_event_types: true, api_key: form.api_key },
+      });
+      if (error) throw error;
+      if (!data.success) throw new Error("Failed to fetch Cal.com data");
+
+      setCalUsername(data.username || "");
+      setCalEventTypes(data.event_types || []);
+
+      if (data.event_types?.length === 1) {
+        // Auto-select the only event type and save immediately
+        await saveCalComIntegration(form.api_key, data.username, data.event_types[0].id.toString(), data.user_name);
+      } else if (data.event_types?.length > 1) {
+        setCalStep("select_event");
+      } else {
+        toast({ title: "No event types found", description: "Create an event type in Cal.com first.", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Failed to connect", description: err.message || "Invalid API key or Cal.com error.", variant: "destructive" });
+    }
+    setCalFetching(false);
+  };
+
+  const saveCalComIntegration = async (apiKey: string, username: string, eventTypeId: string, displayName?: string) => {
+    if (!user) return;
+    setSaving(true);
+    const { error } = await supabase.from("calendar_integrations").insert({
+      user_id: user.id,
+      provider: "cal_com",
+      display_name: displayName || "Cal.com",
+      api_key: apiKey,
+      calendar_id: eventTypeId,
+      config: { username },
+    } as any);
+    setSaving(false);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Cal.com connected successfully" });
+      resetDialog();
+      fetchData();
+    }
+  };
+
+  const handleCalComSelectAndSave = async () => {
+    if (!calSelectedEventType || !form.api_key) return;
+    const et = calEventTypes.find(e => e.id.toString() === calSelectedEventType);
+    await saveCalComIntegration(form.api_key, calUsername, calSelectedEventType, et?.title || "Cal.com");
+  };
+
   const handleConnect = async () => {
     if (!user || !selectedProvider) return;
-    setSaving(true);
 
-    const provider = PROVIDERS.find(p => p.id === selectedProvider);
-    // Separate config fields from direct columns
-    const configData: Record<string, string> = {};
-    const providerFields = PROVIDERS.find(p => p.id === selectedProvider)?.fields || [];
-    for (const field of providerFields) {
-      if ((field as any).isConfig && form[field.key]) {
-        configData[field.key] = form[field.key];
-      }
+    // Cal.com uses the auto-fetch flow
+    if (selectedProvider === "cal_com") {
+      await handleCalComFetch();
+      return;
     }
+
+    setSaving(true);
+    const provider = PROVIDERS.find(p => p.id === selectedProvider);
 
     const { error } = await supabase.from("calendar_integrations").insert({
       user_id: user.id,
@@ -110,7 +175,7 @@ export default function CalendarIntegrations() {
       display_name: provider?.name || selectedProvider,
       api_key: form.api_key || null,
       calendar_id: form.calendar_id || null,
-      config: configData,
+      config: {},
     } as any);
 
     setSaving(false);
@@ -118,11 +183,19 @@ export default function CalendarIntegrations() {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
       toast({ title: `${provider?.name} connected` });
-      setDialogOpen(false);
-      setSelectedProvider(null);
-      setForm({});
+      resetDialog();
       fetchData();
     }
+  };
+
+  const resetDialog = () => {
+    setDialogOpen(false);
+    setSelectedProvider(null);
+    setForm({});
+    setCalStep("api_key");
+    setCalEventTypes([]);
+    setCalUsername("");
+    setCalSelectedEventType("");
   };
 
   const handleDisconnect = async (id: string) => {
@@ -157,10 +230,15 @@ export default function CalendarIntegrations() {
   const openConnectDialog = (providerId: string) => {
     setSelectedProvider(providerId);
     setForm({});
+    setCalStep("api_key");
+    setCalEventTypes([]);
+    setCalUsername("");
+    setCalSelectedEventType("");
     setDialogOpen(true);
   };
 
   const currentProviderConfig = PROVIDERS.find(p => p.id === selectedProvider);
+  const isCalCom = selectedProvider === "cal_com";
 
   return (
     <DashboardLayout>
@@ -178,7 +256,6 @@ export default function CalendarIntegrations() {
           </div>
         ) : (
           <>
-            {/* Connected calendars */}
             {integrations.length > 0 && (
               <div className="space-y-4">
                 <h2 className="text-lg font-semibold">Connected Calendars</h2>
@@ -197,28 +274,19 @@ export default function CalendarIntegrations() {
                               </Badge>
                             </div>
                             <p className="text-sm text-muted-foreground">
-                              Calendar: {integration.calendar_id || "Default"} · API Key: ••••{integration.api_key?.slice(-4) || "N/A"}
+                              {integration.provider === "cal_com"
+                                ? `Event Type: ${integration.calendar_id} · Username: ${(integration.config as any)?.username || "N/A"}`
+                                : `Calendar: ${integration.calendar_id || "Default"}`}
+                              {" · API Key: ••••" + (integration.api_key?.slice(-4) || "N/A")}
                             </p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleTestConnection(integration)}
-                            disabled={testing === integration.id}
-                          >
-                            {testing === integration.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <CheckCircle2 className="h-4 w-4 mr-1" />
-                            )}
+                          <Button variant="outline" size="sm" onClick={() => handleTestConnection(integration)} disabled={testing === integration.id}>
+                            {testing === integration.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
                             Test
                           </Button>
-                          <Switch
-                            checked={integration.is_active}
-                            onCheckedChange={() => toggleActive(integration.id, integration.is_active)}
-                          />
+                          <Switch checked={integration.is_active} onCheckedChange={() => toggleActive(integration.id, integration.is_active)} />
                           <Button variant="ghost" size="icon" onClick={() => handleDisconnect(integration.id)}>
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
@@ -230,7 +298,6 @@ export default function CalendarIntegrations() {
               </div>
             )}
 
-            {/* Available providers */}
             <div className="space-y-4">
               <h2 className="text-lg font-semibold">Available Providers</h2>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -253,12 +320,7 @@ export default function CalendarIntegrations() {
                       </CardHeader>
                       <CardContent>
                         <p className="text-sm text-muted-foreground mb-4">{provider.description}</p>
-                        <Button
-                          className="w-full"
-                          variant={isConnected ? "outline" : "default"}
-                          disabled={isConnected}
-                          onClick={() => openConnectDialog(provider.id)}
-                        >
+                        <Button className="w-full" variant={isConnected ? "outline" : "default"} disabled={isConnected} onClick={() => openConnectDialog(provider.id)}>
                           {isConnected ? "Connected" : "Connect"}
                         </Button>
                       </CardContent>
@@ -270,8 +332,7 @@ export default function CalendarIntegrations() {
           </>
         )}
 
-        {/* Connect dialog */}
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) resetDialog(); else setDialogOpen(true); }}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -280,25 +341,68 @@ export default function CalendarIntegrations() {
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              {currentProviderConfig?.fields.map(field => (
-                <div key={field.key} className="space-y-2">
-                  <Label>{field.label}</Label>
-                  <Input
-                    type={field.key === "api_key" ? "password" : "text"}
-                    placeholder={field.placeholder}
-                    value={form[field.key] || ""}
-                    onChange={e => setForm({ ...form, [field.key]: e.target.value })}
-                  />
-                  <p className="text-xs text-muted-foreground">{field.help}</p>
-                </div>
-              ))}
-              <Button
-                onClick={handleConnect}
-                disabled={saving || !form.api_key}
-                className="w-full"
-              >
-                {saving ? "Connecting..." : `Connect ${currentProviderConfig?.name}`}
-              </Button>
+              {isCalCom ? (
+                calStep === "api_key" ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Cal.com API Key (v2)</Label>
+                      <Input
+                        type="password"
+                        placeholder="cal_live_..."
+                        value={form.api_key || ""}
+                        onChange={e => setForm({ ...form, api_key: e.target.value })}
+                      />
+                      <p className="text-xs text-muted-foreground">Create a v2 API key in Cal.com → Settings → Developer → API Keys.</p>
+                    </div>
+                    <Button onClick={handleConnect} disabled={calFetching || !form.api_key} className="w-full">
+                      {calFetching ? (
+                        <><Loader2 className="h-4 w-4 animate-spin mr-2" />Fetching event types...</>
+                      ) : (
+                        "Connect Cal.com"
+                      )}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      Connected as <span className="font-medium text-foreground">{calUsername}</span>. Select an event type:
+                    </p>
+                    <Select value={calSelectedEventType} onValueChange={setCalSelectedEventType}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose an event type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {calEventTypes.map(et => (
+                          <SelectItem key={et.id} value={et.id.toString()}>
+                            {et.title} {et.length ? `(${et.length} min)` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button onClick={handleCalComSelectAndSave} disabled={saving || !calSelectedEventType} className="w-full">
+                      {saving ? "Saving..." : "Save & Connect"}
+                    </Button>
+                  </>
+                )
+              ) : (
+                <>
+                  {currentProviderConfig?.fields.map(field => (
+                    <div key={field.key} className="space-y-2">
+                      <Label>{field.label}</Label>
+                      <Input
+                        type={field.key === "api_key" ? "password" : "text"}
+                        placeholder={field.placeholder}
+                        value={form[field.key] || ""}
+                        onChange={e => setForm({ ...form, [field.key]: e.target.value })}
+                      />
+                      <p className="text-xs text-muted-foreground">{field.help}</p>
+                    </div>
+                  ))}
+                  <Button onClick={handleConnect} disabled={saving || !form.api_key} className="w-full">
+                    {saving ? "Connecting..." : `Connect ${currentProviderConfig?.name}`}
+                  </Button>
+                </>
+              )}
             </div>
           </DialogContent>
         </Dialog>
