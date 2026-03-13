@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,8 +8,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Plus, Trash2, Pencil } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, Calendar, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import CreateAppointmentToolDialog from "./CreateAppointmentToolDialog";
 import googleCalendarLogo from "@/assets/google-calendar-logo.png";
@@ -68,6 +69,12 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
   const [newTypeDuration, setNewTypeDuration] = useState(30);
   const [saving, setSaving] = useState(false);
 
+  // Live availability state
+  const [availabilityDate, setAvailabilityDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [availabilityData, setAvailabilityData] = useState<any>(null);
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
+  const [viewTab, setViewTab] = useState("config");
+
   const fetchData = async () => {
     const [intRes, toolsRes] = await Promise.all([
       supabase.from("calendar_integrations").select("*").eq("user_id", userId).order("created_at"),
@@ -87,6 +94,37 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [agentId]);
+
+  const fetchAvailability = useCallback(async (tool: AppointmentTool, date: string) => {
+    if (!tool.calendar_integration_id) {
+      setAvailabilityData({ error: "No calendar connected to this tool" });
+      return;
+    }
+    setLoadingAvailability(true);
+    setAvailabilityData(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("check-calendar-availability", {
+        body: {
+          provider: tool.provider,
+          integration_id: tool.calendar_integration_id,
+          date,
+        },
+      });
+      if (error) throw error;
+      setAvailabilityData(data);
+    } catch (err: any) {
+      setAvailabilityData({ error: err.message || "Failed to fetch availability" });
+    } finally {
+      setLoadingAvailability(false);
+    }
+  }, []);
+
+  const openViewTool = (tool: AppointmentTool) => {
+    setViewTool(tool);
+    setViewTab("config");
+    setAvailabilityData(null);
+    setAvailabilityDate(new Date().toISOString().split("T")[0]);
+  };
 
   const toggleTool = async (id: string, current: boolean) => {
     await supabase.from("appointment_tools" as any).update({ is_active: !current } as any).eq("id", id);
@@ -122,9 +160,6 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
     else { toast({ title: "Appointment tool updated" }); setEditTool(null); fetchData(); }
   };
 
-  const enabledDays = (hours: Record<string, { enabled: boolean; start: string; end: string }>) =>
-    DAYS.filter(d => hours[d]?.enabled);
-
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">Connect calendars so this agent can check availability and book appointments during calls.</p>
@@ -136,7 +171,7 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
           {tools.length > 0 && (
             <div className="space-y-3">
               {tools.map(tool => (
-                <Card key={tool.id} className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setViewTool(tool)}>
+                <Card key={tool.id} className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => openViewTool(tool)}>
                   <CardContent className="flex items-center justify-between p-4">
                     <div className="flex items-center gap-3">
                       <img src={PROVIDER_LOGOS[tool.provider]} alt={PROVIDER_NAMES[tool.provider]} className="h-8 w-8 rounded object-contain" />
@@ -170,7 +205,7 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
 
       {/* View Tool Details Dialog */}
       <Dialog open={!!viewTool} onOpenChange={(open) => { if (!open) setViewTool(null); }}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {viewTool && <img src={PROVIDER_LOGOS[viewTool.provider]} alt="" className="h-6 w-6 rounded object-contain" />}
@@ -178,47 +213,157 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
             </DialogTitle>
           </DialogHeader>
           {viewTool && (
-            <div className="space-y-5">
-              <div className="flex items-center gap-2">
-                <Badge variant={viewTool.is_active ? "default" : "secondary"}>
-                  {viewTool.is_active ? "Active" : "Inactive"}
-                </Badge>
-                <span className="text-sm text-muted-foreground">{PROVIDER_NAMES[viewTool.provider]}</span>
-              </div>
+            <Tabs value={viewTab} onValueChange={setViewTab} className="w-full">
+              <TabsList className="w-full">
+                <TabsTrigger value="config" className="flex-1">Configuration</TabsTrigger>
+                <TabsTrigger value="availability" className="flex-1">
+                  <Calendar className="h-4 w-4 mr-1" /> Live Availability
+                </TabsTrigger>
+              </TabsList>
 
-              <div>
-                <h4 className="font-semibold text-sm mb-2">Business Hours</h4>
-                <div className="space-y-1.5">
-                  {DAYS.map(day => {
-                    const h = viewTool.business_hours[day];
-                    return (
-                      <div key={day} className="flex items-center justify-between text-sm">
-                        <span className={h?.enabled ? "font-medium" : "text-muted-foreground"}>{day}</span>
-                        <span className={h?.enabled ? "" : "text-muted-foreground"}>
-                          {h?.enabled ? `${h.start} – ${h.end}` : "Closed"}
-                        </span>
+              <TabsContent value="config" className="space-y-5 mt-4">
+                <div className="flex items-center gap-2">
+                  <Badge variant={viewTool.is_active ? "default" : "secondary"}>
+                    {viewTool.is_active ? "Active" : "Inactive"}
+                  </Badge>
+                  <span className="text-sm text-muted-foreground">{PROVIDER_NAMES[viewTool.provider]}</span>
+                  {viewTool.calendar_integration_id && (
+                    <Badge variant="outline" className="text-xs">Calendar Connected</Badge>
+                  )}
+                </div>
+
+                <div>
+                  <h4 className="font-semibold text-sm mb-2">Business Hours</h4>
+                  <div className="space-y-1.5">
+                    {DAYS.map(day => {
+                      const h = viewTool.business_hours[day];
+                      return (
+                        <div key={day} className="flex items-center justify-between text-sm">
+                          <span className={h?.enabled ? "font-medium" : "text-muted-foreground"}>{day}</span>
+                          <span className={h?.enabled ? "" : "text-muted-foreground"}>
+                            {h?.enabled ? `${h.start} – ${h.end}` : "Closed"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold text-sm mb-2">Appointment Types</h4>
+                  <div className="space-y-1.5">
+                    {viewTool.appointment_types.map((t, i) => (
+                      <div key={i} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                        <span className="font-medium">{t.name}</span>
+                        <span className="text-muted-foreground">{t.duration} min</span>
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <h4 className="font-semibold text-sm mb-2">Appointment Types</h4>
-                <div className="space-y-1.5">
-                  {viewTool.appointment_types.map((t, i) => (
-                    <div key={i} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
-                      <span className="font-medium">{t.name}</span>
-                      <span className="text-muted-foreground">{t.duration} min</span>
+                <Button variant="outline" className="w-full" onClick={() => openEdit(viewTool)}>
+                  <Pencil className="h-4 w-4 mr-1" /> Edit Tool
+                </Button>
+              </TabsContent>
+
+              <TabsContent value="availability" className="space-y-4 mt-4">
+                {!viewTool.calendar_integration_id ? (
+                  <div className="text-center py-6 text-sm text-muted-foreground">
+                    <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>No calendar connected to this tool.</p>
+                    <p className="text-xs mt-1">Connect a calendar integration first to check live availability.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="date"
+                        value={availabilityDate}
+                        onChange={e => setAvailabilityDate(e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchAvailability(viewTool, availabilityDate)}
+                        disabled={loadingAvailability}
+                      >
+                        {loadingAvailability ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <><RefreshCw className="h-4 w-4 mr-1" /> Check</>
+                        )}
+                      </Button>
                     </div>
-                  ))}
-                </div>
-              </div>
 
-              <Button variant="outline" className="w-full" onClick={() => openEdit(viewTool)}>
-                <Pencil className="h-4 w-4 mr-1" /> Edit Tool
-              </Button>
-            </div>
+                    {loadingAvailability && (
+                      <div className="flex items-center justify-center py-6">
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
+
+                    {availabilityData && !loadingAvailability && (
+                      <div className="space-y-3">
+                        {availabilityData.error ? (
+                          <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                            {availabilityData.error}
+                          </div>
+                        ) : availabilityData.events ? (
+                          <>
+                            <h4 className="font-semibold text-sm">Events on {availabilityDate}</h4>
+                            {availabilityData.events.length === 0 ? (
+                              <p className="text-sm text-muted-foreground">No events — calendar is free all day.</p>
+                            ) : (
+                              <div className="space-y-1.5">
+                                {availabilityData.events.map((evt: any, i: number) => (
+                                  <div key={i} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                                    <span className="font-medium">{evt.summary || "Busy"}</span>
+                                    <span className="text-muted-foreground text-xs">
+                                      {evt.start ? new Date(evt.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""} 
+                                      {evt.end ? ` – ${new Date(evt.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ""}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        ) : availabilityData.slots ? (
+                          <>
+                            <h4 className="font-semibold text-sm">Available Slots on {availabilityDate}</h4>
+                            {(Array.isArray(availabilityData.slots) && availabilityData.slots.length === 0) ? (
+                              <p className="text-sm text-muted-foreground">No available slots found.</p>
+                            ) : Array.isArray(availabilityData.slots) ? (
+                              <div className="grid grid-cols-3 gap-2">
+                                {availabilityData.slots.map((slot: any, i: number) => (
+                                  <div key={i} className="rounded-md border px-2 py-1.5 text-xs text-center font-medium">
+                                    {typeof slot === "string" ? new Date(slot).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : JSON.stringify(slot)}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <pre className="text-xs bg-muted p-2 rounded overflow-auto">{JSON.stringify(availabilityData.slots, null, 2)}</pre>
+                            )}
+                          </>
+                        ) : (
+                          <div className="text-sm">
+                            <Badge variant="outline" className="mb-2">Connection OK</Badge>
+                            {availabilityData.calendar && <p className="text-muted-foreground">Calendar: {availabilityData.calendar}</p>}
+                            {availabilityData.user && <p className="text-muted-foreground">User: {availabilityData.user}</p>}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!availabilityData && !loadingAvailability && (
+                      <div className="text-center py-6 text-sm text-muted-foreground">
+                        <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p>Select a date and click Check to view live calendar availability.</p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </TabsContent>
+            </Tabs>
           )}
         </DialogContent>
       </Dialog>
