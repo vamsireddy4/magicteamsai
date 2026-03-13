@@ -69,7 +69,7 @@ const GEMINI_VOICES = [
 ];
 
 const AI_PROVIDERS = [
-  { value: "ultravox", label: "Ultravox" },
+  { value: "ultravox", label: "MagicTeams" },
   { value: "gemini", label: "Gemini Live API (Coming Soon)", disabled: true },
 ];
 
