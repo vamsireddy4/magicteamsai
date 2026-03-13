@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
       .from("call_logs")
       .select("id, ultravox_call_id, twilio_call_sid, caller_number, recipient_number, started_at, duration, transcript, status, agent_id")
       .eq("user_id", user.id)
-      .or("duration.is.null,transcript.is.null,status.eq.initiated,status.eq.in-progress");
+      .or("duration.is.null,transcript.is.null,summary.is.null,status.eq.initiated,status.eq.in-progress");
 
     console.log(`Found ${calls?.length || 0} calls to sync`);
 
@@ -233,6 +233,7 @@ Deno.serve(async (req) => {
             updated++;
 
             // Update corresponding call_outcome based on call status
+            const finalStatus = (updateData.status as string) ?? call.status;
             const duration = (updateData.duration as number) ?? call.duration;
             console.log(`Call ${call.id}: finalStatus=${finalStatus}, duration=${duration}, recipient=${call.recipient_number}`);
             
