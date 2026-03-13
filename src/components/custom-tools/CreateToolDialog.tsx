@@ -70,7 +70,7 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
   };
 
   const addDynamicParam = () => {
-    setDynamicParams([...dynamicParams, { name: "", location: "Body", required: false, schema: "{}" }]);
+    setDynamicParams([...dynamicParams, { name: "", location: "Body", required: false, type: "string", description: "" }]);
   };
 
   const removeDynamicParam = (index: number) => {
