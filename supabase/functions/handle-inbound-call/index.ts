@@ -126,6 +126,72 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Build Ultravox tools from appointment_tools (calendar availability + booking)
+    if (appointmentTools && appointmentTools.length > 0) {
+      const checkAvailabilityUrl = `${supabaseUrl}/functions/v1/check-calendar-availability`;
+      const bookAppointmentUrl = `${supabaseUrl}/functions/v1/book-calendar-appointment`;
+
+      for (const apptTool of appointmentTools) {
+        const integration = (apptTool as any).calendar_integrations;
+        if (!integration) continue;
+
+        const enabledDays = Object.entries(apptTool.business_hours as Record<string, any>)
+          .filter(([_, v]: any) => v.enabled)
+          .map(([day, v]: any) => `${day}: ${v.start}-${v.end}`)
+          .join(", ");
+        const typesList = (apptTool.appointment_types as any[]).map((t: any) => `${t.name} (${t.duration}min)`).join(", ");
+        
+        systemPrompt += `\n\n--- APPOINTMENT TOOL: ${apptTool.name} ---`;
+        systemPrompt += `\nProvider: ${apptTool.provider}`;
+        systemPrompt += `\nBusiness Hours: ${enabledDays}`;
+        systemPrompt += `\nAppointment Types: ${typesList}`;
+        systemPrompt += `\nUse check_availability_${apptTool.name.replace(/[^a-zA-Z0-9]/g, '_')} to check calendar availability.`;
+        systemPrompt += `\nUse book_appointment_${apptTool.name.replace(/[^a-zA-Z0-9]/g, '_')} to book an appointment.\n`;
+
+        const toolNameSuffix = apptTool.name.replace(/[^a-zA-Z0-9]/g, '_');
+
+        ultravoxTools.push({
+          temporaryTool: {
+            modelToolName: `check_availability_${toolNameSuffix}`,
+            description: `Check calendar availability for ${apptTool.name}. Returns available time slots for a given date.`,
+            dynamicParameters: [
+              { name: "date", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Date to check availability (YYYY-MM-DD format)" }, required: true },
+            ],
+            http: {
+              baseUrlPattern: checkAvailabilityUrl,
+              httpMethod: "POST",
+            },
+            automaticParameters: [
+              { name: "provider", location: "PARAMETER_LOCATION_BODY", value: apptTool.provider },
+              { name: "integration_id", location: "PARAMETER_LOCATION_BODY", value: integration.id },
+            ],
+          },
+        });
+
+        ultravoxTools.push({
+          temporaryTool: {
+            modelToolName: `book_appointment_${toolNameSuffix}`,
+            description: `Book an appointment using ${apptTool.name}. Schedule a meeting at a specific date and time.`,
+            dynamicParameters: [
+              { name: "date_time", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Date and time for the appointment (ISO 8601 format)" }, required: true },
+              { name: "name", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Name of the person booking" }, required: true },
+              { name: "email", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Email of the person booking" }, required: false },
+              { name: "duration_minutes", location: "PARAMETER_LOCATION_BODY", schema: { type: "number", description: "Duration in minutes" }, required: false },
+              { name: "appointment_type", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Type of appointment" }, required: false },
+            ],
+            http: {
+              baseUrlPattern: bookAppointmentUrl,
+              httpMethod: "POST",
+            },
+            automaticParameters: [
+              { name: "provider", location: "PARAMETER_LOCATION_BODY", value: apptTool.provider },
+              { name: "integration_id", location: "PARAMETER_LOCATION_BODY", value: integration.id },
+            ],
+          },
+        });
+      }
+    }
+
     const aiProvider = (agent as any).ai_provider || "ultravox";
     let streamUrl = "";
     let ultravoxCallId = "";
