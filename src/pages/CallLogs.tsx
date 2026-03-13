@@ -173,6 +173,12 @@ export default function CallLogs() {
                         </>
                       )}
                     </div>
+                    {call.summary && (
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
+                        <Sparkles className="h-3 w-3 inline mr-1 text-primary" />
+                        {call.summary}
+                      </p>
+                    )}
                   </div>
 
                   {/* Duration & time */}
