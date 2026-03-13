@@ -19,11 +19,14 @@ interface Agent {
   name: string;
 }
 
+const PARAM_TYPES = ["string", "number", "integer", "boolean"];
+
 interface DynamicParam {
   name: string;
   location: string;
   required: boolean;
-  schema: string;
+  type: string;
+  description: string;
 }
 
 interface StaticParam {
