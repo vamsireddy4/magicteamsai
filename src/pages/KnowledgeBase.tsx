@@ -54,7 +54,7 @@ export default function KnowledgeBase() {
       supabase.from("knowledge_base_items").select("*").order("created_at", { ascending: false }),
       supabase.from("agents").select("*"),
     ]);
-    setItems(itemsRes.data || []);
+    setItems((itemsRes.data as KBItem[]) || []);
     setAgents(agentsRes.data || []);
     setLoading(false);
   };
