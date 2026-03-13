@@ -43,12 +43,18 @@ export default function Agents() {
   }, [user]);
 
   const deleteAgent = async (id: string) => {
-    const { error } = await supabase.from("agents").delete().eq("id", id);
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Agent deleted" });
-      fetchAgents();
+    try {
+      const { data, error } = await supabase.functions.invoke("delete-ultravox-agent", {
+        body: { agent_id: id },
+      });
+      if (error) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: "Agent deleted" });
+        fetchAgents();
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to delete agent", variant: "destructive" });
     }
   };
 

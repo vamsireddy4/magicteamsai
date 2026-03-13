@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.sync-ultravox-agent]
 verify_jwt = false
+
+[functions.delete-ultravox-agent]
+verify_jwt = false
