@@ -100,6 +100,10 @@ export default function AgentForm() {
   const [useCustomVoice, setUseCustomVoice] = useState(false);
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
   const [ultravoxAgentId, setUltravoxAgentId] = useState<string | null>(null);
+  const [forwardingNumbers, setForwardingNumbers] = useState<ForwardingNumber[]>([]);
+  const [newFwdLabel, setNewFwdLabel] = useState("");
+  const [newFwdNumber, setNewFwdNumber] = useState("");
+  const [ultravoxAgentId, setUltravoxAgentId] = useState<string | null>(null);
   
   const [form, setForm] = useState({
     name: "",
