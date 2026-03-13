@@ -54,15 +54,26 @@ export default function AgentCustomTools({ agentId, agentName, userId }: Props) 
     return () => { supabase.removeChannel(channel); };
   }, [agentId]);
 
+  const syncAgent = async () => {
+    try {
+      await supabase.functions.invoke("sync-ultravox-agent", {
+        body: { agent_id: agentId },
+      });
+    } catch (err) {
+      console.error("Ultravox sync failed:", err);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from("agent_tools").delete().eq("id", id);
     if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
-    else { toast({ title: "Tool deleted" }); fetchData(); }
+    else { toast({ title: "Tool deleted" }); fetchData(); syncAgent(); }
   };
 
   const toggleActive = async (id: string, current: boolean) => {
     await supabase.from("agent_tools").update({ is_active: !current } as any).eq("id", id);
     fetchData();
+    syncAgent();
   };
 
   // Pass only this agent to CreateToolDialog

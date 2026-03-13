@@ -121,22 +121,54 @@ Deno.serve(async (req) => {
     // Build Ultravox selectedTools array
     const selectedTools: any[] = [];
 
+    // Known value mapping for automatic parameters
+    const KNOWN_VALUE_MAP: Record<string, string> = {
+      "call.id": "KNOWN_PARAM_CALL_ID",
+      "call.stage_id": "KNOWN_PARAM_CALL_STAGE_ID",
+      "call.state": "KNOWN_PARAM_CALL_STATE",
+      "call.conversation_history": "KNOWN_PARAM_CONVERSATION_HISTORY",
+      "call.sample_rate": "KNOWN_PARAM_CALL_SAMPLE_RATE",
+    };
+
+    // Agent end behavior mapping
+    const END_BEHAVIOR_MAP: Record<string, string> = {
+      "Speaks": "AGENT_TEXT_BEHAVIOR_AGENT_SPEAKS",
+      "Listens": "AGENT_TEXT_BEHAVIOR_AGENT_LISTENS",
+      "Speaks Once": "AGENT_TEXT_BEHAVIOR_AGENT_SPEAKS_ONCE",
+    };
+
+    const locationToUltravox = (loc: string) => {
+      if (loc === "header") return "PARAMETER_LOCATION_HEADER";
+      if (loc === "query") return "PARAMETER_LOCATION_QUERY";
+      return "PARAMETER_LOCATION_BODY";
+    };
+
     // Custom HTTP tools
     if (agentTools && agentTools.length > 0) {
       for (const tool of agentTools) {
         const dynamicParameters: any[] = [];
+        const automaticParameters: any[] = [];
+
         if (Array.isArray(tool.parameters)) {
           for (const p of tool.parameters as any[]) {
-            const schema = p.schema || { type: p.type || "string", description: p.description || "" };
-            const loc = p.location === "header" ? "PARAMETER_LOCATION_HEADER"
-              : p.location === "query" ? "PARAMETER_LOCATION_QUERY"
-              : "PARAMETER_LOCATION_BODY";
-            dynamicParameters.push({
-              name: p.name,
-              location: loc,
-              schema,
-              required: !!p.required,
-            });
+            if (p.paramType === "automatic") {
+              // Automatic parameter with knownValue
+              const knownValue = KNOWN_VALUE_MAP[p.knownValue] || p.knownValue;
+              automaticParameters.push({
+                name: p.name,
+                location: locationToUltravox(p.location),
+                knownValue,
+              });
+            } else {
+              // Dynamic parameter (default, or paramType === "dynamic")
+              const schema = p.schema || { type: p.type || "string", description: p.description || "" };
+              dynamicParameters.push({
+                name: p.name,
+                location: locationToUltravox(p.location),
+                schema,
+                required: !!p.required,
+              });
+            }
           }
         }
 
@@ -157,6 +189,8 @@ Deno.serve(async (req) => {
         if (tool.http_body_template && typeof tool.http_body_template === "object") {
           const bodyTemplate = tool.http_body_template as Record<string, any>;
           for (const [key, value] of Object.entries(bodyTemplate)) {
+            // Skip internal metadata keys
+            if (key.startsWith("__")) continue;
             if (key) {
               staticParameters.push({
                 name: key,
@@ -167,23 +201,35 @@ Deno.serve(async (req) => {
           }
         }
 
-        const toolDef: any = {
-          temporaryTool: {
-            modelToolName: tool.name,
-            description: tool.description,
-            dynamicParameters,
-            http: {
-              baseUrlPattern: tool.http_url,
-              httpMethod: tool.http_method,
-            },
+        const temporaryTool: any = {
+          modelToolName: tool.name,
+          description: tool.description,
+          dynamicParameters,
+          http: {
+            baseUrlPattern: tool.http_url,
+            httpMethod: tool.http_method,
           },
         };
 
         if (staticParameters.length > 0) {
-          toolDef.temporaryTool.staticParameters = staticParameters;
+          temporaryTool.staticParameters = staticParameters;
+        }
+        if (automaticParameters.length > 0) {
+          temporaryTool.automaticParameters = automaticParameters;
         }
 
-        selectedTools.push(toolDef);
+        // Apply agent end behavior from advanced settings
+        const bodyMeta = tool.http_body_template as Record<string, any> || {};
+        if (bodyMeta.__agentEndBehavior && END_BEHAVIOR_MAP[bodyMeta.__agentEndBehavior]) {
+          temporaryTool.defaultReaction = END_BEHAVIOR_MAP[bodyMeta.__agentEndBehavior];
+        }
+
+        // Apply static response from advanced settings
+        if (bodyMeta.__staticResponse) {
+          temporaryTool.staticResponse = bodyMeta.__staticResponse;
+        }
+
+        selectedTools.push({ temporaryTool });
       }
     }
 
