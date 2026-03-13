@@ -41,7 +41,7 @@ export default function Support() {
           </p>
         </div>
 
-        <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-4xl">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {supportCards.map((card) => (
             <a
               key={card.title}
