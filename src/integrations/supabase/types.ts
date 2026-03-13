@@ -506,6 +506,7 @@ export type Database = {
           created_at: string
           file_path: string | null
           id: string
+          processing_status: string | null
           title: string
           type: string
           updated_at: string
@@ -518,6 +519,7 @@ export type Database = {
           created_at?: string
           file_path?: string | null
           id?: string
+          processing_status?: string | null
           title: string
           type?: string
           updated_at?: string
@@ -530,6 +532,7 @@ export type Database = {
           created_at?: string
           file_path?: string | null
           id?: string
+          processing_status?: string | null
           title?: string
           type?: string
           updated_at?: string
