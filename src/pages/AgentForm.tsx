@@ -159,6 +159,10 @@ export default function AgentForm() {
           }
         }
       });
+
+      // Fetch forwarding numbers
+      supabase.from("call_forwarding_numbers").select("id, phone_number, label").eq("agent_id", id)
+        .then(({ data }) => setForwardingNumbers(data || []));
     }
   }, [user, id]);
 
