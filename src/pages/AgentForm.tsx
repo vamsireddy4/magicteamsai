@@ -526,7 +526,7 @@ export default function AgentForm() {
               <TabsContent value="webhooks" className="mt-6">
                 <Card>
                   <CardHeader><CardTitle>Webhooks</CardTitle></CardHeader>
-                  <CardContent><AgentWebhooks agentId={id} agentName={name} userId={user.id} /></CardContent>
+                  <CardContent><AgentWebhooks agentId={id} agentName={form.name} userId={user.id} /></CardContent>
                 </Card>
               </TabsContent>
             </>
