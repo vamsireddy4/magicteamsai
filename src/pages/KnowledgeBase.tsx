@@ -17,6 +17,20 @@ import type { Tables } from "@/integrations/supabase/types";
 
 type ContentTab = "files" | "urls";
 
+interface KBItem {
+  id: string;
+  agent_id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  content: string | null;
+  file_path: string | null;
+  website_url: string | null;
+  processing_status: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export default function KnowledgeBase() {
   const { user } = useAuth();
   const { toast } = useToast();
