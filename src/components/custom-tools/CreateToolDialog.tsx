@@ -307,21 +307,16 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
                     <span className="font-medium text-sm text-foreground">{param.name}</span>
                     <span className={cn(
                       "text-xs px-2 py-0.5 rounded-full border",
-                      param.paramType === "Dynamic"
+                      param.paramType === "Automatic"
                         ? "bg-primary/10 text-primary border-primary/20"
                         : "bg-muted text-muted-foreground border-border"
                     )}>
                       {param.paramType}
                     </span>
-                    {param.required && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20">
-                        Required
-                      </span>
-                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {param.type} · {param.location}
-                    {param.description && ` · ${param.description}`}
+                    {param.location}
+                    {param.value && ` · ${param.value}`}
                   </p>
                 </div>
                 <Button variant="ghost" size="sm" className="text-destructive h-8 w-8 p-0 shrink-0" onClick={() => removeParam(i)}>
