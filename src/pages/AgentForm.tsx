@@ -19,7 +19,7 @@ import type { Tables } from "@/integrations/supabase/types";
 import AgentKnowledgeBase from "@/components/agent-tabs/AgentKnowledgeBase";
 import AgentCustomTools from "@/components/agent-tabs/AgentCustomTools";
 import AgentWebhooks from "@/components/agent-tabs/AgentWebhooks";
-import AgentCalendarIntegrations from "@/components/agent-tabs/AgentCalendarIntegrations";
+import AgentAppointmentTools from "@/components/agent-tabs/AgentAppointmentTools";
 
 
 interface UltravoxVoice {
@@ -370,7 +370,7 @@ export default function AgentForm() {
               <TabsContent value="tools" className="mt-6 space-y-6">
                 <Card>
                   <CardHeader><CardTitle>Appointment Tools</CardTitle></CardHeader>
-                  <CardContent><AgentCalendarIntegrations agentId={id} userId={user.id} /></CardContent>
+                  <CardContent><AgentAppointmentTools agentId={id} userId={user.id} /></CardContent>
                 </Card>
                 <Card>
                   <CardHeader><CardTitle>Custom Tools</CardTitle></CardHeader>
