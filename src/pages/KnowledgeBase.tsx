@@ -378,6 +378,7 @@ export default function KnowledgeBase() {
                       <p className="font-medium text-sm">{item.title}</p>
                       <div className="flex items-center gap-2 mt-0.5">
                         <Badge variant="outline" className="text-xs">{item.type}</Badge>
+                        {statusBadge(item.processing_status)}
                         <span className="text-xs text-muted-foreground">{agentName(item.agent_id)}</span>
                       </div>
                     </div>
