@@ -126,7 +126,9 @@ async function handleCalCom(integration: any, opts: any) {
   if (opts.test) {
     const res = await fetch("https://api.cal.com/v1/me?apiKey=" + apiKey);
     if (!res.ok) {
-      throw new Error(`Cal.com API error: ${res.statusText}`);
+      const errBody = await res.text();
+      console.error("Cal.com test error:", errBody);
+      throw new Error(`Cal.com API error: ${res.statusText} - ${errBody}`);
     }
     const data = await res.json();
     return { success: true, user: data.user?.name || data.user?.email };
@@ -135,11 +137,20 @@ async function handleCalCom(integration: any, opts: any) {
   // Check availability
   const dateFrom = opts.date || new Date().toISOString().split("T")[0];
   const dateTo = dateFrom;
-  const res = await fetch(
-    `https://api.cal.com/v1/availability?apiKey=${apiKey}&eventTypeId=${eventTypeId}&dateFrom=${dateFrom}&dateTo=${dateTo}`
-  );
+  
+  // Build URL with proper params - eventTypeId is optional for Cal.com v1
+  let url = `https://api.cal.com/v1/availability?apiKey=${apiKey}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
+  if (eventTypeId) {
+    url += `&eventTypeId=${eventTypeId}`;
+  }
+
+  console.log(`Cal.com availability request: dateFrom=${dateFrom}, dateTo=${dateTo}, eventTypeId=${eventTypeId || "none"}`);
+
+  const res = await fetch(url);
   if (!res.ok) {
-    throw new Error(`Cal.com API error: ${res.statusText}`);
+    const errBody = await res.text();
+    console.error("Cal.com availability error:", res.status, errBody);
+    throw new Error(`Cal.com API error (${res.status}): ${errBody}`);
   }
   const data = await res.json();
   return { success: true, slots: data.slots || data.busy || [] };
