@@ -127,10 +127,14 @@ Deno.serve(async (req) => {
         const dynamicParameters: any[] = [];
         if (Array.isArray(tool.parameters)) {
           for (const p of tool.parameters as any[]) {
+            const schema = p.schema || { type: p.type || "string", description: p.description || "" };
+            const loc = p.location === "header" ? "PARAMETER_LOCATION_HEADER"
+              : p.location === "query" ? "PARAMETER_LOCATION_QUERY"
+              : "PARAMETER_LOCATION_BODY";
             dynamicParameters.push({
               name: p.name,
-              location: "PARAMETER_LOCATION_BODY",
-              schema: { type: p.type || "string", description: p.description || "" },
+              location: loc,
+              schema,
               required: !!p.required,
             });
           }
