@@ -48,8 +48,7 @@ export default function CallLogs() {
   };
 
   useEffect(() => {
-    // Auto-sync on load, then fetch
-    supabase.functions.invoke("sync-call-data").then(() => fetchCalls());
+    fetchCalls();
 
     const channel = supabase
       .channel('call-logs-realtime')
