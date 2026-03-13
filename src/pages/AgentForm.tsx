@@ -366,7 +366,11 @@ export default function AgentForm() {
                   <CardContent><AgentKnowledgeBase agentId={id} userId={user.id} /></CardContent>
                 </Card>
               </TabsContent>
-              <TabsContent value="tools" className="mt-6">
+              <TabsContent value="tools" className="mt-6 space-y-6">
+                <Card>
+                  <CardHeader><CardTitle>Appointment Tools</CardTitle></CardHeader>
+                  <CardContent><AgentCalendarIntegrations agentId={id} userId={user.id} /></CardContent>
+                </Card>
                 <Card>
                   <CardHeader><CardTitle>Custom Tools</CardTitle></CardHeader>
                   <CardContent><AgentCustomTools agentId={id} agentName={form.name} userId={user.id} /></CardContent>
