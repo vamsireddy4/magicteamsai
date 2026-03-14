@@ -569,14 +569,26 @@ Deno.serve((req) => {
       }
     }
 
-    // Parse [TOOL_CALL:name|{...}] from response text
+    // Parse [TOOL_CALL:name|{...}] from response text — balanced brace parser for nested JSON
     function extractToolCall(text: string): { toolName: string; args: Record<string, any>; cleanText: string } | null {
-      const match = text.match(/\[TOOL_CALL:(\w+)\|(\{[^}]*\})\]/);
-      if (!match) return null;
+      const prefix = /\[TOOL_CALL:(\w+)\|/;
+      const match = text.match(prefix);
+      if (!match || match.index === undefined) return null;
+      const startIdx = match.index + match[0].length;
+      let depth = 0;
+      let endIdx = -1;
+      for (let i = startIdx; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') { depth--; if (depth === 0) { endIdx = i; break; } }
+      }
+      if (endIdx === -1) return null;
       try {
+        const jsonStr = text.substring(startIdx, endIdx + 1);
         const toolName = match[1];
-        const args = JSON.parse(match[2]);
-        const cleanText = text.replace(match[0], "").trim();
+        const args = JSON.parse(jsonStr);
+        // Remove the full [TOOL_CALL:...|{...}] including trailing ]
+        const fullEnd = endIdx + 1 < text.length && text[endIdx + 1] === ']' ? endIdx + 2 : endIdx + 1;
+        const cleanText = (text.substring(0, match.index) + text.substring(fullEnd)).trim();
         return { toolName, args, cleanText };
       } catch {
         return null;
