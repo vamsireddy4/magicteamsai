@@ -171,7 +171,7 @@ async function initiateTwilioSequentialDial(
   let twiml: string;
   if (hasNext) {
     // If this dial fails, Twilio will POST to the action URL to try the next number
-    const actionUrl = `${supabaseUrl}/functions/v1/transfer-call?attempt=${attempt + 1}&agent_id=${agentId}&phone_config_id=${phoneConfig.id}`;
+    const actionUrl = `${supabaseUrl}/functions/v1/transfer-call?attempt=${attempt + 1}&amp;agent_id=${agentId}&amp;phone_config_id=${phoneConfig.id}`;
     twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial action="${actionUrl}" timeout="30">${destination}</Dial></Response>`;
   } else {
     // Last number - no fallback, just say sorry if it fails
