@@ -308,7 +308,8 @@ Deno.serve(async (req) => {
     // For Gemini: strip query params and pass agent_id via Parameter (Twilio strips query params)
     const isGeminiOrSarvam = aiProvider === "gemini" || aiProvider === "sarvam";
     const cleanStreamUrl = isGeminiOrSarvam ? streamUrl.split('?')[0] : streamUrl;
-    const paramTag = isGeminiOrSarvam ? `<Parameter name="agent_id" value="${agent.id}"/>` : "";
+    const providerParam = aiProvider === "sarvam" ? `<Parameter name="provider" value="${provider}"/>` : "";
+    const paramTag = isGeminiOrSarvam ? `<Parameter name="agent_id" value="${agent.id}"/>${providerParam}` : "";
 
     let responseXml: string;
     if (provider === "telnyx") {

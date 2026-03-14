@@ -403,8 +403,8 @@ Deno.serve(async (req) => {
           user_id: user.id,
         });
       } else {
-        const sarvamTwilioBridgeUrl = `${bridgeUrl}?agent_id=${agent.id}&provider=twilio`;
-        const twiml = `<Response><Connect><Stream url="${sarvamTwilioBridgeUrl}"><Parameter name="agent_id" value="${agent.id}"/></Stream></Connect></Response>`;
+        // Use clean URL without query params — pass metadata via Parameter tags (XML-safe)
+        const twiml = `<Response><Connect><Stream url="${bridgeUrl}"><Parameter name="agent_id" value="${agent.id}"/><Parameter name="provider" value="twilio"/></Stream></Connect></Response>`;
         const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
         const twilioAuthToken = (phoneConfig.twilio_auth_token || "").replace(/[^a-zA-Z0-9]/g, '');
         const twilioResponse = await fetch(
