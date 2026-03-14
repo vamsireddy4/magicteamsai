@@ -233,7 +233,7 @@ Deno.serve((req) => {
         const wavBlob = new Blob([wavData], { type: "audio/wav" });
         formData.append("file", wavBlob, "audio.wav");
         formData.append("language_code", agentConfig?.languageHint || "en-IN");
-        formData.append("model", "saaras:v2");
+        formData.append("model", "saaras:v3");
 
         const res = await fetch(SARVAM_STT_URL, {
           method: "POST",
