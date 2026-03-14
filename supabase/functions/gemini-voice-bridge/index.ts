@@ -418,7 +418,7 @@ Deno.serve((req) => {
           body: JSON.stringify({
             call_sid: callSid,
             agent_id: agentId,
-            provider: "twilio", // Gemini bridge currently supports Twilio
+            provider: telephonyProvider,
           }),
         });
         return await res.json();
