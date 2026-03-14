@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PhoneIncoming, PhoneOutgoing, History, Copy, Check, Sparkles, Loader2, Clock, User } from "lucide-react";
+import { PhoneIncoming, PhoneOutgoing, History, Copy, Check, FileText, Clock, User } from "lucide-react";
 import { toast } from "sonner";
 import type { Json } from "@/integrations/supabase/types";
 
