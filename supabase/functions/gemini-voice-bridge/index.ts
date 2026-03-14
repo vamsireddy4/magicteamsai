@@ -341,16 +341,19 @@ Deno.serve((req) => {
       });
     }
 
-    // Custom agent tools
+    // Custom agent tools — only expose dynamic parameters (skip automatic ones)
     for (const tool of config.agentTools) {
       const properties: Record<string, any> = {};
       const required: string[] = [];
 
       if (Array.isArray(tool.parameters)) {
         for (const param of tool.parameters) {
+          // Skip automatic parameters — they are injected at execution time
+          if (param.paramType === "automatic") continue;
+          const schema = param.schema || { type: param.type || "string", description: param.description || "" };
           properties[param.name] = {
-            type: (param.type || "string").toUpperCase(),
-            description: param.description || "",
+            type: (schema.type || "string").toUpperCase(),
+            description: schema.description || param.description || "",
           };
           if (param.required) required.push(param.name);
         }
