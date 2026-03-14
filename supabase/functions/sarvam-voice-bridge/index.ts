@@ -545,10 +545,13 @@ Deno.serve((req) => {
           return;
         }
 
-        const audioBytes = b64decode(audioB64);
-        await sendAudioToTelephony(audioBytes);
+        const rawAudioBytes = b64decode(audioB64);
+        console.log(`[SARVAM-BRIDGE] TTS raw response: ${rawAudioBytes.length} bytes, first4=[${rawAudioBytes[0]},${rawAudioBytes[1]},${rawAudioBytes[2]},${rawAudioBytes[3]}]`);
+        const mulawBytes = parseTTSAudioToMulaw(rawAudioBytes);
+        console.log(`[SARVAM-BRIDGE] TTS mulaw output: ${mulawBytes.length} bytes (${(mulawBytes.length / 8000 * 1000).toFixed(0)}ms audio)`);
+        await sendAudioToTelephony(mulawBytes);
         const ttsLatency = Date.now() - ttsStartMs;
-        console.log(`[SARVAM-BRIDGE] TTS sent ${audioBytes.length} bytes latency=${ttsLatency}ms provider=${telephonyProvider}`);
+        console.log(`[SARVAM-BRIDGE] TTS sent ${mulawBytes.length} bytes latency=${ttsLatency}ms provider=${telephonyProvider}`);
       } catch (e) {
         console.error("[SARVAM-BRIDGE] TTS error:", e);
       }
