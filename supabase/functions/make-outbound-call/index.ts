@@ -351,6 +351,90 @@ Deno.serve(async (req) => {
 
       console.log(`Gemini call placed via ${provider}: ${callSid}`);
 
+    } else if (aiProvider === "sarvam") {
+      // --- SARVAM AI PATH ---
+      const sarvamApiKey = Deno.env.get("SARVAM_API_KEY");
+      if (!sarvamApiKey) {
+        return new Response(
+          JSON.stringify({ error: "SARVAM_API_KEY not configured" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const bridgeUrl = `${supabaseUrl}/functions/v1/sarvam-voice-bridge`.replace("https://", "wss://");
+
+      if (provider === "telnyx") {
+        const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
+        const telnyxConnectionId = (phoneConfig.telnyx_connection_id || "").trim();
+        if (!telnyxApiKey || !telnyxConnectionId) {
+          return new Response(
+            JSON.stringify({ error: "Telnyx credentials missing" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        const sarvamBridgeUrl = `${supabaseUrl}/functions/v1/sarvam-voice-bridge?agent_id=${agent.id}`.replace("https://", "wss://");
+        const webhookUrl = `${supabaseUrl}/functions/v1/handle-telnyx-webhook`;
+
+        const telnyxResponse = await fetch("https://api.telnyx.com/v2/calls", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${telnyxApiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            connection_id: telnyxConnectionId,
+            to: recipient_number,
+            from: phoneConfig.phone_number,
+            webhook_url: webhookUrl,
+            timeout_secs: 30,
+          }),
+        });
+        if (!telnyxResponse.ok) {
+          const err = await telnyxResponse.text();
+          return new Response(JSON.stringify({ error: "Telnyx call failed", details: err }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const telnyxData = await telnyxResponse.json();
+        callSid = telnyxData.data?.call_control_id || "";
+
+        await supabase.from("telnyx_call_state").insert({
+          call_control_id: callSid,
+          join_url: sarvamBridgeUrl,
+          telnyx_api_key: telnyxApiKey,
+          agent_id: agent.id,
+          user_id: user.id,
+        });
+      } else {
+        const twiml = `<Response><Connect><Stream url="${bridgeUrl}"><Parameter name="agent_id" value="${agent.id}"/></Stream></Connect></Response>`;
+        const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
+        const twilioAuthToken = (phoneConfig.twilio_auth_token || "").replace(/[^a-zA-Z0-9]/g, '');
+        const twilioResponse = await fetch(
+          `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`,
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`,
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({
+              To: recipient_number,
+              From: phoneConfig.phone_number,
+              Twiml: twiml,
+              StatusCallback: `${supabaseUrl}/functions/v1/handle-twilio-status`,
+              StatusCallbackEvent: "initiated ringing answered completed",
+            }).toString(),
+          }
+        );
+        if (!twilioResponse.ok) {
+          const err = await twilioResponse.text();
+          return new Response(JSON.stringify({ error: "Twilio call failed", details: err }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const twilioData = await twilioResponse.json();
+        callSid = twilioData.sid;
+      }
+
+      console.log(`Sarvam call placed via ${provider}: ${callSid}`);
+
     } else {
       // --- ULTRAVOX PATH (existing) ---
       if (!ultravoxApiKey) {

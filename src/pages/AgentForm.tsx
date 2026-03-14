@@ -76,8 +76,43 @@ const GEMINI_VOICES = [
   { value: "Iapetus", label: "Iapetus (Male)" },
 ];
 
+const SARVAM_MODELS: UltravoxModel[] = [
+  { name: "sarvam-m" },
+  { name: "sarvam-30b" },
+  { name: "sarvam-105b" },
+  { name: "sarvam-105b-32k" },
+];
+
+const SARVAM_VOICES = [
+  { value: "meera", label: "Meera (Female, Hindi)" },
+  { value: "arvind", label: "Arvind (Male, Hindi)" },
+  { value: "amol", label: "Amol (Male, Hindi)" },
+  { value: "kalpana", label: "Kalpana (Female, Hindi)" },
+  { value: "shubh", label: "Shubh (Male, Hindi)" },
+  { value: "diya", label: "Diya (Female, Hindi)" },
+  { value: "neel", label: "Neel (Male, Hindi)" },
+  { value: "misha", label: "Misha (Female, Hindi)" },
+];
+
+const SARVAM_LANGUAGES = [
+  { value: "en-IN", label: "English (India)" },
+  { value: "hi-IN", label: "Hindi" },
+  { value: "ta-IN", label: "Tamil" },
+  { value: "te-IN", label: "Telugu" },
+  { value: "kn-IN", label: "Kannada" },
+  { value: "ml-IN", label: "Malayalam" },
+  { value: "bn-IN", label: "Bengali" },
+  { value: "gu-IN", label: "Gujarati" },
+  { value: "mr-IN", label: "Marathi" },
+  { value: "pa-IN", label: "Punjabi" },
+  { value: "od-IN", label: "Odia" },
+  { value: "ur-IN", label: "Urdu" },
+  { value: "unknown", label: "Auto-detect" },
+];
+
 const AI_PROVIDERS = [
   { value: "ultravox", label: "MagicTeams" },
+  { value: "sarvam", label: "Sarvam AI" },
   { value: "gemini", label: "Gemini Live API (Coming Soon)", disabled: true },
 ];
 
@@ -168,9 +203,10 @@ export default function AgentForm() {
   }, [user, id]);
 
   useEffect(() => {
-    if ((voices.length > 0 || GEMINI_VOICES.length > 0) && form.voice) {
+    if ((voices.length > 0 || GEMINI_VOICES.length > 0 || SARVAM_VOICES.length > 0) && form.voice) {
       const isKnownVoice = voices.some(v => v.voiceId === form.voice || v.name === form.voice)
-        || GEMINI_VOICES.some(v => v.value === form.voice);
+        || GEMINI_VOICES.some(v => v.value === form.voice)
+        || SARVAM_VOICES.some(v => v.value === form.voice);
       if (!isKnownVoice && form.voice !== "terrence") setUseCustomVoice(true);
     }
   }, [voices, form.voice]);
@@ -235,6 +271,9 @@ export default function AgentForm() {
   const allVoices = useMemo(() => {
     if (form.ai_provider === "gemini") {
       return GEMINI_VOICES.map(v => ({ voiceId: v.value, name: v.value, description: v.label, languageLabel: "Gemini Native", provider: "gemini" } as UltravoxVoice));
+    }
+    if (form.ai_provider === "sarvam") {
+      return SARVAM_VOICES.map(v => ({ voiceId: v.value, name: v.value, description: v.label, languageLabel: "Sarvam AI", provider: "sarvam" } as UltravoxVoice));
     }
     return voices;
   }, [voices, form.ai_provider]);
@@ -322,8 +361,13 @@ export default function AgentForm() {
                   <div className="space-y-2">
                     <Label>AI Provider</Label>
                     <Select value={form.ai_provider} onValueChange={val => {
-                      const defaults = val === "gemini" ? { model: "gemini-2.5-flash-preview-native-audio", voice: "Puck" } : { model: "fixie-ai/ultravox-v0.7", voice: "terrence" };
+                      const defaults = val === "gemini"
+                        ? { model: "gemini-2.5-flash-preview-native-audio", voice: "Puck" }
+                        : val === "sarvam"
+                        ? { model: "sarvam-m", voice: "meera", language_hint: "en-IN" }
+                        : { model: "fixie-ai/ultravox-v0.7", voice: "terrence" };
                       setForm({ ...form, ai_provider: val, ...defaults });
+                      setUseCustomVoice(false);
                     }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>{AI_PROVIDERS.map(p => <SelectItem key={p.value} value={p.value} disabled={(p as any).disabled}>{p.label}</SelectItem>)}</SelectContent>
@@ -336,6 +380,11 @@ export default function AgentForm() {
                       <Select value={form.model} onValueChange={val => setForm({ ...form, model: val })}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>{GEMINI_MODELS.map(m => <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                    ) : form.ai_provider === "sarvam" ? (
+                      <Select value={form.model} onValueChange={val => setForm({ ...form, model: val })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>{SARVAM_MODELS.map(m => <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>)}</SelectContent>
                       </Select>
                     ) : loadingVoices ? (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading models...</div>
@@ -358,6 +407,7 @@ export default function AgentForm() {
                           setUseCustomVoice(val);
                           if (!val) {
                             if (form.ai_provider === "gemini") setForm({ ...form, voice: "Kore" });
+                            else if (form.ai_provider === "sarvam") setForm({ ...form, voice: "meera" });
                             else if (voices.length > 0) setForm({ ...form, voice: voices[0].name });
                           }
                         }} />
@@ -368,7 +418,7 @@ export default function AgentForm() {
                         <Input value={form.voice} onChange={e => setForm({ ...form, voice: e.target.value })} placeholder="Enter ElevenLabs voice ID" />
                         <p className="text-xs text-muted-foreground">Paste your ElevenLabs voice ID for a custom voice.</p>
                       </div>
-                    ) : loadingVoices && form.ai_provider !== "gemini" ? (
+                    ) : loadingVoices && form.ai_provider !== "gemini" && form.ai_provider !== "sarvam" ? (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading voices...</div>
                     ) : (
                       <div className="space-y-2">
@@ -412,7 +462,16 @@ export default function AgentForm() {
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Language</Label>
-                      <Input value={form.language_hint} onChange={e => setForm({ ...form, language_hint: e.target.value })} placeholder="en" />
+                      {form.ai_provider === "sarvam" ? (
+                        <Select value={form.language_hint} onValueChange={val => setForm({ ...form, language_hint: val })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {SARVAM_LANGUAGES.map(l => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input value={form.language_hint} onChange={e => setForm({ ...form, language_hint: e.target.value })} placeholder="en" />
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label>Max Duration (seconds)</Label>
