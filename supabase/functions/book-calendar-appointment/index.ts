@@ -41,7 +41,37 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { integration_id, start_time, end_time, attendee_name, attendee_email, attendee_phone, notes } = body;
+    const {
+      integration_id,
+      start_time: rawStartTime,
+      end_time: rawEndTime,
+      date_time,
+      duration_minutes,
+      attendee_name: rawAttendeeName,
+      attendee_email: rawAttendeeEmail,
+      attendee_phone: rawAttendeePhone,
+      name,
+      email,
+      phone,
+      notes,
+    } = body;
+
+    const start_time = rawStartTime || date_time;
+    const attendee_name = rawAttendeeName || name;
+    const attendee_email = rawAttendeeEmail || email;
+    const attendee_phone = rawAttendeePhone || phone;
+
+    const end_time = rawEndTime || (() => {
+      if (!start_time) return undefined;
+      const duration = Number(duration_minutes) > 0 ? Number(duration_minutes) : 30;
+      return new Date(new Date(start_time).getTime() + duration * 60 * 1000).toISOString();
+    })();
+
+    if (!integration_id || !start_time || !attendee_name) {
+      return new Response(JSON.stringify({ error: "integration_id, start_time and attendee_name are required" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     let query = supabase.from("calendar_integrations").select("*").eq("id", integration_id);
     if (!isServiceRole && userId) {
