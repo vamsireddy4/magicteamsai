@@ -477,7 +477,7 @@ Deno.serve(async (req) => {
               agentId: newUltravoxAgentId,
             };
             if (wh.secret) {
-              whBody.secret = wh.secret;
+              whBody.secrets = [wh.secret];
             }
             const whResp = await fetch("https://api.ultravox.ai/api/webhooks", {
               method: "POST",
