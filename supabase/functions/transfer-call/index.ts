@@ -99,8 +99,9 @@ Deno.serve(async (req) => {
     const firstNumber = forwardingNumbers[0].phone_number;
 
     if (callProvider === "telnyx") {
-      // Telnyx: try first number, if fails try next sequentially
-      return await handleTelnyxTransfer(phoneConfig, call_sid, forwardingNumbers, supabase);
+      // Telnyx: use the actual call_control_id from callLog, not the Ultravox call ID
+      const actualTelnyxId = callLog.twilio_call_sid || call_sid;
+      return await handleTelnyxTransfer(phoneConfig, actualTelnyxId, forwardingNumbers, supabase);
     } else {
       // Twilio: use <Dial action="callback"> for sequential fallback
       const actualCallSid = callLog.twilio_call_sid || call_sid;
