@@ -666,6 +666,11 @@ Deno.serve((req) => {
           speechStartMs = now;
           audioBuffer = [];
           audioBufferBytes = 0;
+
+          if (isSendingTts) {
+            interruptPlayback("barge_in_detected");
+          }
+
           console.log(`[SARVAM-BRIDGE] VAD: speech start (rms=${rms.toFixed(0)})`);
         }
         silenceStartMs = 0;
