@@ -407,6 +407,7 @@ export default function AgentForm() {
                           setUseCustomVoice(val);
                           if (!val) {
                             if (form.ai_provider === "gemini") setForm({ ...form, voice: "Kore" });
+                            else if (form.ai_provider === "sarvam") setForm({ ...form, voice: "meera" });
                             else if (voices.length > 0) setForm({ ...form, voice: voices[0].name });
                           }
                         }} />
