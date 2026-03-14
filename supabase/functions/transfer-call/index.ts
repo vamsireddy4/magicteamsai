@@ -251,7 +251,7 @@ async function handleTwilioCallback(req: Request, url: URL, supabase: any, supab
   console.log(`Twilio fallback: trying number ${attempt + 1}/${forwardingNumbers.length}: ${destination}`);
 
   if (hasNext) {
-    const actionUrl = `${supabaseUrl}/functions/v1/transfer-call?attempt=${attempt + 1}&agent_id=${agentId}&phone_config_id=${phoneConfigId}`;
+    const actionUrl = `${supabaseUrl}/functions/v1/transfer-call?attempt=${attempt + 1}&amp;agent_id=${agentId}&amp;phone_config_id=${phoneConfigId}`;
     return new Response(
       `<?xml version="1.0" encoding="UTF-8"?><Response><Dial action="${actionUrl}" timeout="30">${destination}</Dial></Response>`,
       { headers: { ...corsHeaders, "Content-Type": "text/xml" } }
