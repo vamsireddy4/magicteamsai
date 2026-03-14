@@ -432,9 +432,13 @@ Deno.serve((req) => {
           );
         }
 
-        // Custom tools
+        // Custom tools — only show dynamic params in description
         for (const tool of agentTools) {
-          const paramDescs = (tool.parameters || []).map((p: any) => `${p.name}: ${p.description || p.type || "string"}`).join(", ");
+          const dynamicParams = (tool.parameters || []).filter((p: any) => p.paramType !== "automatic");
+          const paramDescs = dynamicParams.map((p: any) => {
+            const type = p.schema?.type || p.type || "string";
+            return `"${p.name}": "${p.description || type}"`;
+          }).join(", ");
           toolDescriptions.push(`- ${tool.name}: ${tool.description}. Params: {${paramDescs}}`);
         }
 
