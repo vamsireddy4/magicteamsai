@@ -237,6 +237,17 @@ Deno.serve(async (req) => {
       }
       streamUrl = `${supabaseUrl}/functions/v1/gemini-voice-bridge?agent_id=${agent.id}`.replace("https://", "wss://");
       console.log(`Gemini bridge URL: ${streamUrl}`);
+    } else if (aiProvider === "sarvam") {
+      // --- SARVAM AI PATH ---
+      const sarvamApiKey = Deno.env.get("SARVAM_API_KEY");
+      if (!sarvamApiKey) {
+        return new Response(
+          `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, Sarvam AI is not configured. Please try again later.</Say></Response>`,
+          { headers: { ...corsHeaders, "Content-Type": "text/xml" } }
+        );
+      }
+      streamUrl = `${supabaseUrl}/functions/v1/sarvam-voice-bridge?agent_id=${agent.id}`.replace("https://", "wss://");
+      console.log(`Sarvam bridge URL: ${streamUrl}`);
     } else {
       // --- ULTRAVOX PATH ---
       const medium = provider === "telnyx" ? { telnyx: {} } : { twilio: {} };
