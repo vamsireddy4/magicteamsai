@@ -375,21 +375,43 @@ Deno.serve((req) => {
     }
 
     // ── Send mulaw audio back to telephony ──
-    function sendAudioToTelephony(mulawBytes: Uint8Array) {
-      const CHUNK_SIZE = 640;
-      for (let i = 0; i < mulawBytes.length; i += CHUNK_SIZE) {
-        const chunk = mulawBytes.slice(i, i + CHUNK_SIZE);
-        if (socket.readyState !== WebSocket.OPEN || closed) break;
+    async function sendAudioToTelephony(mulawBytes: Uint8Array) {
+      // 20ms frame @ 8kHz PCMU = 160 bytes
+      const FRAME_SIZE = 160;
+      const FRAME_DELAY_MS = 20;
 
-        if (telephonyProvider === "telnyx") {
-          socket.send(chunk);
-        } else {
-          socket.send(JSON.stringify({
-            event: "media",
-            streamSid,
-            media: { payload: b64encode(chunk) },
-          }));
+      const sendFrames = async () => {
+        for (let i = 0; i < mulawBytes.length; i += FRAME_SIZE) {
+          const frame = mulawBytes.slice(i, i + FRAME_SIZE);
+          if (socket.readyState !== WebSocket.OPEN || closed) break;
+
+          if (telephonyProvider === "telnyx") {
+            // Telnyx bidirectional RTP expects full RTP packets, not raw PCMU payload
+            const rtpPacket = createRtpPacket(frame);
+            socket.send(rtpPacket);
+          } else {
+            // Twilio media websocket expects JSON envelopes with base64 μ-law payload
+            socket.send(JSON.stringify({
+              event: "media",
+              streamSid,
+              media: { payload: b64encode(frame) },
+            }));
+          }
+
+          await sleep(FRAME_DELAY_MS);
         }
+      };
+
+      if (telephonyProvider === "telnyx") {
+        telnyxSendChain = telnyxSendChain.then(sendFrames).catch((e) => {
+          console.error("[SARVAM-BRIDGE] Telnyx send error:", e);
+        });
+        await telnyxSendChain;
+      } else {
+        twilioSendChain = twilioSendChain.then(sendFrames).catch((e) => {
+          console.error("[SARVAM-BRIDGE] Twilio send error:", e);
+        });
+        await twilioSendChain;
       }
     }
 
