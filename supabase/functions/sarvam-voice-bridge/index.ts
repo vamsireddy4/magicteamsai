@@ -524,7 +524,6 @@ Deno.serve((req) => {
         }
 
         if (toolName === "transfer_call") {
-          if (!callSid) return { error: "No call SID available for transfer" };
           const res = await fetch(`${sbUrl}/functions/v1/transfer-call`, {
             method: "POST",
             headers: {
@@ -532,7 +531,7 @@ Deno.serve((req) => {
               Authorization: `Bearer ${sbKey}`,
             },
             body: JSON.stringify({
-              call_sid: callSid,
+              call_sid: callSid || "",
               agent_id: agentId,
               provider: telephonyProvider,
             }),
