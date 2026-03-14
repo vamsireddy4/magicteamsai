@@ -289,7 +289,7 @@ async function handleTelnyxTransfer(phoneConfig: any, callSid: string, forwardin
           Authorization: `Bearer ${telnyxApiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ to: destination }),
+        body: JSON.stringify({ to: destination, from: phoneConfig.phone_number }),
       }
     );
 
