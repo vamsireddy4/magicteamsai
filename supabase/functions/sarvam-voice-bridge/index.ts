@@ -490,11 +490,9 @@ Deno.serve((req) => {
       greetingSent = true;
 
       const greetingText = "Hello! How can I help you today?";
-      const greetingStartMs = Date.now();
       console.log(`[SARVAM-BRIDGE] Sending immediate greeting (no chat)`);
 
       await speakViaSarvamTTS(greetingText);
-      conversationHistory.push({ role: "assistant", content: greetingText });
 
       const elapsed = Date.now() - streamStartMs;
       console.log(`[SARVAM-BRIDGE] greeting_sent_ms=${elapsed} (from stream start)`);
