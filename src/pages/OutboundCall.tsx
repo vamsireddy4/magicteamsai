@@ -106,12 +106,6 @@ export default function OutboundCall() {
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedPhone && selectedAgent && selectedPhone.provider !== selectedAgent.ai_provider && (
-                  <p className="text-xs text-amber-500 flex items-center gap-1 mt-1">
-                    <Info className="h-3 w-3" />
-                    Phone provider ({selectedPhone.provider}) differs from agent AI provider ({selectedAgent.ai_provider})
-                  </p>
-                )}
               </div>
               <Button type="submit" className="w-full" disabled={loading || !form.agent_id || !form.phone_config_id}>
                 {loading ? (
