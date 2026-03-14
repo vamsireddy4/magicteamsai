@@ -432,9 +432,13 @@ Deno.serve((req) => {
           );
         }
 
-        // Custom tools
+        // Custom tools — only show dynamic params in description
         for (const tool of agentTools) {
-          const paramDescs = (tool.parameters || []).map((p: any) => `${p.name}: ${p.description || p.type || "string"}`).join(", ");
+          const dynamicParams = (tool.parameters || []).filter((p: any) => p.paramType !== "automatic");
+          const paramDescs = dynamicParams.map((p: any) => {
+            const type = p.schema?.type || p.type || "string";
+            return `"${p.name}": "${p.description || type}"`;
+          }).join(", ");
           toolDescriptions.push(`- ${tool.name}: ${tool.description}. Params: {${paramDescs}}`);
         }
 
@@ -541,18 +545,56 @@ Deno.serve((req) => {
           const tool = agentConfig.agentTools.find(t => t.name === toolName);
           if (tool) {
             let url = tool.http_url;
+            // Replace URL placeholders
             for (const [key, value] of Object.entries(args)) {
               url = url.replace(`{{${key}}}`, encodeURIComponent(String(value)));
             }
-            let body: string | undefined;
-            if (tool.http_method !== "GET" && tool.http_body_template) {
-              let bodyStr = JSON.stringify(tool.http_body_template);
-              for (const [key, value] of Object.entries(args)) {
-                bodyStr = bodyStr.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), String(value));
+
+            // Inject automatic parameters (e.g. call.id → callSid)
+            const mergedArgs = { ...args };
+            if (Array.isArray(tool.parameters)) {
+              for (const p of tool.parameters as any[]) {
+                if (p.paramType === "automatic") {
+                  if (p.knownValue === "call.id") mergedArgs[p.name] = callSid;
+                  else if (p.knownValue === "call.conversation_history") mergedArgs[p.name] = JSON.stringify(conversationHistory);
+                }
               }
-              body = bodyStr;
             }
+
+            let body: string | undefined;
+            if (tool.http_method !== "GET") {
+              // Merge body template with dynamic args instead of just placeholder replacement
+              const bodyObj: Record<string, any> = {};
+              if (tool.http_body_template && typeof tool.http_body_template === "object") {
+                Object.assign(bodyObj, tool.http_body_template);
+                delete bodyObj.__agentEndBehavior;
+                delete bodyObj.__staticResponse;
+              }
+              // Merge dynamic + automatic args for body params
+              if (Array.isArray(tool.parameters)) {
+                for (const p of tool.parameters as any[]) {
+                  if (p.location === "body" || !p.location) {
+                    if (mergedArgs[p.name] !== undefined) bodyObj[p.name] = mergedArgs[p.name];
+                  }
+                }
+              }
+              // Also merge any remaining args not yet in body
+              for (const [key, value] of Object.entries(mergedArgs)) {
+                if (!(key in bodyObj)) bodyObj[key] = value;
+              }
+              body = JSON.stringify(bodyObj);
+            }
+
             const fetchHeaders: Record<string, string> = { "Content-Type": "application/json", ...tool.http_headers };
+            // Inject automatic header params
+            if (Array.isArray(tool.parameters)) {
+              for (const p of tool.parameters as any[]) {
+                if (p.paramType === "automatic" && p.location === "header" && mergedArgs[p.name]) {
+                  fetchHeaders[p.name] = String(mergedArgs[p.name]);
+                }
+              }
+            }
+
             const res = await fetch(url, {
               method: tool.http_method,
               headers: fetchHeaders,
@@ -569,14 +611,26 @@ Deno.serve((req) => {
       }
     }
 
-    // Parse [TOOL_CALL:name|{...}] from response text
+    // Parse [TOOL_CALL:name|{...}] from response text — balanced brace parser for nested JSON
     function extractToolCall(text: string): { toolName: string; args: Record<string, any>; cleanText: string } | null {
-      const match = text.match(/\[TOOL_CALL:(\w+)\|(\{[^}]*\})\]/);
-      if (!match) return null;
+      const prefix = /\[TOOL_CALL:(\w+)\|/;
+      const match = text.match(prefix);
+      if (!match || match.index === undefined) return null;
+      const startIdx = match.index + match[0].length;
+      let depth = 0;
+      let endIdx = -1;
+      for (let i = startIdx; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') { depth--; if (depth === 0) { endIdx = i; break; } }
+      }
+      if (endIdx === -1) return null;
       try {
+        const jsonStr = text.substring(startIdx, endIdx + 1);
         const toolName = match[1];
-        const args = JSON.parse(match[2]);
-        const cleanText = text.replace(match[0], "").trim();
+        const args = JSON.parse(jsonStr);
+        // Remove the full [TOOL_CALL:...|{...}] including trailing ]
+        const fullEnd = endIdx + 1 < text.length && text[endIdx + 1] === ']' ? endIdx + 2 : endIdx + 1;
+        const cleanText = (text.substring(0, match.index) + text.substring(fullEnd)).trim();
         return { toolName, args, cleanText };
       } catch {
         return null;
