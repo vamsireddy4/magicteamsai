@@ -98,7 +98,7 @@ async function placeCall(
   } else if (aiProvider === "sarvam") {
     // Sarvam AI path
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const bridgeUrl = `${supabaseUrl}/functions/v1/sarvam-voice-bridge?agent_id=${agent.id}`.replace("https://", "wss://");
+    const bridgeUrl = `${supabaseUrl}/functions/v1/sarvam-voice-bridge?agent_id=${agent.id}&provider=${provider}`.replace("https://", "wss://");
 
     if (provider === "telnyx") {
       const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();

@@ -372,7 +372,7 @@ Deno.serve(async (req) => {
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
-        const sarvamBridgeUrl = `${supabaseUrl}/functions/v1/sarvam-voice-bridge?agent_id=${agent.id}`.replace("https://", "wss://");
+        const sarvamBridgeUrl = `${supabaseUrl}/functions/v1/sarvam-voice-bridge?agent_id=${agent.id}&provider=telnyx`.replace("https://", "wss://");
         const webhookUrl = `${supabaseUrl}/functions/v1/handle-telnyx-webhook`;
 
         const telnyxResponse = await fetch("https://api.telnyx.com/v2/calls", {
@@ -403,7 +403,8 @@ Deno.serve(async (req) => {
           user_id: user.id,
         });
       } else {
-        const twiml = `<Response><Connect><Stream url="${bridgeUrl}"><Parameter name="agent_id" value="${agent.id}"/></Stream></Connect></Response>`;
+        const sarvamTwilioBridgeUrl = `${bridgeUrl}?agent_id=${agent.id}&provider=twilio`;
+        const twiml = `<Response><Connect><Stream url="${sarvamTwilioBridgeUrl}"><Parameter name="agent_id" value="${agent.id}"/></Stream></Connect></Response>`;
         const twilioAccountSid = (phoneConfig.twilio_account_sid || "").replace(/[^a-zA-Z0-9]/g, '');
         const twilioAuthToken = (phoneConfig.twilio_auth_token || "").replace(/[^a-zA-Z0-9]/g, '');
         const twilioResponse = await fetch(

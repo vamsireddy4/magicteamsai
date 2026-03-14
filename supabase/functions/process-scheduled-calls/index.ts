@@ -165,7 +165,7 @@ Deno.serve(async (req) => {
         } else if (aiProvider === "sarvam") {
           const sarvamApiKey = Deno.env.get("SARVAM_API_KEY");
           if (!sarvamApiKey) throw new Error("SARVAM_API_KEY not configured");
-          const bridgeUrl = `${supabaseUrl}/functions/v1/sarvam-voice-bridge?agent_id=${agent.id}`.replace("https://", "wss://");
+          const bridgeUrl = `${supabaseUrl}/functions/v1/sarvam-voice-bridge?agent_id=${agent.id}&provider=${provider}`.replace("https://", "wss://");
 
           if (provider === "telnyx") {
             const telnyxApiKey = (phoneConfig.telnyx_api_key || "").trim();
