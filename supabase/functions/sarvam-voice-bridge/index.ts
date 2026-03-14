@@ -644,9 +644,10 @@ Deno.serve((req) => {
       greetingSent = true;
 
       const greetingText = "Hello! How can I help you today?";
+      const greetingCacheKey = `${agentConfig.voice}|${agentConfig.languageHint}|${greetingText}`;
       console.log(`[SARVAM-BRIDGE] Sending immediate greeting (no chat)`);
 
-      await speakViaSarvamTTS(greetingText);
+      await speakViaSarvamTTS(greetingText, { cacheKey: greetingCacheKey });
 
       const elapsed = Date.now() - streamStartMs;
       console.log(`[SARVAM-BRIDGE] greeting_sent_ms=${elapsed} (from stream start)`);
