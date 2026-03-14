@@ -332,7 +332,6 @@ Deno.serve(async (req) => {
           ],
           http: { baseUrlPattern: transferUrl, httpMethod: "POST" },
           staticParameters: [
-            { name: "provider", location: "PARAMETER_LOCATION_BODY", value: "twilio" },
             { name: "agent_id", location: "PARAMETER_LOCATION_BODY", value: agent.id },
             { name: "x-ultravox-tool-key", location: "PARAMETER_LOCATION_HEADER", value: ultravoxApiKey },
           ],
