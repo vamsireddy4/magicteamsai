@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
           },
           body: JSON.stringify({
             stream_url: callState.join_url,
-            stream_track: "both_tracks",
+            stream_track: "inbound_track",
             stream_bidirectional_mode: "rtp",
             stream_codec: "PCMU",
             stream_bidirectional_codec: "PCMU",
