@@ -372,7 +372,7 @@ export default function AgentForm() {
                       const defaults = val === "gemini"
                         ? { model: "gemini-2.5-flash-preview-native-audio", voice: "Puck" }
                         : val === "sarvam"
-                        ? { model: "sarvam-m", voice: "meera", language_hint: "en-IN" }
+                        ? { model: "sarvam-m", voice: "anushka", language_hint: "en-IN" }
                         : { model: "fixie-ai/ultravox-v0.7", voice: "terrence" };
                       setForm({ ...form, ai_provider: val, ...defaults });
                       setUseCustomVoice(false);
