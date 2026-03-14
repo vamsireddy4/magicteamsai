@@ -128,6 +128,11 @@ Deno.serve(async (req) => {
             updateData.status = "completed";
           }
 
+          // Fetch short summary from Ultravox
+          if (data.shortSummary) {
+            updateData.summary = data.shortSummary;
+          }
+
           if (call.transcript === null && messagesRes && messagesRes.ok) {
             const messagesData = await messagesRes.json();
             const messages = messagesData.results || messagesData;
