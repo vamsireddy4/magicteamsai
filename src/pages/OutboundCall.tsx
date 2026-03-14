@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PhoneCall, Loader2 } from "lucide-react";
+import { PhoneCall, Loader2, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { Badge } from "@/components/ui/badge";
 import type { Tables } from "@/integrations/supabase/types";
 
 export default function OutboundCall() {
@@ -28,6 +29,9 @@ export default function OutboundCall() {
     supabase.from("agents").select("*").eq("is_active", true).then(({ data }) => setAgents(data || []));
     supabase.from("phone_configs").select("*").eq("is_active", true).then(({ data }) => setPhoneConfigs(data || []));
   }, [user]);
+
+  const selectedAgent = agents.find((a) => a.id === form.agent_id);
+  const selectedPhone = phoneConfigs.find((pc) => pc.id === form.phone_config_id);
 
   const handleCall = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,10 +80,32 @@ export default function OutboundCall() {
                   <SelectTrigger><SelectValue placeholder="Select an agent" /></SelectTrigger>
                   <SelectContent>
                     {agents.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          ({a.ai_provider} / {a.model})
+                        </span>
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedAgent && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Provider:</span>
+                    <Badge variant="secondary" className="text-xs">
+                      {selectedAgent.ai_provider}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">Model:</span>
+                    <Badge variant="outline" className="text-xs">
+                      {selectedAgent.model}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">Voice:</span>
+                    <Badge variant="outline" className="text-xs">
+                      {selectedAgent.voice}
+                    </Badge>
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Recipient Phone Number</Label>
@@ -103,6 +129,12 @@ export default function OutboundCall() {
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedPhone && selectedAgent && selectedPhone.provider !== selectedAgent.ai_provider && (
+                  <p className="text-xs text-amber-500 flex items-center gap-1 mt-1">
+                    <Info className="h-3 w-3" />
+                    Phone provider ({selectedPhone.provider}) differs from agent AI provider ({selectedAgent.ai_provider})
+                  </p>
+                )}
               </div>
               <Button type="submit" className="w-full" disabled={loading || !form.agent_id || !form.phone_config_id}>
                 {loading ? (
