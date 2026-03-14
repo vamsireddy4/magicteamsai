@@ -3,8 +3,8 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const SARVAM_STT_WS_BASE = "wss://api.sarvam.ai/speech-to-text-translate/socket";
-const SARVAM_CHAT_URL = "https://api.sarvam.ai/v2/chat/completions";
+const SARVAM_STT_WS_BASE = "wss://api.sarvam.ai/speech-to-text/ws";
+const SARVAM_CHAT_URL = "https://api.sarvam.ai/v1/chat/completions";
 const SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech";
 
 // Map language_hint to Sarvam language codes
