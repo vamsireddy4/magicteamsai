@@ -381,6 +381,11 @@ export default function AgentForm() {
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>{GEMINI_MODELS.map(m => <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>)}</SelectContent>
                       </Select>
+                    ) : form.ai_provider === "sarvam" ? (
+                      <Select value={form.model} onValueChange={val => setForm({ ...form, model: val })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>{SARVAM_MODELS.map(m => <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>)}</SelectContent>
+                      </Select>
                     ) : loadingVoices ? (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading models...</div>
                     ) : models.length > 0 ? (
