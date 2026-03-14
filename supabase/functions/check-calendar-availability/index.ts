@@ -16,18 +16,22 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "No authorization header" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const ultravoxToolKey = req.headers.get("x-ultravox-tool-key");
+    const ultravoxApiKey = Deno.env.get("ULTRAVOX_API_KEY") || "";
+    const isTrustedUltravoxTool = !!ultravoxToolKey && !!ultravoxApiKey && ultravoxToolKey === ultravoxApiKey;
 
-    const token = authHeader.replace("Bearer ", "");
-    const isServiceRole = token === supabaseKey;
+    const token = authHeader?.replace("Bearer ", "") || "";
+    const isServiceRole = !!token && token === supabaseKey;
 
     let userId: string | null = null;
-    if (!isServiceRole) {
+    if (!isServiceRole && !isTrustedUltravoxTool) {
+      if (!token) {
+        return new Response(JSON.stringify({ error: "No authorization header" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       const { data: { user }, error: authError } = await supabase.auth.getUser(token);
       if (authError || !user) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
