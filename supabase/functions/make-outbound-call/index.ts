@@ -372,7 +372,7 @@ Deno.serve(async (req) => {
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
-        const sarvamBridgeUrl = `${supabaseUrl}/functions/v1/sarvam-voice-bridge?agent_id=${agent.id}`.replace("https://", "wss://");
+        const sarvamBridgeUrl = `${supabaseUrl}/functions/v1/sarvam-voice-bridge?agent_id=${agent.id}&provider=telnyx`.replace("https://", "wss://");
         const webhookUrl = `${supabaseUrl}/functions/v1/handle-telnyx-webhook`;
 
         const telnyxResponse = await fetch("https://api.telnyx.com/v2/calls", {
