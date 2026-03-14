@@ -251,7 +251,7 @@ Deno.serve(async (req) => {
             baseUrlPattern: transferUrl,
             httpMethod: "POST",
           },
-          automaticParameters: [
+          staticParameters: [
             { name: "provider", location: "PARAMETER_LOCATION_BODY", value: provider },
             { name: "agent_id", location: "PARAMETER_LOCATION_BODY", value: agent.id },
           ],
