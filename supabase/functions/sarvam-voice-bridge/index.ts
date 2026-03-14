@@ -252,7 +252,7 @@ Deno.serve((req) => {
     // Connect to Sarvam STT WebSocket
     function connectSTT(config: AgentConfig) {
       const langCode = config.languageHint || "en-IN";
-      const sttUrl = `${SARVAM_STT_WS_BASE}?language_code=${langCode}&api_subscription_key=${sarvamApiKey}`;
+      const sttUrl = `${SARVAM_STT_WS_BASE}?language-code=${langCode}&api-subscription-key=${sarvamApiKey}&model=saaras:v3&sample_rate=8000&input_audio_codec=mulaw`;
 
       console.log(`[SARVAM-BRIDGE] Connecting STT: lang=${langCode}`);
 
@@ -267,19 +267,6 @@ Deno.serve((req) => {
       sttWs.onopen = () => {
         console.log("[SARVAM-BRIDGE] STT WS connected");
         sttReady = true;
-
-        // Send config message
-        try {
-          sttWs!.send(JSON.stringify({
-            config: {
-              sample_rate: 8000,
-              encoding: "mulaw",
-              language_code: langCode,
-            },
-          }));
-        } catch (e) {
-          console.error("[SARVAM-BRIDGE] STT config send error:", e);
-        }
 
         // Flush buffered audio
         for (const chunk of audioBuffer) {
