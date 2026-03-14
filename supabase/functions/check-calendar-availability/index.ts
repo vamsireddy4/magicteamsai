@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-ultravox-tool-key",
 };
 
 Deno.serve(async (req) => {
@@ -16,18 +16,22 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "No authorization header" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const ultravoxToolKey = req.headers.get("x-ultravox-tool-key");
+    const ultravoxApiKey = Deno.env.get("ULTRAVOX_API_KEY") || "";
+    const isTrustedUltravoxTool = !!ultravoxToolKey && !!ultravoxApiKey && ultravoxToolKey === ultravoxApiKey;
 
-    const token = authHeader.replace("Bearer ", "");
-    const isServiceRole = token === supabaseKey;
+    const token = authHeader?.replace("Bearer ", "") || "";
+    const isServiceRole = !!token && token === supabaseKey;
 
     let userId: string | null = null;
-    if (!isServiceRole) {
+    if (!isServiceRole && !isTrustedUltravoxTool) {
+      if (!token) {
+        return new Response(JSON.stringify({ error: "No authorization header" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       const { data: { user }, error: authError } = await supabase.auth.getUser(token);
       if (authError || !user) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -50,9 +54,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Look up integration — service role skips user_id filter
+    // Look up integration — service role and trusted tool skip user_id filter
     let query = supabase.from("calendar_integrations").select("*").eq("id", integration_id);
-    if (!isServiceRole && userId) {
+    if (!isServiceRole && !isTrustedUltravoxTool && userId) {
       query = query.eq("user_id", userId);
     }
     const { data: integration, error: intError } = await query.single();
@@ -229,7 +233,7 @@ async function handleCalCom(integration: any, opts: any) {
 
   const data = await res.json();
   const slotsObj = data.data?.slots || data.slots || {};
-  
+
   const flatSlots: any[] = [];
   for (const [dateKey, daySlots] of Object.entries(slotsObj)) {
     if (Array.isArray(daySlots)) {

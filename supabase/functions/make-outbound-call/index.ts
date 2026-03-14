@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
           .map(([day, v]: any) => `${day}: ${v.start}-${v.end}`)
           .join(", ");
         const typesList = (apptTool.appointment_types as any[]).map((t: any) => `${t.name} (${t.duration}min)`).join(", ");
-        
+
         systemPrompt += `\n\n--- APPOINTMENT TOOL: ${apptTool.name} ---`;
         systemPrompt += `\nProvider: ${apptTool.provider}`;
         systemPrompt += `\nBusiness Hours: ${enabledDays}`;
@@ -183,6 +183,9 @@ Deno.serve(async (req) => {
         systemPrompt += `\nUse book_appointment_${apptTool.name.replace(/[^a-zA-Z0-9]/g, '_')} to book an appointment.\n`;
 
         const toolNameSuffix = apptTool.name.replace(/[^a-zA-Z0-9]/g, '_');
+        const authHeaders = [
+          { name: "x-ultravox-tool-key", location: "PARAMETER_LOCATION_HEADER", value: ultravoxApiKey },
+        ];
 
         // Check availability tool
         ultravoxTools.push({
@@ -191,6 +194,7 @@ Deno.serve(async (req) => {
             description: `Check calendar availability for ${apptTool.name}. Returns available time slots for a given date.`,
             dynamicParameters: [
               { name: "date", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Date to check availability (YYYY-MM-DD format)" }, required: true },
+              { name: "duration_minutes", location: "PARAMETER_LOCATION_BODY", schema: { type: "number", description: "Desired meeting duration in minutes" }, required: false },
             ],
             http: {
               baseUrlPattern: checkAvailabilityUrl,
@@ -199,6 +203,7 @@ Deno.serve(async (req) => {
             staticParameters: [
               { name: "provider", location: "PARAMETER_LOCATION_BODY", value: apptTool.provider },
               { name: "integration_id", location: "PARAMETER_LOCATION_BODY", value: integration.id },
+              ...authHeaders,
             ],
           },
         });
@@ -209,11 +214,13 @@ Deno.serve(async (req) => {
             modelToolName: `book_appointment_${toolNameSuffix}`,
             description: `Book an appointment using ${apptTool.name}. Schedule a meeting at a specific date and time.`,
             dynamicParameters: [
-              { name: "date_time", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Date and time for the appointment (ISO 8601 format)" }, required: true },
-              { name: "name", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Name of the person booking" }, required: true },
-              { name: "email", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Email of the person booking" }, required: false },
-              { name: "duration_minutes", location: "PARAMETER_LOCATION_BODY", schema: { type: "number", description: "Duration in minutes" }, required: false },
-              { name: "appointment_type", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Type of appointment" }, required: false },
+              { name: "start_time", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Start time in ISO 8601 format" }, required: true },
+              { name: "end_time", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "End time in ISO 8601 format. Optional if duration_minutes is provided" }, required: false },
+              { name: "duration_minutes", location: "PARAMETER_LOCATION_BODY", schema: { type: "number", description: "Duration in minutes if end_time is omitted" }, required: false },
+              { name: "attendee_name", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Name of the person booking" }, required: true },
+              { name: "attendee_email", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Email of the person booking" }, required: false },
+              { name: "attendee_phone", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Phone number of the person booking" }, required: false },
+              { name: "notes", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Additional notes" }, required: false },
             ],
             http: {
               baseUrlPattern: bookAppointmentUrl,
@@ -222,6 +229,7 @@ Deno.serve(async (req) => {
             staticParameters: [
               { name: "provider", location: "PARAMETER_LOCATION_BODY", value: apptTool.provider },
               { name: "integration_id", location: "PARAMETER_LOCATION_BODY", value: integration.id },
+              ...authHeaders,
             ],
           },
         });
@@ -234,7 +242,7 @@ Deno.serve(async (req) => {
     if (forwardingNumbers && forwardingNumbers.length > 0) {
       const transferUrl = `${supabaseUrl}/functions/v1/transfer-call`;
       const numbersList = forwardingNumbers.map((fn: any, i: number) => `${i + 1}. ${fn.phone_number}${fn.label ? ` (${fn.label})` : ""}`).join(", ");
-      
+
       systemPrompt += `\n\n--- CALL FORWARDING ---`;
       systemPrompt += `\nYou can transfer the caller to a human agent if they request it or if you cannot help them.`;
       systemPrompt += `\nAvailable transfer destinations (in priority order): ${numbersList}`;
@@ -246,6 +254,9 @@ Deno.serve(async (req) => {
           modelToolName: "transferCall",
           description: `Transfer the current call to a human agent. The system will automatically try numbers in priority order: ${numbersList}. If the first person is busy, it tries the next. Always confirm with the caller before transferring.`,
           dynamicParameters: [],
+          automaticParameters: [
+            { name: "call_sid", location: "PARAMETER_LOCATION_BODY", knownValue: "KNOWN_PARAM_CALL_ID" },
+          ],
           http: {
             baseUrlPattern: transferUrl,
             httpMethod: "POST",
@@ -253,6 +264,7 @@ Deno.serve(async (req) => {
           staticParameters: [
             { name: "provider", location: "PARAMETER_LOCATION_BODY", value: provider },
             { name: "agent_id", location: "PARAMETER_LOCATION_BODY", value: agent.id },
+            { name: "x-ultravox-tool-key", location: "PARAMETER_LOCATION_HEADER", value: ultravoxApiKey },
           ],
         },
       });

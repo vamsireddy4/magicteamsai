@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-ultravox-tool-key",
 };
 
 Deno.serve(async (req) => {
@@ -16,17 +16,21 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "No authorization header" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const ultravoxToolKey = req.headers.get("x-ultravox-tool-key");
+    const ultravoxApiKey = Deno.env.get("ULTRAVOX_API_KEY") || "";
+    const isTrustedUltravoxTool = !!ultravoxToolKey && !!ultravoxApiKey && ultravoxToolKey === ultravoxApiKey;
 
-    const token = authHeader.replace("Bearer ", "");
-    const isServiceRole = token === supabaseKey;
+    const token = authHeader?.replace("Bearer ", "") || "";
+    const isServiceRole = !!token && token === supabaseKey;
 
     let userId: string | null = null;
-    if (!isServiceRole) {
+    if (!isServiceRole && !isTrustedUltravoxTool) {
+      if (!token) {
+        return new Response(JSON.stringify({ error: "No authorization header" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       const { data: { user }, error: authError } = await supabase.auth.getUser(token);
       if (authError || !user) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -37,10 +41,40 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { integration_id, start_time, end_time, attendee_name, attendee_email, attendee_phone, notes } = body;
+    const {
+      integration_id,
+      start_time: rawStartTime,
+      end_time: rawEndTime,
+      date_time,
+      duration_minutes,
+      attendee_name: rawAttendeeName,
+      attendee_email: rawAttendeeEmail,
+      attendee_phone: rawAttendeePhone,
+      name,
+      email,
+      phone,
+      notes,
+    } = body;
+
+    const start_time = rawStartTime || date_time;
+    const attendee_name = rawAttendeeName || name;
+    const attendee_email = rawAttendeeEmail || email;
+    const attendee_phone = rawAttendeePhone || phone;
+
+    const end_time = rawEndTime || (() => {
+      if (!start_time) return undefined;
+      const duration = Number(duration_minutes) > 0 ? Number(duration_minutes) : 30;
+      return new Date(new Date(start_time).getTime() + duration * 60 * 1000).toISOString();
+    })();
+
+    if (!integration_id || !start_time || !attendee_name) {
+      return new Response(JSON.stringify({ error: "integration_id, start_time and attendee_name are required" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     let query = supabase.from("calendar_integrations").select("*").eq("id", integration_id);
-    if (!isServiceRole && userId) {
+    if (!isServiceRole && !isTrustedUltravoxTool && userId) {
       query = query.eq("user_id", userId);
     }
     const { data: integration, error: intError } = await query.single();

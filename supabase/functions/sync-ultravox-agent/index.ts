@@ -39,14 +39,14 @@ Deno.serve(async (req) => {
     });
 
     const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabaseClient.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token);
+    if (userError || !user) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    const userId = claimsData.claims.sub;
+    const userId = user.id;
 
     const { agent_id } = await req.json();
     if (!agent_id) {
@@ -241,7 +241,6 @@ Deno.serve(async (req) => {
       .eq("is_active", true);
 
     if (appointmentTools && appointmentTools.length > 0) {
-      // ... keep existing code
       const checkAvailabilityUrl = `${supabaseUrl}/functions/v1/check-calendar-availability`;
       const bookAppointmentUrl = `${supabaseUrl}/functions/v1/book-calendar-appointment`;
 
@@ -261,6 +260,9 @@ Deno.serve(async (req) => {
         systemPrompt += `\nAppointment Types: ${typesList}\n`;
 
         const toolNameSuffix = apptTool.name.replace(/[^a-zA-Z0-9]/g, '_');
+        const authHeaders = [
+          { name: "x-ultravox-tool-key", location: "PARAMETER_LOCATION_HEADER", value: ultravoxApiKey },
+        ];
 
         selectedTools.push({
           temporaryTool: {
@@ -268,11 +270,13 @@ Deno.serve(async (req) => {
             description: `Check calendar availability for ${apptTool.name}.`,
             dynamicParameters: [
               { name: "date", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Date (YYYY-MM-DD)" }, required: true },
+              { name: "duration_minutes", location: "PARAMETER_LOCATION_BODY", schema: { type: "number", description: "Desired meeting duration in minutes" }, required: false },
             ],
             http: { baseUrlPattern: checkAvailabilityUrl, httpMethod: "POST" },
             staticParameters: [
               { name: "provider", location: "PARAMETER_LOCATION_BODY", value: apptTool.provider },
               { name: "integration_id", location: "PARAMETER_LOCATION_BODY", value: integration.id },
+              ...authHeaders,
             ],
           },
         });
@@ -282,15 +286,19 @@ Deno.serve(async (req) => {
             modelToolName: `book_appointment_${toolNameSuffix}`,
             description: `Book an appointment using ${apptTool.name}.`,
             dynamicParameters: [
-              { name: "date_time", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "ISO 8601 date-time" }, required: true },
-              { name: "name", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Person name" }, required: true },
-              { name: "email", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Email" }, required: false },
-              { name: "duration_minutes", location: "PARAMETER_LOCATION_BODY", schema: { type: "number", description: "Duration in min" }, required: false },
+              { name: "start_time", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "ISO 8601 start time" }, required: true },
+              { name: "end_time", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "ISO 8601 end time" }, required: false },
+              { name: "duration_minutes", location: "PARAMETER_LOCATION_BODY", schema: { type: "number", description: "Duration in minutes if end_time is omitted" }, required: false },
+              { name: "attendee_name", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Person name" }, required: true },
+              { name: "attendee_email", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Email" }, required: false },
+              { name: "attendee_phone", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Phone number" }, required: false },
+              { name: "notes", location: "PARAMETER_LOCATION_BODY", schema: { type: "string", description: "Additional notes" }, required: false },
             ],
             http: { baseUrlPattern: bookAppointmentUrl, httpMethod: "POST" },
             staticParameters: [
               { name: "provider", location: "PARAMETER_LOCATION_BODY", value: apptTool.provider },
               { name: "integration_id", location: "PARAMETER_LOCATION_BODY", value: integration.id },
+              ...authHeaders,
             ],
           },
         });
@@ -319,7 +327,14 @@ Deno.serve(async (req) => {
           modelToolName: "transferCall",
           description: `Transfer the current call to a human agent. The system will automatically try numbers in priority order: ${numbersList}. If the first person is busy, it tries the next. Always confirm with the caller before transferring.`,
           dynamicParameters: [],
+          automaticParameters: [
+            { name: "call_sid", location: "PARAMETER_LOCATION_BODY", knownValue: "KNOWN_PARAM_CALL_ID" },
+          ],
           http: { baseUrlPattern: transferUrl, httpMethod: "POST" },
+          staticParameters: [
+            { name: "agent_id", location: "PARAMETER_LOCATION_BODY", value: agent.id },
+            { name: "x-ultravox-tool-key", location: "PARAMETER_LOCATION_HEADER", value: ultravoxApiKey },
+          ],
         },
       });
     }
