@@ -469,11 +469,18 @@ Deno.serve((req) => {
           }
 
           const data = await res.json();
-          const assistantMsg = data.choices?.[0]?.message?.content || "I didn't catch that, could you repeat?";
-          conversationHistory.push({ role: "assistant", content: assistantMsg });
+          const rawAssistantMsg = data.choices?.[0]?.message?.content || "I didn't catch that, could you repeat?";
+          const spokenAssistantMsg = rawAssistantMsg
+            .replace(/[*_`#>-]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 220);
+          const finalAssistantMsg = spokenAssistantMsg || "I didn't catch that, could you repeat?";
+
+          conversationHistory.push({ role: "assistant", content: finalAssistantMsg });
           const latency = Date.now() - chatStartMs;
-          console.log(`[SARVAM-BRIDGE] turn=${turnId} chat_ok model=${attempt.model} latency=${latency}ms text="${assistantMsg.substring(0, 80)}"`);
-          return assistantMsg;
+          console.log(`[SARVAM-BRIDGE] turn=${turnId} chat_ok model=${attempt.model} latency=${latency}ms text="${finalAssistantMsg.substring(0, 80)}"`);
+          return finalAssistantMsg;
         } catch (e: any) {
           const latency = Date.now() - chatStartMs;
           if (e.name === "AbortError") {
