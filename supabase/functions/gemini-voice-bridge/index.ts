@@ -138,6 +138,7 @@ Deno.serve((req) => {
   let geminiWs: WebSocket | null = null;
   let streamSid = "";
   let callSid = ""; // For call forwarding
+  let telephonyProvider: "twilio" | "telnyx" = "twilio"; // Track actual provider
   let geminiReady = false;
   const audioBuffer: string[] = [];
   let keepaliveTimer: number | null = null;
