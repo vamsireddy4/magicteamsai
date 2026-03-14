@@ -1,8 +1,6 @@
 // Sarvam AI ↔ Twilio/Telnyx WebSocket bridge
 // STT (WebSocket) → Chat Completions → TTS (REST with mulaw) pipeline
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
 const SARVAM_STT_WS_BASE = "wss://api.sarvam.ai/speech-to-text/ws";
 const SARVAM_CHAT_URL = "https://api.sarvam.ai/v1/chat/completions";
 const SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech";
@@ -18,6 +16,30 @@ const LANGUAGE_MAP: Record<string, string> = {
   "pa-IN": "pa-IN", "od-IN": "od-IN", "ur-IN": "ur-IN",
   unknown: "unknown",
 };
+
+// ── μ-law decode table ──
+const MULAW_DECODE_TABLE = new Int16Array(256);
+(function () {
+  for (let i = 0; i < 256; i++) {
+    let val = ~i & 0xff;
+    const sign = val & 0x80;
+    const exp = (val >> 4) & 0x07;
+    const man = val & 0x0f;
+    let mag = ((man << 1) + 33) << (exp + 2);
+    mag -= 0x84;
+    MULAW_DECODE_TABLE[i] = sign ? -mag : mag;
+  }
+})();
+
+// Decode mulaw bytes to PCM16 LE at same sample rate (8kHz → 8kHz)
+function mulawToPcm16(mu: Uint8Array): Uint8Array {
+  const buf = new ArrayBuffer(mu.length * 2);
+  const view = new DataView(buf);
+  for (let i = 0; i < mu.length; i++) {
+    view.setInt16(i * 2, MULAW_DECODE_TABLE[mu[i]], true);
+  }
+  return new Uint8Array(buf);
+}
 
 function b64decode(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -70,11 +92,13 @@ Deno.serve((req) => {
     let sttReady = false;
     let closed = false;
     let agentConfig: AgentConfig | null = null;
-    const audioBuffer: Uint8Array[] = [];
+    const audioBuffer: string[] = []; // buffered as base64 PCM16 JSON messages
     let conversationHistory: { role: string; content: string }[] = [];
     let keepaliveTimer: number | null = null;
-    // Accumulate partial STT transcripts
     let pendingTranscript = "";
+    let ttsInFlight = false; // guard against overlapping TTS
+    // Detect telephony provider: "twilio" or "telnyx"
+    let telephonyProvider: "twilio" | "telnyx" = "twilio";
 
     function cleanup(reason: string) {
       if (closed) return;
@@ -88,7 +112,7 @@ Deno.serve((req) => {
     async function loadAgent(): Promise<AgentConfig> {
       let prompt = "You are a helpful AI assistant on a phone call. Be conversational and natural.";
       let model = "sarvam-m";
-      let voice = "meera";
+      let voice = "anushka";
       let languageHint = "en-IN";
       let userId = "";
       let agentTools: any[] = [];
@@ -154,7 +178,6 @@ Deno.serve((req) => {
 
       conversationHistory.push({ role: "user", content: userText });
 
-      // Keep conversation history manageable
       if (conversationHistory.length > 20) {
         conversationHistory = conversationHistory.slice(-16);
       }
@@ -195,6 +218,27 @@ Deno.serve((req) => {
       }
     }
 
+    // Send mulaw audio back to telephony (handles both Twilio and Telnyx formats)
+    function sendAudioToTelephony(mulawBytes: Uint8Array) {
+      const CHUNK_SIZE = 640; // 80ms at 8kHz mulaw
+      for (let i = 0; i < mulawBytes.length; i += CHUNK_SIZE) {
+        const chunk = mulawBytes.slice(i, i + CHUNK_SIZE);
+        if (socket.readyState !== WebSocket.OPEN || closed) break;
+
+        if (telephonyProvider === "telnyx") {
+          // Telnyx bidirectional RTP: send raw binary
+          socket.send(chunk);
+        } else {
+          // Twilio: JSON media event
+          socket.send(JSON.stringify({
+            event: "media",
+            streamSid,
+            media: { payload: b64encode(chunk) },
+          }));
+        }
+      }
+    }
+
     // Convert text to speech using Sarvam TTS and send mulaw audio back to telephony
     async function speakViaSarvamTTS(text: string) {
       if (!text.trim() || !agentConfig) return;
@@ -210,7 +254,7 @@ Deno.serve((req) => {
           body: JSON.stringify({
             inputs: [text],
             target_language_code: agentConfig.languageHint || "en-IN",
-            speaker: agentConfig.voice || "meera",
+            speaker: agentConfig.voice || "anushka",
             model: "bulbul:v2",
             audio_format: "mulaw",
             sample_rate: 8000,
@@ -223,38 +267,45 @@ Deno.serve((req) => {
         }
 
         const data = await res.json();
-        // Sarvam TTS returns base64-encoded audio in `audios` array
         const audioB64 = data.audios?.[0];
         if (!audioB64) {
           console.error("[SARVAM-BRIDGE] No audio in TTS response");
           return;
         }
 
-        // Send audio in chunks to telephony
         const audioBytes = b64decode(audioB64);
-        const CHUNK_SIZE = 640; // 80ms at 8kHz mulaw
-        for (let i = 0; i < audioBytes.length; i += CHUNK_SIZE) {
-          const chunk = audioBytes.slice(i, i + CHUNK_SIZE);
-          if (socket.readyState === WebSocket.OPEN && !closed) {
-            socket.send(JSON.stringify({
-              event: "media",
-              streamSid,
-              media: { payload: b64encode(chunk) },
-            }));
-          }
-        }
-        console.log(`[SARVAM-BRIDGE] TTS audio sent (${audioBytes.length} bytes)`);
+        sendAudioToTelephony(audioBytes);
+        console.log(`[SARVAM-BRIDGE] TTS audio sent (${audioBytes.length} bytes, provider=${telephonyProvider})`);
       } catch (e) {
         console.error("[SARVAM-BRIDGE] TTS error:", e);
+      }
+    }
+
+    // Convert mulaw audio to PCM16 base64 and send as JSON to STT
+    function sendAudioToSTT(mulawData: Uint8Array) {
+      const pcm16 = mulawToPcm16(mulawData);
+      const pcmB64 = b64encode(pcm16);
+      const jsonMsg = JSON.stringify({
+        audio: pcmB64,
+        encoding: "pcm_s16le",
+        sample_rate: 8000,
+      });
+
+      if (sttWs && sttWs.readyState === WebSocket.OPEN && sttReady) {
+        sttWs.send(jsonMsg);
+      } else {
+        audioBuffer.push(jsonMsg);
+        if (audioBuffer.length > 300) audioBuffer.shift();
       }
     }
 
     // Connect to Sarvam STT WebSocket
     function connectSTT(config: AgentConfig) {
       const langCode = config.languageHint || "en-IN";
-      const sttUrl = `${SARVAM_STT_WS_BASE}?language-code=${langCode}&api-subscription-key=${sarvamApiKey}&model=saaras:v3&sample_rate=8000&input_audio_codec=mulaw`;
+      // Build URL with query params for auth and config
+      const sttUrl = `${SARVAM_STT_WS_BASE}?language-code=${langCode}&api-subscription-key=${sarvamApiKey}&model=saaras:v3&sample_rate=8000`;
 
-      console.log(`[SARVAM-BRIDGE] Connecting STT: lang=${langCode}`);
+      console.log(`[SARVAM-BRIDGE] Connecting STT: lang=${langCode} url=${sttUrl.replace(sarvamApiKey!, "***")}`);
 
       try {
         sttWs = new WebSocket(sttUrl);
@@ -265,13 +316,13 @@ Deno.serve((req) => {
       }
 
       sttWs.onopen = () => {
-        console.log("[SARVAM-BRIDGE] STT WS connected");
+        console.log("[SARVAM-BRIDGE] STT WS connected ✓");
         sttReady = true;
 
-        // Flush buffered audio
-        for (const chunk of audioBuffer) {
+        // Flush buffered audio (already in JSON format)
+        for (const jsonMsg of audioBuffer) {
           if (sttWs?.readyState === WebSocket.OPEN) {
-            sttWs.send(chunk);
+            sttWs.send(jsonMsg);
           }
         }
         audioBuffer.length = 0;
@@ -280,7 +331,12 @@ Deno.serve((req) => {
         keepaliveTimer = setInterval(() => {
           try {
             if (sttWs?.readyState === WebSocket.OPEN) {
-              sttWs.send(new Uint8Array(160)); // 20ms silence
+              const silentPcm = new Uint8Array(320); // 20ms silence at 8kHz PCM16 (160 samples * 2 bytes)
+              sttWs.send(JSON.stringify({
+                audio: b64encode(silentPcm),
+                encoding: "pcm_s16le",
+                sample_rate: 8000,
+              }));
             }
           } catch (_) { }
         }, 15000) as unknown as number;
@@ -298,22 +354,37 @@ Deno.serve((req) => {
           }
 
           const msg = JSON.parse(text);
+          console.log(`[SARVAM-BRIDGE] STT event: ${JSON.stringify(msg).substring(0, 200)}`);
 
-          // Handle transcription results
+          // Sarvam STT response format:
+          // { "type": "final"|"partial"|"speech_start"|"speech_end", "transcript": "...", ... }
+          // or { "transcript": "...", "is_final": true/false }
+          const msgType = msg.type || "";
           const transcript = msg.transcript || msg.text || "";
-          const isFinal = msg.is_final || msg.type === "final" || msg.status === "success";
+
+          // Ignore non-transcript events
+          if (msgType === "speech_start" || msgType === "speech_end") {
+            console.log(`[SARVAM-BRIDGE] STT ${msgType}`);
+            return;
+          }
+
+          const isFinal = msgType === "final" || msg.is_final === true || msg.status === "success";
 
           if (transcript) {
             if (isFinal) {
               const fullText = (pendingTranscript + " " + transcript).trim();
               pendingTranscript = "";
 
-              if (fullText) {
+              if (fullText && !ttsInFlight) {
+                ttsInFlight = true;
                 console.log(`[SARVAM-BRIDGE] STT final: "${fullText}"`);
-                // Process through chat and TTS
-                const response = await chatCompletion(fullText);
-                console.log(`[SARVAM-BRIDGE] Chat response: "${response.substring(0, 80)}..."`);
-                await speakViaSarvamTTS(response);
+                try {
+                  const response = await chatCompletion(fullText);
+                  console.log(`[SARVAM-BRIDGE] Chat response: "${response.substring(0, 80)}..."`);
+                  await speakViaSarvamTTS(response);
+                } finally {
+                  ttsInFlight = false;
+                }
               }
             } else {
               pendingTranscript += " " + transcript;
@@ -324,19 +395,18 @@ Deno.serve((req) => {
         }
       };
 
-      sttWs.onerror = () => {
-        console.error("[SARVAM-BRIDGE] STT WS error");
+      sttWs.onerror = (ev) => {
+        console.error("[SARVAM-BRIDGE] STT WS error:", ev);
       };
 
       sttWs.onclose = (ev) => {
-        console.log(`[SARVAM-BRIDGE] STT WS closed: code=${ev.code}`);
+        console.log(`[SARVAM-BRIDGE] STT WS closed: code=${ev.code} reason=${ev.reason}`);
         sttReady = false;
-        // Attempt reconnect if not shutting down
         if (!closed) {
-          console.log("[SARVAM-BRIDGE] Reconnecting STT...");
+          console.log("[SARVAM-BRIDGE] Reconnecting STT in 2s...");
           setTimeout(() => {
             if (!closed && agentConfig) connectSTT(agentConfig);
-          }, 1000);
+          }, 2000);
         }
       };
     }
@@ -348,12 +418,22 @@ Deno.serve((req) => {
 
     socket.onmessage = async (event) => {
       try {
-        const raw = typeof event.data === "string" ? event.data : "";
-        if (!raw) return;
-        const msg = JSON.parse(raw);
+        if (typeof event.data !== "string") {
+          // Binary data from Telnyx bidirectional RTP stream
+          if (telephonyProvider === "telnyx") {
+            const rawBytes = new Uint8Array(event.data instanceof ArrayBuffer ? event.data : await (event.data as Blob).arrayBuffer());
+            // Telnyx RTP: first 12 bytes are RTP header, payload is PCMU
+            const mulawPayload = rawBytes.length > 12 ? rawBytes.slice(12) : rawBytes;
+            sendAudioToSTT(mulawPayload);
+          }
+          return;
+        }
+
+        const msg = JSON.parse(event.data);
 
         if (msg.event === "connected") {
-          console.log("[SARVAM-BRIDGE] Twilio connected");
+          console.log("[SARVAM-BRIDGE] Twilio connected event");
+          telephonyProvider = "twilio";
         } else if (msg.event === "start") {
           streamSid = msg.start?.streamSid || msg.start?.stream_id || msg.streamSid || "";
 
@@ -362,7 +442,13 @@ Deno.serve((req) => {
             agentId = customParams.agent_id;
           }
 
-          console.log(`[SARVAM-BRIDGE] Stream started: sid=${streamSid} agent_id=${agentId}`);
+          // Detect Telnyx by presence of stream_id or absence of streamSid
+          if (msg.start?.stream_id && !msg.start?.streamSid) {
+            telephonyProvider = "telnyx";
+            streamSid = msg.start.stream_id;
+          }
+
+          console.log(`[SARVAM-BRIDGE] Stream started: sid=${streamSid} agent_id=${agentId} provider=${telephonyProvider}`);
 
           if (!agentId) {
             console.error("[SARVAM-BRIDGE] No agent_id!");
@@ -387,15 +473,9 @@ Deno.serve((req) => {
             cleanup("agent_load_failed");
           }
         } else if (msg.event === "media" && msg.media?.payload) {
-          // Forward raw mulaw audio to Sarvam STT
-          const audioData = b64decode(msg.media.payload);
-
-          if (sttWs && sttWs.readyState === WebSocket.OPEN && sttReady) {
-            sttWs.send(audioData);
-          } else {
-            audioBuffer.push(audioData);
-            if (audioBuffer.length > 500) audioBuffer.shift();
-          }
+          // Twilio: base64 mulaw audio in JSON
+          const mulawData = b64decode(msg.media.payload);
+          sendAudioToSTT(mulawData);
         } else if (msg.event === "stop") {
           console.log("[SARVAM-BRIDGE] Stream stopped");
           cleanup("stream_stopped");

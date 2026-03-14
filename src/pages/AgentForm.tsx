@@ -372,7 +372,7 @@ export default function AgentForm() {
                       const defaults = val === "gemini"
                         ? { model: "gemini-2.5-flash-preview-native-audio", voice: "Puck" }
                         : val === "sarvam"
-                        ? { model: "sarvam-m", voice: "meera", language_hint: "en-IN" }
+                        ? { model: "sarvam-m", voice: "anushka", language_hint: "en-IN" }
                         : { model: "fixie-ai/ultravox-v0.7", voice: "terrence" };
                       setForm({ ...form, ai_provider: val, ...defaults });
                       setUseCustomVoice(false);
@@ -415,7 +415,7 @@ export default function AgentForm() {
                           setUseCustomVoice(val);
                           if (!val) {
                             if (form.ai_provider === "gemini") setForm({ ...form, voice: "Kore" });
-                            else if (form.ai_provider === "sarvam") setForm({ ...form, voice: "meera" });
+                            else if (form.ai_provider === "sarvam") setForm({ ...form, voice: "anushka" });
                             else if (voices.length > 0) setForm({ ...form, voice: voices[0].name });
                           }
                         }} />
