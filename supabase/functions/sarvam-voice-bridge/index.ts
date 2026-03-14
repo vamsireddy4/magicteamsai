@@ -1,5 +1,6 @@
 // Sarvam AI ↔ Twilio/Telnyx WebSocket bridge
 // Uses REST STT (reliable auth) → Chat Completions → TTS (mulaw) pipeline
+// Now with tool execution, call forwarding, and webhook firing
 
 const SARVAM_STT_URL = "https://api.sarvam.ai/speech-to-text";
 const SARVAM_CHAT_URL = "https://api.sarvam.ai/v1/chat/completions";
@@ -176,14 +177,38 @@ function computeRms(pcm16: Uint8Array): number {
 
 let turnCounter = 0;
 
+interface AgentTool {
+  id: string;
+  name: string;
+  description: string;
+  http_method: string;
+  http_url: string;
+  http_headers: Record<string, string>;
+  http_body_template: Record<string, any>;
+  parameters: any[];
+  is_active: boolean;
+}
+
+interface AppointmentToolConfig {
+  id: string;
+  name: string;
+  provider: string;
+  calendar_integration_id: string;
+  business_hours: any;
+  appointment_types: any[];
+}
+
 interface AgentConfig {
   prompt: string;
   model: string;
   voice: string;
   languageHint: string;
   userId: string;
-  agentTools: any[];
+  agentTools: AgentTool[];
   calendarIntegrations: any[];
+  appointmentTools: AppointmentToolConfig[];
+  forwardingNumbers: any[];
+  webhooks: any[];
 }
 
 Deno.serve((req) => {
@@ -211,6 +236,7 @@ Deno.serve((req) => {
     const { socket, response } = Deno.upgradeWebSocket(req);
 
     let streamSid = "";
+    let callSid = ""; // Twilio CallSid for forwarding
     let closed = false;
     let agentConfig: AgentConfig | null = null;
     let conversationHistory: { role: string; content: string }[] = [];
@@ -226,16 +252,15 @@ Deno.serve((req) => {
     let telnyxFramesSent = 0;
 
     // ── Anti-echo gating ──
-    // When TTS is playing, require sustained louder speech before triggering barge-in
     let lastTtsEndMs = 0;
-    const ECHO_GATE_MS = 300; // ignore speech for 300ms after TTS stops
-    const BARGEIN_RMS_THRESHOLD = 400; // higher threshold during TTS playback
-    const BARGEIN_SUSTAINED_MS = 150; // must sustain for 150ms to interrupt
+    const ECHO_GATE_MS = 300;
+    const BARGEIN_RMS_THRESHOLD = 400;
+    const BARGEIN_SUSTAINED_MS = 150;
 
     // ── VAD + Audio Buffering for REST STT ──
-    const SPEECH_THRESHOLD = 220; // raised from 180 to reduce false triggers
-    const SILENCE_DURATION_MS = 600; // raised from 500 for more complete utterances
-    const MIN_SPEECH_MS = 400; // raised from 250 to avoid micro-utterances
+    const SPEECH_THRESHOLD = 220;
+    const SILENCE_DURATION_MS = 600;
+    const MIN_SPEECH_MS = 400;
     const MAX_BUFFER_MS = 15000;
     const SAMPLE_RATE = 8000;
     const BYTES_PER_MS = (SAMPLE_RATE * 2) / 1000;
@@ -245,13 +270,13 @@ Deno.serve((req) => {
     let isSpeaking = false;
     let silenceStartMs = 0;
     let speechStartMs = 0;
-    let bargeInSpeechStartMs = 0; // track sustained speech during TTS
+    let bargeInSpeechStartMs = 0;
 
     // ── Turn dedup ──
     let lastTranscript = "";
     let lastTranscriptMs = 0;
 
-    // ── Turn queue: process one turn at a time ──
+    // ── Turn queue ──
     let turnProcessing = false;
     const turnQueue: Uint8Array[] = [];
 
@@ -273,10 +298,32 @@ Deno.serve((req) => {
       }
     }
 
+    // ── Webhook firing ──
+    async function fireWebhooks(event: string, payload: any) {
+      if (!agentConfig?.webhooks?.length) return;
+      for (const wh of agentConfig.webhooks) {
+        if (!wh.is_active || !wh.events?.includes(event)) continue;
+        try {
+          const headers: Record<string, string> = { "Content-Type": "application/json" };
+          if (wh.secret) headers["X-Webhook-Secret"] = wh.secret;
+          await fetch(wh.url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ event, timestamp: new Date().toISOString(), ...payload }),
+          });
+          console.log(`[SARVAM-BRIDGE] Webhook fired: ${event} → ${wh.url}`);
+        } catch (e) {
+          console.error(`[SARVAM-BRIDGE] Webhook error (${wh.url}):`, e);
+        }
+      }
+    }
+
     function cleanup(reason: string) {
       if (closed) return;
       closed = true;
       console.log(`[SARVAM-BRIDGE] Cleanup: ${reason}`);
+      // Fire call.ended webhook
+      fireWebhooks("call.ended", { agent_id: agentId, call_sid: callSid, reason });
       try { if (socket.readyState === WebSocket.OPEN) socket.close(); } catch (_) { }
     }
 
@@ -286,15 +333,20 @@ Deno.serve((req) => {
       let voice = "anushka";
       let languageHint = "en-IN";
       let userId = "";
-      let agentTools: any[] = [];
+      let agentTools: AgentTool[] = [];
       let calendarIntegrations: any[] = [];
+      let appointmentTools: AppointmentToolConfig[] = [];
+      let forwardingNumbers: any[] = [];
+      let webhooks: any[] = [];
 
       try {
         const headers: Record<string, string> = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
-        const [agentRes, toolsRes, kbRes] = await Promise.all([
+        const [agentRes, toolsRes, kbRes, apptRes, fwdRes] = await Promise.all([
           fetch(`${sbUrl}/rest/v1/agents?id=eq.${agentId}&select=system_prompt,model,voice,user_id,language_hint`, { headers }),
           fetch(`${sbUrl}/rest/v1/agent_tools?agent_id=eq.${agentId}&is_active=eq.true&select=*`, { headers }),
           fetch(`${sbUrl}/rest/v1/knowledge_base_items?agent_id=eq.${agentId}&select=title,content,website_url`, { headers }),
+          fetch(`${sbUrl}/rest/v1/appointment_tools?agent_id=eq.${agentId}&is_active=eq.true&select=*,calendar_integrations(*)`, { headers }),
+          fetch(`${sbUrl}/rest/v1/call_forwarding_numbers?agent_id=eq.${agentId}&order=priority.asc&select=*`, { headers }),
         ]);
 
         if (agentRes.ok) {
@@ -326,21 +378,208 @@ Deno.serve((req) => {
           }
         }
 
-        if (userId) {
-          const calRes = await fetch(
-            `${sbUrl}/rest/v1/calendar_integrations?user_id=eq.${userId}&is_active=eq.true&select=id,provider,api_key,calendar_id,config`,
-            { headers }
-          );
-          if (calRes.ok) {
-            const cals = await calRes.json();
-            if (cals?.length > 0) calendarIntegrations = cals;
+        if (apptRes.ok) {
+          const appts = await apptRes.json();
+          if (appts?.length > 0) {
+            appointmentTools = appts;
+            // Also gather calendar integrations from appointment tools
+            for (const at of appts) {
+              if (at.calendar_integrations) {
+                calendarIntegrations.push(at.calendar_integrations);
+              }
+            }
           }
         }
+
+        if (fwdRes.ok) {
+          const fwds = await fwdRes.json();
+          if (fwds?.length > 0) forwardingNumbers = fwds;
+        }
+
+        // Fetch webhooks
+        if (userId) {
+          const whRes = await fetch(
+            `${sbUrl}/rest/v1/webhooks?agent_id=eq.${agentId}&is_active=eq.true&select=*`,
+            { headers }
+          );
+          if (whRes.ok) {
+            const whs = await whRes.json();
+            if (whs?.length > 0) webhooks = whs;
+          }
+        }
+
+        // Inject tool descriptions into system prompt
+        const toolDescriptions: string[] = [];
+
+        // Appointment tools
+        for (const at of appointmentTools) {
+          const cal = at.calendar_integrations as any;
+          if (!cal) continue;
+          const enabledDays = Object.entries(at.business_hours as Record<string, any>)
+            .filter(([_, v]: any) => v.enabled)
+            .map(([day, v]: any) => `${day}: ${v.start}-${v.end}`)
+            .join(", ");
+          const typesList = (at.appointment_types as any[]).map((t: any) => `${t.name} (${t.duration}min)`).join(", ");
+          
+          prompt += `\n\n--- APPOINTMENT TOOL: ${at.name} ---`;
+          prompt += `\nProvider: ${at.provider}`;
+          prompt += `\nBusiness Hours: ${enabledDays}`;
+          prompt += `\nAppointment Types: ${typesList}`;
+
+          toolDescriptions.push(
+            `- check_availability: Check calendar availability. Params: {"date": "YYYY-MM-DD"}`,
+            `- book_appointment: Book an appointment. Params: {"start_time": "ISO8601", "attendee_name": "Name", "attendee_email": "email", "attendee_phone": "phone", "notes": "optional notes"}`
+          );
+        }
+
+        // Custom tools
+        for (const tool of agentTools) {
+          const paramDescs = (tool.parameters || []).map((p: any) => `${p.name}: ${p.description || p.type || "string"}`).join(", ");
+          toolDescriptions.push(`- ${tool.name}: ${tool.description}. Params: {${paramDescs}}`);
+        }
+
+        // Call forwarding
+        if (forwardingNumbers.length > 0) {
+          const numbersList = forwardingNumbers.map((fn: any, i: number) => `${i + 1}. ${fn.phone_number}${fn.label ? ` (${fn.label})` : ""}`).join(", ");
+          prompt += `\n\n--- CALL FORWARDING ---`;
+          prompt += `\nYou can transfer the caller to a human agent. Available: ${numbersList}`;
+          prompt += `\nAlways confirm with the caller before transferring.`;
+          toolDescriptions.push(`- transfer_call: Transfer the call to a human agent. Params: {} (no params needed)`);
+        }
+
+        // Add tool instruction block to prompt
+        if (toolDescriptions.length > 0) {
+          prompt += `\n\n--- AVAILABLE TOOLS ---`;
+          prompt += `\nWhen you need to perform an action, output EXACTLY this format on its own line:`;
+          prompt += `\n[TOOL_CALL:tool_name|{"param":"value"}]`;
+          prompt += `\nAvailable tools:`;
+          for (const td of toolDescriptions) {
+            prompt += `\n${td}`;
+          }
+          prompt += `\nAfter a tool call, wait for the result before responding to the user.`;
+          prompt += `\nDo NOT mention the tool call syntax to the user. Just use it when needed.`;
+        }
+
       } catch (e) {
         console.error("[SARVAM-BRIDGE] Agent load error:", e);
       }
 
-      return { prompt, model, voice, languageHint, userId, agentTools, calendarIntegrations };
+      return { prompt, model, voice, languageHint, userId, agentTools, calendarIntegrations, appointmentTools, forwardingNumbers, webhooks };
+    }
+
+    // ── Tool execution ──
+    async function executeToolCall(toolName: string, args: Record<string, any>): Promise<any> {
+      console.log(`[SARVAM-BRIDGE] Executing tool: ${toolName}`, JSON.stringify(args));
+
+      try {
+        if (toolName === "check_availability" && agentConfig) {
+          // Use first appointment tool's calendar integration
+          const appt = agentConfig.appointmentTools[0];
+          const cal = appt?.calendar_integrations as any;
+          if (!cal?.id) return { error: "No calendar integration configured" };
+
+          const res = await fetch(`${sbUrl}/functions/v1/check-calendar-availability`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${sbKey}`,
+            },
+            body: JSON.stringify({
+              provider: cal.provider,
+              integration_id: cal.id,
+              date: args.date,
+              duration_minutes: args.duration_minutes || 30,
+            }),
+          });
+          return await res.json();
+        }
+
+        if (toolName === "book_appointment" && agentConfig) {
+          const appt = agentConfig.appointmentTools[0];
+          const cal = appt?.calendar_integrations as any;
+          if (!cal?.id) return { error: "No calendar integration configured" };
+
+          const res = await fetch(`${sbUrl}/functions/v1/book-calendar-appointment`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${sbKey}`,
+            },
+            body: JSON.stringify({
+              integration_id: cal.id,
+              start_time: args.start_time,
+              end_time: args.end_time,
+              attendee_name: args.attendee_name,
+              attendee_email: args.attendee_email,
+              attendee_phone: args.attendee_phone,
+              notes: args.notes,
+            }),
+          });
+          return await res.json();
+        }
+
+        if (toolName === "transfer_call") {
+          if (!callSid) return { error: "No call SID available for transfer" };
+          const res = await fetch(`${sbUrl}/functions/v1/transfer-call`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${sbKey}`,
+            },
+            body: JSON.stringify({
+              call_sid: callSid,
+              agent_id: agentId,
+              provider: telephonyProvider,
+            }),
+          });
+          return await res.json();
+        }
+
+        // Custom HTTP tools
+        if (agentConfig) {
+          const tool = agentConfig.agentTools.find(t => t.name === toolName);
+          if (tool) {
+            let url = tool.http_url;
+            for (const [key, value] of Object.entries(args)) {
+              url = url.replace(`{{${key}}}`, encodeURIComponent(String(value)));
+            }
+            let body: string | undefined;
+            if (tool.http_method !== "GET" && tool.http_body_template) {
+              let bodyStr = JSON.stringify(tool.http_body_template);
+              for (const [key, value] of Object.entries(args)) {
+                bodyStr = bodyStr.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), String(value));
+              }
+              body = bodyStr;
+            }
+            const fetchHeaders: Record<string, string> = { "Content-Type": "application/json", ...tool.http_headers };
+            const res = await fetch(url, {
+              method: tool.http_method,
+              headers: fetchHeaders,
+              body: tool.http_method !== "GET" ? body : undefined,
+            });
+            return await res.json().catch(() => ({ status: res.status, statusText: res.statusText }));
+          }
+        }
+
+        return { error: `Unknown tool: ${toolName}` };
+      } catch (e: any) {
+        console.error(`[SARVAM-BRIDGE] Tool error (${toolName}):`, e);
+        return { error: `Tool failed: ${e.message || String(e)}` };
+      }
+    }
+
+    // Parse [TOOL_CALL:name|{...}] from response text
+    function extractToolCall(text: string): { toolName: string; args: Record<string, any>; cleanText: string } | null {
+      const match = text.match(/\[TOOL_CALL:(\w+)\|(\{[^}]*\})\]/);
+      if (!match) return null;
+      try {
+        const toolName = match[1];
+        const args = JSON.parse(match[2]);
+        const cleanText = text.replace(match[0], "").trim();
+        return { toolName, args, cleanText };
+      } catch {
+        return null;
+      }
     }
 
     // ── REST STT ──
@@ -382,7 +621,7 @@ Deno.serve((req) => {
       }
     }
 
-    // ── Chat Completion ──
+    // ── Chat Completion (with tool call detection) ──
     async function chatCompletion(userText: string): Promise<string> {
       if (!agentConfig) return "I'm sorry, I'm having trouble processing that.";
 
@@ -399,7 +638,6 @@ Deno.serve((req) => {
         ...conversationHistory,
       ];
 
-      // Use fast model always for voice — latency matters most
       const model = FAST_CHAT_MODEL;
 
       try {
@@ -415,7 +653,7 @@ Deno.serve((req) => {
           body: JSON.stringify({
             model,
             messages,
-            max_tokens: 100, // short responses only
+            max_tokens: 150,
             temperature: 0.7,
           }),
           signal: controller.signal,
@@ -430,12 +668,54 @@ Deno.serve((req) => {
 
         const data = await res.json();
         const rawMsg = data.choices?.[0]?.message?.content || "I didn't catch that, could you repeat?";
+
+        // Check for tool call pattern
+        const toolCall = extractToolCall(rawMsg);
+        if (toolCall) {
+          console.log(`[SARVAM-BRIDGE] Tool call detected: ${toolCall.toolName}`);
+          
+          // Execute the tool
+          const toolResult = await executeToolCall(toolCall.toolName, toolCall.args);
+          console.log(`[SARVAM-BRIDGE] Tool result: ${JSON.stringify(toolResult).substring(0, 200)}`);
+
+          // Feed result back into conversation
+          conversationHistory.push({ role: "assistant", content: `[Tool: ${toolCall.toolName} called]` });
+          conversationHistory.push({ role: "user", content: `Tool result for ${toolCall.toolName}: ${JSON.stringify(toolResult)}. Now respond to the user based on this result. Do NOT use tool call syntax again.` });
+
+          // Re-call chat to get spoken response
+          const followUpMessages = [
+            { role: "system", content: agentConfig.prompt + "\n\nCRITICAL: Keep responses to 1-2 short sentences max. Be brief and natural. No markdown. Do NOT output any [TOOL_CALL:...] syntax." },
+            ...conversationHistory,
+          ];
+
+          const followUpRes = await fetch(SARVAM_CHAT_URL, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "api-subscription-key": sarvamApiKey!,
+            },
+            body: JSON.stringify({ model, messages: followUpMessages, max_tokens: 100, temperature: 0.7 }),
+          });
+
+          if (followUpRes.ok) {
+            const followUpData = await followUpRes.json();
+            const followUpMsg = (followUpData.choices?.[0]?.message?.content || "").trim();
+            const spoken = followUpMsg.replace(/\[TOOL_CALL:[^\]]*\]/g, "").replace(/[*_`#>\-\[\](){}|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 150);
+            const finalMsg = spoken || "Done. Is there anything else I can help with?";
+            conversationHistory.push({ role: "assistant", content: finalMsg });
+            const latency = Date.now() - chatStartMs;
+            console.log(`[SARVAM-BRIDGE] turn=${turnId} tool+chat ${latency}ms "${finalMsg.substring(0, 60)}"`);
+            return finalMsg;
+          }
+        }
+
+        // No tool call — normal response
         const spoken = rawMsg
           .replace(/[*_`#>\-\[\](){}|]/g, " ")
           .replace(/\n+/g, " ")
           .replace(/\s+/g, " ")
           .trim()
-          .slice(0, 150); // strict cap for spoken responses
+          .slice(0, 150);
 
         const finalMsg = spoken || "Could you repeat that?";
         conversationHistory.push({ role: "assistant", content: finalMsg });
@@ -454,9 +734,8 @@ Deno.serve((req) => {
     }
 
     // ── Send mulaw audio back to telephony ──
-    // KEY FIX: Telnyx now uses JSON media events (same as Twilio), NOT binary RTP
     async function sendAudioToTelephony(mulawBytes: Uint8Array) {
-      const FRAME_SIZE = 160; // 20ms @ 8kHz PCMU
+      const FRAME_SIZE = 160;
       const FRAME_DELAY_MS = 20;
       const currentToken = ++playbackToken;
       isSendingTts = true;
@@ -473,17 +752,15 @@ Deno.serve((req) => {
           const b64Payload = b64encode(frame);
 
           if (telephonyProvider === "telnyx") {
-            // Telnyx bidirectional WS: JSON media events with base64 payload
             socket.send(JSON.stringify({
               event: "media",
               media: { payload: b64Payload },
             }));
             telnyxFramesSent++;
             if (telnyxFramesSent === 1) {
-              console.log(`[SARVAM-BRIDGE] Telnyx: first audio frame sent (JSON media)`);
+              console.log(`[SARVAM-BRIDGE] Telnyx: first audio frame sent`);
             }
           } else {
-            // Twilio: JSON media events with streamSid
             socket.send(JSON.stringify({
               event: "media",
               streamSid,
@@ -596,7 +873,6 @@ Deno.serve((req) => {
           continue;
         }
 
-        // Dedup: ignore same transcript within 3s
         const now = Date.now();
         if (transcript === lastTranscript && now - lastTranscriptMs < 3000) {
           console.log(`[SARVAM-BRIDGE] Dedup: skipping repeated "${transcript}"`);
@@ -622,16 +898,14 @@ Deno.serve((req) => {
     }
 
     function enqueueUtterance(pcm16Data: Uint8Array) {
-      // Only allow 1 queued turn to prevent pile-up
       if (turnQueue.length >= 1) {
-        console.log(`[SARVAM-BRIDGE] Dropping old queued turn (queue full)`);
+        console.log(`[SARVAM-BRIDGE] Dropping old queued turn`);
         turnQueue.shift();
       }
       turnQueue.push(pcm16Data);
       drainTurnQueue();
     }
 
-    // ── Send greeting immediately ──
     async function sendImmediateGreeting() {
       if (!agentConfig || greetingSent || closed) return;
       greetingSent = true;
@@ -644,30 +918,26 @@ Deno.serve((req) => {
       console.log(`[SARVAM-BRIDGE] greeting_sent elapsed=${Date.now() - streamStartMs}ms`);
     }
 
-    // ── Feed PCM16 audio into VAD + buffer ──
     function feedAudio(pcm16: Uint8Array) {
       if (closed || !agentConfig) return;
 
       const rms = computeRms(pcm16);
       const now = Date.now();
 
-      // Anti-echo gate: ignore audio right after TTS stops
       if (now - lastTtsEndMs < ECHO_GATE_MS) return;
 
-      // During TTS playback: require higher sustained RMS for barge-in
       if (isSendingTts) {
         if (rms > BARGEIN_RMS_THRESHOLD) {
           if (bargeInSpeechStartMs === 0) bargeInSpeechStartMs = now;
           if (now - bargeInSpeechStartMs >= BARGEIN_SUSTAINED_MS) {
             interruptPlayback("barge_in_sustained");
             bargeInSpeechStartMs = 0;
-            // Fall through to normal VAD below
           } else {
-            return; // still waiting for sustained speech
+            return;
           }
         } else {
           bargeInSpeechStartMs = 0;
-          return; // below threshold during TTS, ignore
+          return;
         }
       }
 
@@ -705,7 +975,6 @@ Deno.serve((req) => {
         }
       }
 
-      // Force-send if buffer exceeds max duration
       if (isSpeaking && audioBufferBytes > MAX_BUFFER_MS * BYTES_PER_MS) {
         console.log(`[SARVAM-BRIDGE] VAD: force-send (max buffer)`);
         isSpeaking = false;
@@ -727,7 +996,6 @@ Deno.serve((req) => {
     socket.onmessage = async (event) => {
       try {
         if (typeof event.data !== "string") {
-          // Binary data — Telnyx bidirectional RTP stream (inbound audio)
           if (telephonyProvider !== "telnyx") {
             telephonyProvider = "telnyx";
             console.log("[SARVAM-BRIDGE] Provider=telnyx (binary data)");
@@ -735,7 +1003,6 @@ Deno.serve((req) => {
           const rawBytes = new Uint8Array(
             event.data instanceof ArrayBuffer ? event.data : await (event.data as Blob).arrayBuffer()
           );
-          // RTP: first 12 bytes are header, payload is PCMU
           const mulawPayload = rawBytes.length > 12 ? rawBytes.slice(12) : rawBytes;
           const pcm16 = mulawToPcm16(mulawPayload);
           feedAudio(pcm16);
@@ -749,6 +1016,9 @@ Deno.serve((req) => {
           if (!queryProvider) telephonyProvider = "twilio";
         } else if (msg.event === "start") {
           streamSid = msg.start?.streamSid || msg.start?.stream_id || msg.streamSid || msg.stream_id || "";
+          
+          // Capture callSid for forwarding
+          callSid = msg.start?.callSid || msg.start?.call_sid || "";
 
           const customParams = msg.start?.customParameters || {};
           if (customParams.agent_id && !agentId) agentId = customParams.agent_id;
@@ -760,7 +1030,7 @@ Deno.serve((req) => {
             telephonyProvider = "telnyx";
           }
 
-          console.log(`[SARVAM-BRIDGE] Stream started: sid=${streamSid} agent=${agentId} provider=${telephonyProvider}`);
+          console.log(`[SARVAM-BRIDGE] Stream started: sid=${streamSid} agent=${agentId} callSid=${callSid} provider=${telephonyProvider}`);
 
           if (!agentId) {
             console.error("[SARVAM-BRIDGE] No agent_id!");
@@ -770,14 +1040,17 @@ Deno.serve((req) => {
 
           try {
             agentConfig = await loadAgent();
-            console.log(`[SARVAM-BRIDGE] Agent loaded, ready`);
+            console.log(`[SARVAM-BRIDGE] Agent loaded: ${agentConfig.agentTools.length} tools, ${agentConfig.appointmentTools.length} appt tools, ${agentConfig.forwardingNumbers.length} fwd nums, ${agentConfig.webhooks.length} webhooks`);
+            
+            // Fire call.started webhook
+            fireWebhooks("call.started", { agent_id: agentId, call_sid: callSid, stream_sid: streamSid });
+            
             sendImmediateGreeting();
           } catch (e) {
             console.error("[SARVAM-BRIDGE] Agent load failed:", e);
             cleanup("agent_load_failed");
           }
         } else if (msg.event === "media" && msg.media?.payload) {
-          // Twilio or Telnyx JSON media: base64 mulaw audio
           const mulawData = b64decode(msg.media.payload);
           const pcm16 = mulawToPcm16(mulawData);
           feedAudio(pcm16);
