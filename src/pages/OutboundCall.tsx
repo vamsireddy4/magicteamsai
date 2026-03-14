@@ -79,32 +79,10 @@ export default function OutboundCall() {
                   <SelectTrigger><SelectValue placeholder="Select an agent" /></SelectTrigger>
                   <SelectContent>
                     {agents.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.name}
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          ({a.ai_provider} / {a.model})
-                        </span>
-                      </SelectItem>
+                      <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedAgent && (
-                  <div className="flex items-center gap-2 mt-1">
-                    <Info className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">Provider:</span>
-                    <Badge variant="secondary" className="text-xs">
-                      {selectedAgent.ai_provider}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">Model:</span>
-                    <Badge variant="outline" className="text-xs">
-                      {selectedAgent.model}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">Voice:</span>
-                    <Badge variant="outline" className="text-xs">
-                      {selectedAgent.voice}
-                    </Badge>
-                  </div>
-                )}
               </div>
               <div className="space-y-2">
                 <Label>Recipient Phone Number</Label>
