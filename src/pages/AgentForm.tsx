@@ -361,8 +361,13 @@ export default function AgentForm() {
                   <div className="space-y-2">
                     <Label>AI Provider</Label>
                     <Select value={form.ai_provider} onValueChange={val => {
-                      const defaults = val === "gemini" ? { model: "gemini-2.5-flash-preview-native-audio", voice: "Puck" } : { model: "fixie-ai/ultravox-v0.7", voice: "terrence" };
+                      const defaults = val === "gemini"
+                        ? { model: "gemini-2.5-flash-preview-native-audio", voice: "Puck" }
+                        : val === "sarvam"
+                        ? { model: "sarvam-m", voice: "meera", language_hint: "en-IN" }
+                        : { model: "fixie-ai/ultravox-v0.7", voice: "terrence" };
                       setForm({ ...form, ai_provider: val, ...defaults });
+                      setUseCustomVoice(false);
                     }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>{AI_PROVIDERS.map(p => <SelectItem key={p.value} value={p.value} disabled={(p as any).disabled}>{p.label}</SelectItem>)}</SelectContent>
