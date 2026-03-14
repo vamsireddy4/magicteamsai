@@ -30,7 +30,7 @@ export default function OutboundCall() {
   }, [user]);
 
   const selectedAgent = agents.find((a) => a.id === form.agent_id);
-  const selectedPhone = phoneConfigs.find((pc) => pc.id === form.phone_config_id);
+  
 
   const handleCall = async (e: React.FormEvent) => {
     e.preventDefault();
