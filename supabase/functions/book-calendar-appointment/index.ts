@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
     }
 
     let query = supabase.from("calendar_integrations").select("*").eq("id", integration_id);
-    if (!isServiceRole && userId) {
+    if (!isServiceRole && !isTrustedUltravoxTool && userId) {
       query = query.eq("user_id", userId);
     }
     const { data: integration, error: intError } = await query.single();
