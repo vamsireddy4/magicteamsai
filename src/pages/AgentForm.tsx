@@ -203,9 +203,10 @@ export default function AgentForm() {
   }, [user, id]);
 
   useEffect(() => {
-    if ((voices.length > 0 || GEMINI_VOICES.length > 0) && form.voice) {
+    if ((voices.length > 0 || GEMINI_VOICES.length > 0 || SARVAM_VOICES.length > 0) && form.voice) {
       const isKnownVoice = voices.some(v => v.voiceId === form.voice || v.name === form.voice)
-        || GEMINI_VOICES.some(v => v.value === form.voice);
+        || GEMINI_VOICES.some(v => v.value === form.voice)
+        || SARVAM_VOICES.some(v => v.value === form.voice);
       if (!isKnownVoice && form.voice !== "terrence") setUseCustomVoice(true);
     }
   }, [voices, form.voice]);
