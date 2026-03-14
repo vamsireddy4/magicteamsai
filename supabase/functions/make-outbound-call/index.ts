@@ -201,6 +201,12 @@ Deno.serve(async (req) => {
           }
         }
 
+        const END_BEHAVIOR_MAP: Record<string, string> = {
+          "Speaks": "AGENT_TEXT_BEHAVIOR_AGENT_SPEAKS",
+          "Listens": "AGENT_TEXT_BEHAVIOR_AGENT_LISTENS",
+          "Speaks Once": "AGENT_TEXT_BEHAVIOR_AGENT_SPEAKS_ONCE",
+        };
+
         const temporaryTool: any = {
           modelToolName: tool.name,
           description: tool.description,
@@ -213,6 +219,15 @@ Deno.serve(async (req) => {
 
         if (staticParameters.length > 0) temporaryTool.staticParameters = staticParameters;
         if (automaticParameters.length > 0) temporaryTool.automaticParameters = automaticParameters;
+
+        // Add defaultReaction and staticResponse from body template metadata
+        const bodyMeta = (tool.http_body_template as Record<string, any>) || {};
+        if (bodyMeta.__agentEndBehavior && END_BEHAVIOR_MAP[bodyMeta.__agentEndBehavior]) {
+          temporaryTool.defaultReaction = END_BEHAVIOR_MAP[bodyMeta.__agentEndBehavior];
+        }
+        if (bodyMeta.__staticResponse) {
+          temporaryTool.staticResponse = bodyMeta.__staticResponse;
+        }
 
         ultravoxTools.push({ temporaryTool });
       }
