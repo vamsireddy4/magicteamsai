@@ -462,7 +462,16 @@ export default function AgentForm() {
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Language</Label>
-                      <Input value={form.language_hint} onChange={e => setForm({ ...form, language_hint: e.target.value })} placeholder="en" />
+                      {form.ai_provider === "sarvam" ? (
+                        <Select value={form.language_hint} onValueChange={val => setForm({ ...form, language_hint: val })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {SARVAM_LANGUAGES.map(l => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input value={form.language_hint} onChange={e => setForm({ ...form, language_hint: e.target.value })} placeholder="en" />
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label>Max Duration (seconds)</Label>
