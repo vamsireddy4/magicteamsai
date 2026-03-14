@@ -19,6 +19,8 @@ const LANGUAGE_MAP: Record<string, string> = {
   unknown: "unknown",
 };
 
+const GREETING_AUDIO_CACHE = new Map<string, Uint8Array>();
+
 // ── μ-law decode table ──
 const MULAW_DECODE_TABLE = new Int16Array(256);
 (function () {
