@@ -303,7 +303,7 @@ Deno.serve((req) => {
     function connectSTT(config: AgentConfig) {
       const langCode = config.languageHint || "en-IN";
       // Build URL with query params for auth and config
-      const sttUrl = `${SARVAM_STT_WS_BASE}?language-code=${langCode}&api-subscription-key=${sarvamApiKey}&model=saaras:v3&sample_rate=8000`;
+      const sttUrl = `${SARVAM_STT_WS_BASE}?language-code=${langCode}&api-subscription-key=${sarvamApiKey}&model=saaras:v3&sample_rate=8000&mode=transcribe&input_audio_codec=pcm_s16le`;
 
       console.log(`[SARVAM-BRIDGE] Connecting STT: lang=${langCode} url=${sttUrl.replace(sarvamApiKey!, "***")}`);
 
