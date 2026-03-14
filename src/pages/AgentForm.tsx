@@ -84,14 +84,22 @@ const SARVAM_MODELS: UltravoxModel[] = [
 ];
 
 const SARVAM_VOICES = [
-  { value: "meera", label: "Meera (Female, Hindi)" },
-  { value: "arvind", label: "Arvind (Male, Hindi)" },
-  { value: "amol", label: "Amol (Male, Hindi)" },
-  { value: "kalpana", label: "Kalpana (Female, Hindi)" },
-  { value: "shubh", label: "Shubh (Male, Hindi)" },
-  { value: "diya", label: "Diya (Female, Hindi)" },
-  { value: "neel", label: "Neel (Male, Hindi)" },
-  { value: "misha", label: "Misha (Female, Hindi)" },
+  { value: "anushka", label: "Anushka (Female)" },
+  { value: "manisha", label: "Manisha (Female)" },
+  { value: "vidya", label: "Vidya (Female)" },
+  { value: "arya", label: "Arya (Female)" },
+  { value: "priya", label: "Priya (Female)" },
+  { value: "kavya", label: "Kavya (Female)" },
+  { value: "shreya", label: "Shreya (Female)" },
+  { value: "shruti", label: "Shruti (Female)" },
+  { value: "abhilash", label: "Abhilash (Male)" },
+  { value: "karun", label: "Karun (Male)" },
+  { value: "hitesh", label: "Hitesh (Male)" },
+  { value: "rahul", label: "Rahul (Male)" },
+  { value: "amit", label: "Amit (Male)" },
+  { value: "dev", label: "Dev (Male)" },
+  { value: "shubh", label: "Shubh (Male)" },
+  { value: "advait", label: "Advait (Male)" },
 ];
 
 const SARVAM_LANGUAGES = [
