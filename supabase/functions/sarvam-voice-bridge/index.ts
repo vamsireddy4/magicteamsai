@@ -55,6 +55,101 @@ function b64encode(bytes: Uint8Array): string {
   return btoa(s);
 }
 
+// ── PCM16 → μ-law encoder ──
+function pcm16SampleToMulaw(sample: number): number {
+  const BIAS = 0x84;
+  const CLIP = 32635;
+  let sign = 0;
+  if (sample < 0) { sign = 0x80; sample = -sample; }
+  if (sample > CLIP) sample = CLIP;
+  sample += BIAS;
+  let exponent = 7;
+  let mask = 0x4000;
+  for (; exponent > 0; exponent--, mask >>= 1) {
+    if (sample & mask) break;
+  }
+  const mantissa = (sample >> (exponent + 3)) & 0x0F;
+  return ~(sign | (exponent << 4) | mantissa) & 0xFF;
+}
+
+function pcm16BufferToMulaw(pcm16: Uint8Array): Uint8Array {
+  const view = new DataView(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength);
+  const samples = pcm16.length / 2;
+  const mulaw = new Uint8Array(samples);
+  for (let i = 0; i < samples; i++) {
+    mulaw[i] = pcm16SampleToMulaw(view.getInt16(i * 2, true));
+  }
+  return mulaw;
+}
+
+// Simple linear-interpolation resampler for PCM16 mono
+function resamplePcm16(pcm16: Uint8Array, fromRate: number, toRate: number): Uint8Array {
+  if (fromRate === toRate) return pcm16;
+  const inView = new DataView(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength);
+  const inputSamples = pcm16.length / 2;
+  const outputSamples = Math.floor(inputSamples * toRate / fromRate);
+  const output = new Uint8Array(outputSamples * 2);
+  const outView = new DataView(output.buffer);
+  for (let i = 0; i < outputSamples; i++) {
+    const srcPos = i * fromRate / toRate;
+    const srcIdx = Math.floor(srcPos);
+    const frac = srcPos - srcIdx;
+    const s0 = srcIdx < inputSamples ? inView.getInt16(srcIdx * 2, true) : 0;
+    const s1 = srcIdx + 1 < inputSamples ? inView.getInt16((srcIdx + 1) * 2, true) : s0;
+    outView.setInt16(i * 2, Math.round(s0 + frac * (s1 - s0)), true);
+  }
+  return output;
+}
+
+// Parse TTS audio response: detect WAV container, extract + convert to 8kHz mulaw
+function parseTTSAudioToMulaw(audioBytes: Uint8Array): Uint8Array {
+  // Check for RIFF/WAV header
+  if (audioBytes.length > 44 &&
+      audioBytes[0] === 0x52 && audioBytes[1] === 0x49 &&
+      audioBytes[2] === 0x46 && audioBytes[3] === 0x46) {
+    const view = new DataView(audioBytes.buffer, audioBytes.byteOffset, audioBytes.byteLength);
+    const audioFormat = view.getUint16(20, true); // 1=PCM, 6=alaw, 7=mulaw
+    const sampleRate = view.getUint32(24, true);
+    const bitsPerSample = view.getUint16(34, true);
+    console.log(`[SARVAM-BRIDGE] WAV detected: fmt=${audioFormat} rate=${sampleRate} bits=${bitsPerSample} size=${audioBytes.length}`);
+
+    // Find "data" chunk
+    let offset = 12;
+    while (offset < audioBytes.length - 8) {
+      const chunkId = String.fromCharCode(audioBytes[offset], audioBytes[offset+1], audioBytes[offset+2], audioBytes[offset+3]);
+      const chunkSize = view.getUint32(offset + 4, true);
+      if (chunkId === "data") {
+        const rawData = audioBytes.slice(offset + 8, offset + 8 + chunkSize);
+        
+        if (audioFormat === 7) {
+          // Already mulaw — check sample rate
+          if (sampleRate === 8000) return rawData;
+          // Rare: mulaw at non-8kHz — decode to PCM16, resample, re-encode
+          const pcm16 = mulawToPcm16(rawData);
+          const resampled = resamplePcm16(pcm16, sampleRate, 8000);
+          return pcm16BufferToMulaw(resampled);
+        }
+        
+        if (audioFormat === 1 && bitsPerSample === 16) {
+          // PCM16 — resample to 8kHz then encode to mulaw
+          const resampled = resamplePcm16(rawData, sampleRate, 8000);
+          return pcm16BufferToMulaw(resampled);
+        }
+        
+        console.warn(`[SARVAM-BRIDGE] Unknown WAV format=${audioFormat} bits=${bitsPerSample}, sending raw`);
+        return rawData;
+      }
+      offset += 8 + chunkSize;
+      if (chunkSize % 2 !== 0) offset++; // WAV chunks are 2-byte aligned
+    }
+    console.warn("[SARVAM-BRIDGE] WAV: no data chunk found, sending raw");
+  }
+
+  // Not a WAV — assume raw mulaw
+  console.log(`[SARVAM-BRIDGE] Non-WAV audio: ${audioBytes.length} bytes, assuming raw mulaw`);
+  return audioBytes;
+}
+
 // Build WAV file from PCM16 mono 8kHz data
 function buildWav(pcm16: Uint8Array): Uint8Array {
   const dataSize = pcm16.length;
@@ -450,10 +545,13 @@ Deno.serve((req) => {
           return;
         }
 
-        const audioBytes = b64decode(audioB64);
-        await sendAudioToTelephony(audioBytes);
+        const rawAudioBytes = b64decode(audioB64);
+        console.log(`[SARVAM-BRIDGE] TTS raw response: ${rawAudioBytes.length} bytes, first4=[${rawAudioBytes[0]},${rawAudioBytes[1]},${rawAudioBytes[2]},${rawAudioBytes[3]}]`);
+        const mulawBytes = parseTTSAudioToMulaw(rawAudioBytes);
+        console.log(`[SARVAM-BRIDGE] TTS mulaw output: ${mulawBytes.length} bytes (${(mulawBytes.length / 8000 * 1000).toFixed(0)}ms audio)`);
+        await sendAudioToTelephony(mulawBytes);
         const ttsLatency = Date.now() - ttsStartMs;
-        console.log(`[SARVAM-BRIDGE] TTS sent ${audioBytes.length} bytes latency=${ttsLatency}ms provider=${telephonyProvider}`);
+        console.log(`[SARVAM-BRIDGE] TTS sent ${mulawBytes.length} bytes latency=${ttsLatency}ms provider=${telephonyProvider}`);
       } catch (e) {
         console.error("[SARVAM-BRIDGE] TTS error:", e);
       }
