@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Look up integration — service role skips user_id filter
+    // Look up integration — service role and trusted tool skip user_id filter
     let query = supabase.from("calendar_integrations").select("*").eq("id", integration_id);
     if (!isServiceRole && !isTrustedUltravoxTool && userId) {
       query = query.eq("user_id", userId);
@@ -233,7 +233,7 @@ async function handleCalCom(integration: any, opts: any) {
 
   const data = await res.json();
   const slotsObj = data.data?.slots || data.slots || {};
-  
+
   const flatSlots: any[] = [];
   for (const [dateKey, daySlots] of Object.entries(slotsObj)) {
     if (Array.isArray(daySlots)) {
