@@ -23,14 +23,19 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser(
-      authHeader.replace("Bearer ", "")
-    );
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const token = authHeader.replace("Bearer ", "");
+    const isServiceRole = token === supabaseKey;
+
+    let userId: string | null = null;
+    if (!isServiceRole) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      userId = user.id;
     }
 
     const body = await req.json();
@@ -45,12 +50,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { data: integration, error: intError } = await supabase
-      .from("calendar_integrations")
-      .select("*")
-      .eq("id", integration_id)
-      .eq("user_id", user.id)
-      .single();
+    // Look up integration — service role skips user_id filter
+    let query = supabase.from("calendar_integrations").select("*").eq("id", integration_id);
+    if (!isServiceRole && userId) {
+      query = query.eq("user_id", userId);
+    }
+    const { data: integration, error: intError } = await query.single();
 
     if (intError || !integration) {
       return new Response(JSON.stringify({ error: "Calendar integration not found" }), {
@@ -131,13 +136,11 @@ const CAL_V2_HEADERS = {
 };
 
 async function handleCalComDirect(apiKey: string, opts: any) {
-  // Direct Cal.com calls using just the API key (no integration record needed)
   const authHeaders = {
     ...CAL_V2_HEADERS,
     Authorization: `Bearer ${apiKey}`,
   };
 
-  // Fetch username from /v2/me
   const meRes = await fetch("https://api.cal.com/v2/me", { headers: authHeaders });
   if (!meRes.ok) {
     const errBody = await meRes.text();
@@ -147,7 +150,6 @@ async function handleCalComDirect(apiKey: string, opts: any) {
   const meData = await meRes.json();
   const username = meData.data?.username || meData.data?.name || "";
 
-  // Fetch event types from /v2/event-types (requires cal-api-version: 2024-06-14)
   const etHeaders = {
     "Content-Type": "application/json",
     "cal-api-version": "2024-06-14",
@@ -177,7 +179,7 @@ async function handleCalComDirect(apiKey: string, opts: any) {
 
 async function handleCalCom(integration: any, opts: any) {
   const apiKey = integration.api_key;
-  const eventTypeId = integration.calendar_id; // numeric event type ID
+  const eventTypeId = integration.calendar_id;
   const config = integration.config || {};
   const username = config.username || "";
 
@@ -196,28 +198,23 @@ async function handleCalCom(integration: any, opts: any) {
     return { success: true, user: data.data?.name || data.data?.email || "Connected" };
   }
 
-  // Check available slots using v2 /slots endpoint
   const startDate = opts.date || new Date().toISOString().split("T")[0];
-  // Query slots for 7 days ahead to give the agent more options
   const endDateObj = new Date(startDate);
   endDateObj.setDate(endDateObj.getDate() + 7);
   const endDate = endDateObj.toISOString().split("T")[0];
 
-  // Build query params for /v2/slots/available
   const params = new URLSearchParams({
     startTime: `${startDate}T00:00:00.000Z`,
     endTime: `${endDate}T23:59:59.000Z`,
   });
 
-  // eventTypeId is required for slots endpoint
   if (eventTypeId && !isNaN(Number(eventTypeId))) {
     params.set("eventTypeId", eventTypeId);
   } else if (eventTypeId && username) {
-    // If it's a slug, use eventTypeSlug + username
     params.set("eventTypeSlug", eventTypeId);
     params.set("usernameList", username);
   } else {
-    throw new Error("Cal.com requires a valid Event Type ID (numeric) to check availability. Please update your calendar integration settings.");
+    throw new Error("Cal.com requires a valid Event Type ID (numeric) to check availability.");
   }
 
   const url = `https://api.cal.com/v2/slots/available?${params.toString()}`;
@@ -231,10 +228,8 @@ async function handleCalCom(integration: any, opts: any) {
   }
 
   const data = await res.json();
-  // v2 returns { status: "success", data: { slots: { "2024-01-01": [...] } } }
   const slotsObj = data.data?.slots || data.slots || {};
   
-  // Flatten slots into a simple array for the AI agent
   const flatSlots: any[] = [];
   for (const [dateKey, daySlots] of Object.entries(slotsObj)) {
     if (Array.isArray(daySlots)) {

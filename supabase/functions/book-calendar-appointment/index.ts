@@ -22,24 +22,28 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser(
-      authHeader.replace("Bearer ", "")
-    );
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const token = authHeader.replace("Bearer ", "");
+    const isServiceRole = token === supabaseKey;
+
+    let userId: string | null = null;
+    if (!isServiceRole) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      userId = user.id;
     }
 
     const body = await req.json();
     const { integration_id, start_time, end_time, attendee_name, attendee_email, attendee_phone, notes } = body;
 
-    const { data: integration, error: intError } = await supabase
-      .from("calendar_integrations")
-      .select("*")
-      .eq("id", integration_id)
-      .eq("user_id", user.id)
-      .single();
+    let query = supabase.from("calendar_integrations").select("*").eq("id", integration_id);
+    if (!isServiceRole && userId) {
+      query = query.eq("user_id", userId);
+    }
+    const { data: integration, error: intError } = await query.single();
 
     if (intError || !integration) {
       return new Response(JSON.stringify({ error: "Calendar integration not found" }), {
@@ -81,7 +85,7 @@ async function bookCalCom(integration: any, opts: any) {
   const eventTypeId = integration.calendar_id;
 
   if (!eventTypeId || isNaN(Number(eventTypeId))) {
-    throw new Error("Cal.com booking requires a valid numeric Event Type ID. Please update your calendar integration settings.");
+    throw new Error("Cal.com booking requires a valid numeric Event Type ID.");
   }
 
   const res = await fetch("https://api.cal.com/v2/bookings", {
