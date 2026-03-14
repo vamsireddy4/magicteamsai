@@ -130,32 +130,91 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Build Ultravox tools from agent_tools
+    // Build Ultravox tools from agent_tools (full sync matching sync-ultravox-agent logic)
     const ultravoxTools: any[] = [];
+
+    const KNOWN_VALUE_MAP: Record<string, string> = {
+      "call.id": "KNOWN_PARAM_CALL_ID",
+      "call.stage_id": "KNOWN_PARAM_CALL_STAGE_ID",
+      "call.state": "KNOWN_PARAM_CALL_STATE",
+      "call.conversation_history": "KNOWN_PARAM_CONVERSATION_HISTORY",
+      "call.sample_rate": "KNOWN_PARAM_CALL_SAMPLE_RATE",
+    };
+
+    const locationToUltravox = (loc: string) => {
+      if (loc === "header") return "PARAMETER_LOCATION_HEADER";
+      if (loc === "query") return "PARAMETER_LOCATION_QUERY";
+      return "PARAMETER_LOCATION_BODY";
+    };
+
     if (agentTools && agentTools.length > 0) {
       for (const tool of agentTools) {
         const dynamicParameters: any[] = [];
+        const automaticParameters: any[] = [];
+
         if (Array.isArray(tool.parameters)) {
           for (const p of tool.parameters as any[]) {
-            dynamicParameters.push({
-              name: p.name,
-              location: "PARAMETER_LOCATION_BODY",
-              schema: { type: p.type || "string", description: p.description || "" },
-              required: !!p.required,
-            });
+            if (p.paramType === "automatic") {
+              const knownValue = KNOWN_VALUE_MAP[p.knownValue] || p.knownValue;
+              automaticParameters.push({
+                name: p.name,
+                location: locationToUltravox(p.location),
+                knownValue,
+              });
+            } else {
+              const schema = p.schema || { type: p.type || "string", description: p.description || "" };
+              dynamicParameters.push({
+                name: p.name,
+                location: locationToUltravox(p.location),
+                schema,
+                required: !!p.required,
+              });
+            }
           }
         }
-        ultravoxTools.push({
-          temporaryTool: {
-            modelToolName: tool.name,
-            description: tool.description,
-            dynamicParameters,
-            http: {
-              baseUrlPattern: tool.http_url,
-              httpMethod: tool.http_method,
-            },
+
+        // Build static parameters from headers and body template
+        const staticParameters: any[] = [];
+        if (tool.http_headers && typeof tool.http_headers === "object") {
+          const headers = tool.http_headers as Record<string, string>;
+          for (const [headerName, headerValue] of Object.entries(headers)) {
+            if (headerName && headerValue) {
+              staticParameters.push({
+                name: headerName,
+                location: "PARAMETER_LOCATION_HEADER",
+                value: headerValue,
+              });
+            }
+          }
+        }
+        if (tool.http_body_template && typeof tool.http_body_template === "object") {
+          const bodyTemplate = tool.http_body_template as Record<string, any>;
+          for (const [key, value] of Object.entries(bodyTemplate)) {
+            if (key.startsWith("__")) continue;
+            if (key) {
+              staticParameters.push({
+                name: key,
+                location: "PARAMETER_LOCATION_BODY",
+                value: String(value),
+              });
+            }
+          }
+        }
+
+        const temporaryTool: any = {
+          modelToolName: tool.name,
+          description: tool.description,
+          dynamicParameters,
+          http: {
+            baseUrlPattern: tool.http_url,
+            httpMethod: tool.http_method,
           },
-        });
+        };
+
+        if (staticParameters.length > 0) temporaryTool.staticParameters = staticParameters;
+        if (automaticParameters.length > 0) temporaryTool.automaticParameters = automaticParameters;
+
+        ultravoxTools.push({ temporaryTool });
       }
     }
 

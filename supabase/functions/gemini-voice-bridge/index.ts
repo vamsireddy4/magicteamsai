@@ -398,6 +398,7 @@ Deno.serve((req) => {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${sbKey}` },
           body: JSON.stringify({
+            provider: appt.provider || cal.provider,
             integration_id: cal.id,
             start_time: args.start_time,
             end_time: args.end_time,
