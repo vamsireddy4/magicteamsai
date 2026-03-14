@@ -781,6 +781,41 @@ Deno.serve((req) => {
           agentConfig = await loadAgent();
           console.log(`[BRIDGE] Agent loaded: ${agentConfig.agentTools.length} tools, ${agentConfig.appointmentTools.length} appt, ${agentConfig.forwardingNumbers.length} fwd, ${agentConfig.webhooks.length} webhooks`);
           
+          // Resolve Telnyx call_control_id if missing
+          if (telephonyProvider === "telnyx" && !callSid && agentId) {
+            const headers = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
+            // Try telnyx_call_state first (most reliable)
+            try {
+              const stateRes = await fetch(
+                `${sbUrl}/rest/v1/telnyx_call_state?agent_id=eq.${agentId}&order=created_at.desc&limit=1&select=call_control_id`,
+                { headers }
+              );
+              if (stateRes.ok) {
+                const rows = await stateRes.json();
+                if (rows?.[0]?.call_control_id) {
+                  callSid = rows[0].call_control_id;
+                  console.log(`[BRIDGE] Resolved Telnyx call_control_id from telnyx_call_state: ${callSid}`);
+                }
+              }
+            } catch (e) { console.warn("[BRIDGE] telnyx_call_state lookup failed:", e); }
+            // Fallback: try call_logs
+            if (!callSid) {
+              try {
+                const logRes = await fetch(
+                  `${sbUrl}/rest/v1/call_logs?agent_id=eq.${agentId}&status=in.(initiated,in-progress)&order=created_at.desc&limit=1&select=twilio_call_sid`,
+                  { headers }
+                );
+                if (logRes.ok) {
+                  const rows = await logRes.json();
+                  if (rows?.[0]?.twilio_call_sid) {
+                    callSid = rows[0].twilio_call_sid;
+                    console.log(`[BRIDGE] Resolved Telnyx call_control_id from call_logs: ${callSid}`);
+                  }
+                }
+              } catch (e) { console.warn("[BRIDGE] call_logs lookup failed:", e); }
+            }
+          }
+          
           // Fire call.started webhook
           fireWebhooks("call.started", { agent_id: agentId, call_sid: callSid, stream_sid: streamSid });
           
