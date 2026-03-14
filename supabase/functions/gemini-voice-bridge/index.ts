@@ -443,26 +443,58 @@ Deno.serve((req) => {
     }
   }
 
-  // ── Execute custom HTTP tool ──
+  // ── Execute custom HTTP tool — merge args into body + inject automatic params ──
   async function executeCustomTool(tool: AgentTool, args: Record<string, any>): Promise<any> {
     let url = tool.http_url;
-    let body: string | undefined;
 
-    for (const [key, value] of Object.entries(args)) {
+    // Inject automatic parameters (Gemini doesn't have knownValue, so we do it here)
+    const mergedArgs = { ...args };
+    if (Array.isArray(tool.parameters)) {
+      for (const p of tool.parameters as any[]) {
+        if (p.paramType === "automatic") {
+          if (p.knownValue === "call.id") mergedArgs[p.name] = callSid;
+        }
+      }
+    }
+
+    // Replace URL placeholders
+    for (const [key, value] of Object.entries(mergedArgs)) {
       url = url.replace(`{{${key}}}`, encodeURIComponent(String(value)));
     }
 
-    if (tool.http_method !== "GET" && tool.http_body_template) {
-      let bodyObj = JSON.parse(JSON.stringify(tool.http_body_template));
-      const bodyStr = JSON.stringify(bodyObj);
-      let replaced = bodyStr;
-      for (const [key, value] of Object.entries(args)) {
-        replaced = replaced.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), String(value));
+    let body: string | undefined;
+    if (tool.http_method !== "GET") {
+      // Merge body template with dynamic args
+      const bodyObj: Record<string, any> = {};
+      if (tool.http_body_template && typeof tool.http_body_template === "object") {
+        Object.assign(bodyObj, tool.http_body_template);
+        delete bodyObj.__agentEndBehavior;
+        delete bodyObj.__staticResponse;
       }
-      body = replaced;
+      // Merge dynamic + automatic args for body params
+      if (Array.isArray(tool.parameters)) {
+        for (const p of tool.parameters as any[]) {
+          if (p.location === "body" || !p.location) {
+            if (mergedArgs[p.name] !== undefined) bodyObj[p.name] = mergedArgs[p.name];
+          }
+        }
+      }
+      // Also merge any remaining args
+      for (const [key, value] of Object.entries(mergedArgs)) {
+        if (!(key in bodyObj)) bodyObj[key] = value;
+      }
+      body = JSON.stringify(bodyObj);
     }
 
     const fetchHeaders: Record<string, string> = { "Content-Type": "application/json", ...tool.http_headers };
+    // Inject automatic header params
+    if (Array.isArray(tool.parameters)) {
+      for (const p of tool.parameters as any[]) {
+        if (p.paramType === "automatic" && p.location === "header" && mergedArgs[p.name]) {
+          fetchHeaders[p.name] = String(mergedArgs[p.name]);
+        }
+      }
+    }
 
     const res = await fetch(url, {
       method: tool.http_method,

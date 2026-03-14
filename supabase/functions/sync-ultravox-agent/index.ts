@@ -445,34 +445,57 @@ Deno.serve(async (req) => {
         .eq("id", agent.id);
     }
 
-    // Sync webhooks to Ultravox if any
-    if (webhooks && webhooks.length > 0 && newUltravoxAgentId) {
-      for (const wh of webhooks) {
-        try {
-          const whBody: any = {
-            url: wh.url,
-            events: wh.events || ["call.completed"],
-            agentId: newUltravoxAgentId,
-          };
-          if (wh.secret) {
-            whBody.secret = wh.secret;
+    // Sync webhooks to Ultravox — delete existing first for idempotency, then recreate
+    if (newUltravoxAgentId) {
+      try {
+        const listRes = await fetch(`https://api.ultravox.ai/api/webhooks?agentId=${newUltravoxAgentId}`, {
+          headers: { "X-API-Key": ultravoxApiKey },
+        });
+        if (listRes.ok) {
+          const existing = await listRes.json();
+          for (const oldWh of existing.results || []) {
+            const whId = oldWh.webhookId || oldWh.webhook_id || oldWh.id;
+            if (whId) {
+              await fetch(`https://api.ultravox.ai/api/webhooks/${whId}`, {
+                method: "DELETE",
+                headers: { "X-API-Key": ultravoxApiKey },
+              });
+              console.log(`Deleted old webhook: ${whId}`);
+            }
           }
-          const whResp = await fetch("https://api.ultravox.ai/api/webhooks", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-API-Key": ultravoxApiKey,
-            },
-            body: JSON.stringify(whBody),
-          });
-          if (!whResp.ok) {
-            const whErr = await whResp.text();
-            console.error(`Webhook sync error for ${wh.name}: ${whErr}`);
-          } else {
-            console.log(`Webhook synced: ${wh.name}`);
+        }
+      } catch (cleanupErr: any) {
+        console.error(`Webhook cleanup error: ${cleanupErr.message}`);
+      }
+
+      if (webhooks && webhooks.length > 0) {
+        for (const wh of webhooks) {
+          try {
+            const whBody: any = {
+              url: wh.url,
+              events: wh.events || ["call.completed"],
+              agentId: newUltravoxAgentId,
+            };
+            if (wh.secret) {
+              whBody.secret = wh.secret;
+            }
+            const whResp = await fetch("https://api.ultravox.ai/api/webhooks", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-API-Key": ultravoxApiKey,
+              },
+              body: JSON.stringify(whBody),
+            });
+            if (!whResp.ok) {
+              const whErr = await whResp.text();
+              console.error(`Webhook sync error for ${wh.name}: ${whErr}`);
+            } else {
+              console.log(`Webhook synced: ${wh.name}`);
+            }
+          } catch (whError: any) {
+            console.error(`Webhook sync exception for ${wh.name}: ${whError.message}`);
           }
-        } catch (whError: any) {
-          console.error(`Webhook sync exception for ${wh.name}: ${whError.message}`);
         }
       }
     }
