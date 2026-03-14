@@ -76,8 +76,43 @@ const GEMINI_VOICES = [
   { value: "Iapetus", label: "Iapetus (Male)" },
 ];
 
+const SARVAM_MODELS: UltravoxModel[] = [
+  { name: "sarvam-m" },
+  { name: "sarvam-30b" },
+  { name: "sarvam-105b" },
+  { name: "sarvam-105b-32k" },
+];
+
+const SARVAM_VOICES = [
+  { value: "meera", label: "Meera (Female, Hindi)" },
+  { value: "arvind", label: "Arvind (Male, Hindi)" },
+  { value: "amol", label: "Amol (Male, Hindi)" },
+  { value: "kalpana", label: "Kalpana (Female, Hindi)" },
+  { value: "shubh", label: "Shubh (Male, Hindi)" },
+  { value: "diya", label: "Diya (Female, Hindi)" },
+  { value: "neel", label: "Neel (Male, Hindi)" },
+  { value: "misha", label: "Misha (Female, Hindi)" },
+];
+
+const SARVAM_LANGUAGES = [
+  { value: "en-IN", label: "English (India)" },
+  { value: "hi-IN", label: "Hindi" },
+  { value: "ta-IN", label: "Tamil" },
+  { value: "te-IN", label: "Telugu" },
+  { value: "kn-IN", label: "Kannada" },
+  { value: "ml-IN", label: "Malayalam" },
+  { value: "bn-IN", label: "Bengali" },
+  { value: "gu-IN", label: "Gujarati" },
+  { value: "mr-IN", label: "Marathi" },
+  { value: "pa-IN", label: "Punjabi" },
+  { value: "od-IN", label: "Odia" },
+  { value: "ur-IN", label: "Urdu" },
+  { value: "unknown", label: "Auto-detect" },
+];
+
 const AI_PROVIDERS = [
   { value: "ultravox", label: "MagicTeams" },
+  { value: "sarvam", label: "Sarvam AI" },
   { value: "gemini", label: "Gemini Live API (Coming Soon)", disabled: true },
 ];
 
