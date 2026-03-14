@@ -139,6 +139,13 @@ Deno.serve((req) => {
     // Provider detection: prefer query param, fallback to event-based
     let telephonyProvider: "twilio" | "telnyx" = (queryProvider === "telnyx" ? "telnyx" : "twilio");
 
+    // ── Outbound audio state (pacing + RTP packetization for Telnyx) ──
+    let twilioSendChain: Promise<void> = Promise.resolve();
+    let telnyxSendChain: Promise<void> = Promise.resolve();
+    let rtpSeq = 0;
+    let rtpTimestamp = 0;
+    let rtpSsrc = Math.floor(Math.random() * 0xffffffff);
+
     // ── VAD + Audio Buffering for REST STT ──
     const SPEECH_THRESHOLD = 250;
     const SILENCE_DURATION_MS = 800;
@@ -156,6 +163,29 @@ Deno.serve((req) => {
     // ── Turn queue: process one turn at a time ──
     let turnProcessing = false;
     const turnQueue: Uint8Array[] = [];
+
+    const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+    function createRtpPacket(payload: Uint8Array): Uint8Array {
+      const packet = new Uint8Array(12 + payload.length);
+      packet[0] = 0x80; // RTP version 2
+      packet[1] = 0x00; // PT=0 (PCMU)
+      packet[2] = (rtpSeq >> 8) & 0xff;
+      packet[3] = rtpSeq & 0xff;
+      packet[4] = (rtpTimestamp >> 24) & 0xff;
+      packet[5] = (rtpTimestamp >> 16) & 0xff;
+      packet[6] = (rtpTimestamp >> 8) & 0xff;
+      packet[7] = rtpTimestamp & 0xff;
+      packet[8] = (rtpSsrc >> 24) & 0xff;
+      packet[9] = (rtpSsrc >> 16) & 0xff;
+      packet[10] = (rtpSsrc >> 8) & 0xff;
+      packet[11] = rtpSsrc & 0xff;
+      packet.set(payload, 12);
+
+      rtpSeq = (rtpSeq + 1) & 0xffff;
+      rtpTimestamp = (rtpTimestamp + payload.length) >>> 0; // 8kHz PCMU: 1 byte = 1 sample
+      return packet;
+    }
 
     function cleanup(reason: string) {
       if (closed) return;
@@ -345,21 +375,43 @@ Deno.serve((req) => {
     }
 
     // ── Send mulaw audio back to telephony ──
-    function sendAudioToTelephony(mulawBytes: Uint8Array) {
-      const CHUNK_SIZE = 640;
-      for (let i = 0; i < mulawBytes.length; i += CHUNK_SIZE) {
-        const chunk = mulawBytes.slice(i, i + CHUNK_SIZE);
-        if (socket.readyState !== WebSocket.OPEN || closed) break;
+    async function sendAudioToTelephony(mulawBytes: Uint8Array) {
+      // 20ms frame @ 8kHz PCMU = 160 bytes
+      const FRAME_SIZE = 160;
+      const FRAME_DELAY_MS = 20;
 
-        if (telephonyProvider === "telnyx") {
-          socket.send(chunk);
-        } else {
-          socket.send(JSON.stringify({
-            event: "media",
-            streamSid,
-            media: { payload: b64encode(chunk) },
-          }));
+      const sendFrames = async () => {
+        for (let i = 0; i < mulawBytes.length; i += FRAME_SIZE) {
+          const frame = mulawBytes.slice(i, i + FRAME_SIZE);
+          if (socket.readyState !== WebSocket.OPEN || closed) break;
+
+          if (telephonyProvider === "telnyx") {
+            // Telnyx bidirectional RTP expects full RTP packets, not raw PCMU payload
+            const rtpPacket = createRtpPacket(frame);
+            socket.send(rtpPacket);
+          } else {
+            // Twilio media websocket expects JSON envelopes with base64 μ-law payload
+            socket.send(JSON.stringify({
+              event: "media",
+              streamSid,
+              media: { payload: b64encode(frame) },
+            }));
+          }
+
+          await sleep(FRAME_DELAY_MS);
         }
+      };
+
+      if (telephonyProvider === "telnyx") {
+        telnyxSendChain = telnyxSendChain.then(sendFrames).catch((e) => {
+          console.error("[SARVAM-BRIDGE] Telnyx send error:", e);
+        });
+        await telnyxSendChain;
+      } else {
+        twilioSendChain = twilioSendChain.then(sendFrames).catch((e) => {
+          console.error("[SARVAM-BRIDGE] Twilio send error:", e);
+        });
+        await twilioSendChain;
       }
     }
 
@@ -399,7 +451,7 @@ Deno.serve((req) => {
         }
 
         const audioBytes = b64decode(audioB64);
-        sendAudioToTelephony(audioBytes);
+        await sendAudioToTelephony(audioBytes);
         const ttsLatency = Date.now() - ttsStartMs;
         console.log(`[SARVAM-BRIDGE] TTS sent ${audioBytes.length} bytes latency=${ttsLatency}ms provider=${telephonyProvider}`);
       } catch (e) {
@@ -438,11 +490,9 @@ Deno.serve((req) => {
       greetingSent = true;
 
       const greetingText = "Hello! How can I help you today?";
-      const greetingStartMs = Date.now();
       console.log(`[SARVAM-BRIDGE] Sending immediate greeting (no chat)`);
 
       await speakViaSarvamTTS(greetingText);
-      conversationHistory.push({ role: "assistant", content: greetingText });
 
       const elapsed = Date.now() - streamStartMs;
       console.log(`[SARVAM-BRIDGE] greeting_sent_ms=${elapsed} (from stream start)`);
