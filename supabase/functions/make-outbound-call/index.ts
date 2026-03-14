@@ -330,7 +330,13 @@ Deno.serve(async (req) => {
               "Authorization": `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`,
               "Content-Type": "application/x-www-form-urlencoded",
             },
-            body: new URLSearchParams({ To: recipient_number, From: phoneConfig.phone_number, Twiml: twiml }).toString(),
+            body: new URLSearchParams({
+              To: recipient_number,
+              From: phoneConfig.phone_number,
+              Twiml: twiml,
+              StatusCallback: `${supabaseUrl}/functions/v1/handle-twilio-status`,
+              StatusCallbackEvent: "initiated ringing answered completed",
+            }).toString(),
           }
         );
         if (!twilioResponse.ok) {
@@ -462,7 +468,13 @@ Deno.serve(async (req) => {
               "Authorization": `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`,
               "Content-Type": "application/x-www-form-urlencoded",
             },
-            body: new URLSearchParams({ To: recipient_number, From: phoneConfig.phone_number, Twiml: twiml }).toString(),
+            body: new URLSearchParams({
+              To: recipient_number,
+              From: phoneConfig.phone_number,
+              Twiml: twiml,
+              StatusCallback: `${supabaseUrl}/functions/v1/handle-twilio-status`,
+              StatusCallbackEvent: "initiated ringing answered completed",
+            }).toString(),
           }
         );
         if (!twilioResponse.ok) {

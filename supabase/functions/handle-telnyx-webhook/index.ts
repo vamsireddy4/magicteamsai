@@ -29,6 +29,10 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    if (eventType === "call.initiated") {
+      console.log(`[telnyx-webhook] call.initiated full payload: ${JSON.stringify(payload)}`);
+    }
+
     if (eventType === "call.answered") {
       // Look up the stored join URL for this call
       const { data: callState, error } = await supabase
@@ -74,6 +78,11 @@ Deno.serve(async (req) => {
         console.log(`[telnyx-webhook] Streaming started successfully for ${callControlId}`);
       }
 
+      // Update call_logs status to in-progress
+      await supabase.from("call_logs")
+        .update({ status: "in-progress" })
+        .eq("twilio_call_sid", callControlId);
+
       // Clean up the state record
       await supabase.from("telnyx_call_state").delete().eq("call_control_id", callControlId);
     }
@@ -87,9 +96,40 @@ Deno.serve(async (req) => {
     }
 
     if (eventType === "call.hangup") {
+      const hangupCause = payload?.hangup_cause || "unknown";
+      const hangupSource = payload?.hangup_source || "unknown";
+      const sipResponseCode = payload?.sip_hangup_cause || "";
+      
+      console.log(`[telnyx-webhook] Call hung up: ${callControlId}, cause=${hangupCause}, source=${hangupSource}, sip_code=${sipResponseCode}`);
+      console.log(`[telnyx-webhook] call.hangup full payload: ${JSON.stringify(payload)}`);
+
+      // Map hangup cause to a meaningful status
+      let callStatus = "completed";
+      if (hangupCause === "CALL_REJECTED" || hangupCause === "USER_BUSY") {
+        callStatus = "busy";
+      } else if (hangupCause === "NO_ANSWER" || hangupCause === "TIMEOUT" || hangupCause === "ORIGINATOR_CANCEL") {
+        callStatus = "no-answer";
+      } else if (hangupCause === "UNALLOCATED_NUMBER" || hangupCause === "NO_ROUTE_DESTINATION" || hangupCause === "INVALID_NUMBER_FORMAT") {
+        callStatus = "failed";
+      } else if (hangupCause === "NORMAL_CLEARING") {
+        callStatus = "completed";
+      }
+
+      // Update call_logs with hangup reason and final status
+      const { error: updateError } = await supabase.from("call_logs")
+        .update({ 
+          status: callStatus, 
+          ended_at: new Date().toISOString(),
+          summary: `Hangup cause: ${hangupCause} (source: ${hangupSource})${sipResponseCode ? `, SIP: ${sipResponseCode}` : ""}`,
+        })
+        .eq("twilio_call_sid", callControlId);
+      
+      if (updateError) {
+        console.error(`[telnyx-webhook] Failed to update call_logs: ${updateError.message}`);
+      }
+
       // Clean up any remaining state
       await supabase.from("telnyx_call_state").delete().eq("call_control_id", callControlId);
-      console.log(`[telnyx-webhook] Call hung up: ${callControlId}`);
     }
 
     return new Response(JSON.stringify({ ok: true }), {
