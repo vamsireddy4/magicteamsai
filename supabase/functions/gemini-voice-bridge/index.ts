@@ -138,6 +138,7 @@ Deno.serve((req) => {
   let geminiWs: WebSocket | null = null;
   let streamSid = "";
   let callSid = ""; // For call forwarding
+  let telephonyProvider: "twilio" | "telnyx" = "twilio"; // Track actual provider
   let geminiReady = false;
   const audioBuffer: string[] = [];
   let keepaliveTimer: number | null = null;
@@ -417,7 +418,7 @@ Deno.serve((req) => {
           body: JSON.stringify({
             call_sid: callSid,
             agent_id: agentId,
-            provider: "twilio", // Gemini bridge currently supports Twilio
+            provider: telephonyProvider,
           }),
         });
         return await res.json();
@@ -726,8 +727,12 @@ Deno.serve((req) => {
           agentId = customParams.agent_id;
           console.log(`[BRIDGE] Got agent_id from customParameters: ${agentId}`);
         }
+        // Detect provider from stream event
+        if (customParams.provider === "telnyx" || (!msg.start?.streamSid && msg.start?.stream_id)) {
+          telephonyProvider = "telnyx";
+        }
         
-        console.log(`[BRIDGE] Stream started: sid=${streamSid} agent_id=${agentId} callSid=${callSid}`);
+        console.log(`[BRIDGE] Stream started: sid=${streamSid} agent_id=${agentId} callSid=${callSid} provider=${telephonyProvider}`);
         console.log(`[BRIDGE] Start event keys: ${JSON.stringify(Object.keys(msg.start || {}))}`);
 
         if (!agentId) {
