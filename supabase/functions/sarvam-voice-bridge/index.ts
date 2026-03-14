@@ -5,6 +5,9 @@ const SARVAM_STT_URL = "https://api.sarvam.ai/speech-to-text";
 const SARVAM_CHAT_URL = "https://api.sarvam.ai/v1/chat/completions";
 const SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech";
 
+// Fast model for realtime fallback when primary model is too slow
+const FAST_CHAT_MODEL = "sarvam-m";
+
 const LANGUAGE_MAP: Record<string, string> = {
   en: "en-IN", hi: "hi-IN", ta: "ta-IN", te: "te-IN",
   kn: "kn-IN", ml: "ml-IN", bn: "bn-IN", gu: "gu-IN",
@@ -62,13 +65,13 @@ function buildWav(pcm16: Uint8Array): Uint8Array {
   view.setUint32(4, 36 + dataSize, true);
   writeStr(8, "WAVE");
   writeStr(12, "fmt ");
-  view.setUint32(16, 16, true);       // chunk size
-  view.setUint16(20, 1, true);        // PCM format
-  view.setUint16(22, 1, true);        // mono
-  view.setUint32(24, 8000, true);     // sample rate
-  view.setUint32(28, 16000, true);    // byte rate
-  view.setUint16(32, 2, true);        // block align
-  view.setUint16(34, 16, true);       // bits per sample
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, 8000, true);
+  view.setUint32(28, 16000, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
   writeStr(36, "data");
   view.setUint32(40, dataSize, true);
   const wav = new Uint8Array(44 + dataSize);
@@ -89,6 +92,8 @@ function computeRms(pcm16: Uint8Array): number {
   }
   return Math.sqrt(sumSq / samples);
 }
+
+let turnCounter = 0;
 
 interface AgentConfig {
   prompt: string;
@@ -128,33 +133,34 @@ Deno.serve((req) => {
     let closed = false;
     let agentConfig: AgentConfig | null = null;
     let conversationHistory: { role: string; content: string }[] = [];
-    let ttsInFlight = false;
-    let pendingQueue: string[] = []; // queued transcripts while TTS in flight
+    let greetingSent = false;
+    const streamStartMs = Date.now();
 
     // Provider detection: prefer query param, fallback to event-based
     let telephonyProvider: "twilio" | "telnyx" = (queryProvider === "telnyx" ? "telnyx" : "twilio");
 
     // ── VAD + Audio Buffering for REST STT ──
-    const SPEECH_THRESHOLD = 250;    // RMS energy threshold
-    const SILENCE_DURATION_MS = 800; // ms of silence to end utterance
-    const MIN_SPEECH_MS = 400;       // minimum speech to process
-    const MAX_BUFFER_MS = 15000;     // force-send after 15s
+    const SPEECH_THRESHOLD = 250;
+    const SILENCE_DURATION_MS = 800;
+    const MIN_SPEECH_MS = 400;
+    const MAX_BUFFER_MS = 15000;
     const SAMPLE_RATE = 8000;
-    const BYTES_PER_MS = (SAMPLE_RATE * 2) / 1000; // 16 bytes/ms for 8kHz 16-bit
+    const BYTES_PER_MS = (SAMPLE_RATE * 2) / 1000;
 
     let audioBuffer: Uint8Array[] = [];
     let audioBufferBytes = 0;
     let isSpeaking = false;
     let silenceStartMs = 0;
     let speechStartMs = 0;
-    let vadTimer: number | null = null;
-    let greetingSent = false;
+
+    // ── Turn queue: process one turn at a time ──
+    let turnProcessing = false;
+    const turnQueue: Uint8Array[] = [];
 
     function cleanup(reason: string) {
       if (closed) return;
       closed = true;
       console.log(`[SARVAM-BRIDGE] Cleanup: ${reason}`);
-      if (vadTimer) clearInterval(vadTimer);
       try { if (socket.readyState === WebSocket.OPEN) socket.close(); } catch (_) { }
     }
 
@@ -221,9 +227,9 @@ Deno.serve((req) => {
       return { prompt, model, voice, languageHint, userId, agentTools, calendarIntegrations };
     }
 
-    // ── REST STT: send buffered audio to Sarvam REST endpoint ──
+    // ── REST STT ──
     async function transcribeAudio(pcm16Data: Uint8Array): Promise<string> {
-      if (pcm16Data.length < 1600) return ""; // less than 100ms, skip
+      if (pcm16Data.length < 1600) return "";
 
       const wavData = buildWav(pcm16Data);
       console.log(`[SARVAM-BRIDGE] REST STT: sending ${pcm16Data.length} bytes PCM16 (${(pcm16Data.length / BYTES_PER_MS).toFixed(0)}ms)`);
@@ -257,9 +263,12 @@ Deno.serve((req) => {
       }
     }
 
-    // ── Chat Completion with retry on 5xx ──
+    // ── Chat Completion with fast timeout + model fallback ──
     async function chatCompletion(userText: string): Promise<string> {
       if (!agentConfig) return "I'm sorry, I'm having trouble processing that.";
+
+      const turnId = ++turnCounter;
+      const chatStartMs = Date.now();
 
       conversationHistory.push({ role: "user", content: userText });
       if (conversationHistory.length > 20) {
@@ -271,11 +280,20 @@ Deno.serve((req) => {
         ...conversationHistory,
       ];
 
-      const maxRetries = 2;
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      // Try primary model first with short timeout, then fallback to fast model
+      const attempts = [
+        { model: agentConfig.model, timeout: 8000, label: "primary" },
+        { model: FAST_CHAT_MODEL, timeout: 8000, label: "fallback" },
+      ];
+      // If primary IS already the fast model, just one attempt
+      if (agentConfig.model === FAST_CHAT_MODEL) {
+        attempts.splice(1); // remove fallback since same
+      }
+
+      for (const attempt of attempts) {
         try {
           const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+          const timer = setTimeout(() => controller.abort(), attempt.timeout);
 
           const res = await fetch(SARVAM_CHAT_URL, {
             method: "POST",
@@ -284,47 +302,51 @@ Deno.serve((req) => {
               "api-subscription-key": sarvamApiKey!,
             },
             body: JSON.stringify({
-              model: agentConfig.model,
+              model: attempt.model,
               messages,
               max_tokens: 300,
               temperature: 0.7,
             }),
             signal: controller.signal,
           });
-          clearTimeout(timeout);
+          clearTimeout(timer);
 
-          if (res.status >= 500 && attempt < maxRetries) {
+          if (res.status >= 500) {
             const errText = await res.text();
-            console.warn(`[SARVAM-BRIDGE] Chat API ${res.status} (attempt ${attempt + 1}/${maxRetries + 1}): ${errText.substring(0, 200)}`);
-            await new Promise(r => setTimeout(r, 1000 * (attempt + 1))); // backoff
-            continue;
+            console.warn(`[SARVAM-BRIDGE] turn=${turnId} Chat ${res.status} (${attempt.label}/${attempt.model}): ${errText.substring(0, 150)}`);
+            continue; // try fallback
           }
 
           if (!res.ok) {
             const errText = await res.text();
-            console.error(`[SARVAM-BRIDGE] Chat API error: ${res.status} ${errText.substring(0, 200)}`);
-            return "I'm sorry, I'm experiencing technical difficulties. Could you please repeat that?";
+            console.error(`[SARVAM-BRIDGE] turn=${turnId} Chat ${res.status}: ${errText.substring(0, 150)}`);
+            continue;
           }
 
           const data = await res.json();
           const assistantMsg = data.choices?.[0]?.message?.content || "I didn't catch that, could you repeat?";
           conversationHistory.push({ role: "assistant", content: assistantMsg });
+          const latency = Date.now() - chatStartMs;
+          console.log(`[SARVAM-BRIDGE] turn=${turnId} chat_ok model=${attempt.model} latency=${latency}ms text="${assistantMsg.substring(0, 80)}"`);
           return assistantMsg;
         } catch (e: any) {
-          if (e.name === "AbortError" && attempt < maxRetries) {
-            console.warn(`[SARVAM-BRIDGE] Chat timeout (attempt ${attempt + 1})`);
+          const latency = Date.now() - chatStartMs;
+          if (e.name === "AbortError") {
+            console.warn(`[SARVAM-BRIDGE] turn=${turnId} chat_timeout model=${attempt.model} after=${latency}ms (${attempt.label})`);
             continue;
           }
-          console.error("[SARVAM-BRIDGE] Chat error:", e);
-          return "I'm sorry, something went wrong. Please try again.";
+          console.error(`[SARVAM-BRIDGE] turn=${turnId} chat_error (${attempt.label}):`, e);
+          continue;
         }
       }
+
+      // All attempts exhausted
       return "I'm sorry, I'm experiencing delays. Could you please repeat that?";
     }
 
     // ── Send mulaw audio back to telephony ──
     function sendAudioToTelephony(mulawBytes: Uint8Array) {
-      const CHUNK_SIZE = 640; // 80ms at 8kHz mulaw
+      const CHUNK_SIZE = 640;
       for (let i = 0; i < mulawBytes.length; i += CHUNK_SIZE) {
         const chunk = mulawBytes.slice(i, i + CHUNK_SIZE);
         if (socket.readyState !== WebSocket.OPEN || closed) break;
@@ -341,10 +363,11 @@ Deno.serve((req) => {
       }
     }
 
-    // ── TTS: convert text to mulaw audio via Sarvam TTS ──
+    // ── TTS ──
     async function speakViaSarvamTTS(text: string) {
       if (!text.trim() || !agentConfig) return;
-      console.log(`[SARVAM-BRIDGE] TTS: voice=${agentConfig.voice} text="${text.substring(0, 80)}..."`);
+      const ttsStartMs = Date.now();
+      console.log(`[SARVAM-BRIDGE] TTS: voice=${agentConfig.voice} text="${text.substring(0, 80)}"`);
 
       try {
         const res = await fetch(SARVAM_TTS_URL, {
@@ -377,45 +400,52 @@ Deno.serve((req) => {
 
         const audioBytes = b64decode(audioB64);
         sendAudioToTelephony(audioBytes);
-        console.log(`[SARVAM-BRIDGE] TTS audio sent (${audioBytes.length} bytes, provider=${telephonyProvider})`);
+        const ttsLatency = Date.now() - ttsStartMs;
+        console.log(`[SARVAM-BRIDGE] TTS sent ${audioBytes.length} bytes latency=${ttsLatency}ms provider=${telephonyProvider}`);
       } catch (e) {
         console.error("[SARVAM-BRIDGE] TTS error:", e);
       }
     }
 
-    // ── Process a complete utterance: STT → Chat → TTS ──
-    async function processUtterance(pcm16Data: Uint8Array) {
-      const transcript = await transcribeAudio(pcm16Data);
-      if (!transcript) return;
+    // ── Process turn queue one at a time ──
+    async function drainTurnQueue() {
+      if (turnProcessing) return;
+      turnProcessing = true;
 
-      if (ttsInFlight) {
-        console.log(`[SARVAM-BRIDGE] TTS in flight, queuing: "${transcript}"`);
-        pendingQueue.push(transcript);
-        return;
-      }
+      while (turnQueue.length > 0) {
+        if (closed) break;
+        const pcm16Data = turnQueue.shift()!;
 
-      ttsInFlight = true;
-      try {
+        const transcript = await transcribeAudio(pcm16Data);
+        if (!transcript) continue;
+
         const response = await chatCompletion(transcript);
-        console.log(`[SARVAM-BRIDGE] Chat response: "${response.substring(0, 80)}..."`);
         await speakViaSarvamTTS(response);
-      } finally {
-        ttsInFlight = false;
-        // Process queued transcripts
-        if (pendingQueue.length > 0) {
-          const queued = pendingQueue.join(" ");
-          pendingQueue = [];
-          await processUtterance(new Uint8Array(0)); // won't do anything since empty
-          // Actually process the queued text directly
-          ttsInFlight = true;
-          try {
-            const response = await chatCompletion(queued);
-            await speakViaSarvamTTS(response);
-          } finally {
-            ttsInFlight = false;
-          }
-        }
       }
+
+      turnProcessing = false;
+    }
+
+    // ── Enqueue utterance for processing ──
+    function enqueueUtterance(pcm16Data: Uint8Array) {
+      turnQueue.push(pcm16Data);
+      drainTurnQueue();
+    }
+
+    // ── Send immediate greeting via TTS (no chat, deterministic) ──
+    async function sendImmediateGreeting() {
+      if (!agentConfig || greetingSent || closed) return;
+      greetingSent = true;
+
+      const greetingText = "Hello! How can I help you today?";
+      const greetingStartMs = Date.now();
+      console.log(`[SARVAM-BRIDGE] Sending immediate greeting (no chat)`);
+
+      await speakViaSarvamTTS(greetingText);
+      conversationHistory.push({ role: "assistant", content: greetingText });
+
+      const elapsed = Date.now() - streamStartMs;
+      console.log(`[SARVAM-BRIDGE] greeting_sent_ms=${elapsed} (from stream start)`);
     }
 
     // ── Feed PCM16 audio into VAD + buffer ──
@@ -437,7 +467,6 @@ Deno.serve((req) => {
         audioBuffer.push(pcm16);
         audioBufferBytes += pcm16.length;
       } else if (isSpeaking) {
-        // Still accumulate during silence gap
         audioBuffer.push(pcm16);
         audioBufferBytes += pcm16.length;
 
@@ -449,11 +478,9 @@ Deno.serve((req) => {
         const speechDuration = now - speechStartMs;
 
         if (silenceDuration >= SILENCE_DURATION_MS && speechDuration >= MIN_SPEECH_MS) {
-          // End of utterance
           isSpeaking = false;
           console.log(`[SARVAM-BRIDGE] VAD: speech end (${speechDuration}ms speech, ${audioBufferBytes} bytes)`);
 
-          // Merge buffer and process
           const merged = new Uint8Array(audioBufferBytes);
           let offset = 0;
           for (const chunk of audioBuffer) {
@@ -464,8 +491,7 @@ Deno.serve((req) => {
           audioBufferBytes = 0;
           silenceStartMs = 0;
 
-          // Process async - don't block audio pipeline
-          processUtterance(merged);
+          enqueueUtterance(merged);
         }
       }
 
@@ -482,7 +508,7 @@ Deno.serve((req) => {
         audioBuffer = [];
         audioBufferBytes = 0;
         silenceStartMs = 0;
-        processUtterance(merged);
+        enqueueUtterance(merged);
       }
     }
 
@@ -515,16 +541,20 @@ Deno.serve((req) => {
           console.log("[SARVAM-BRIDGE] Twilio connected event");
           if (!queryProvider) telephonyProvider = "twilio";
         } else if (msg.event === "start") {
-          // Extract stream identifier from all known shapes
           streamSid = msg.start?.streamSid || msg.start?.stream_id || msg.streamSid || msg.stream_id || "";
 
           const customParams = msg.start?.customParameters || {};
           if (customParams.agent_id && !agentId) {
             agentId = customParams.agent_id;
           }
+          // Read provider from Twilio customParameters (Parameter tags)
+          if (customParams.provider) {
+            telephonyProvider = customParams.provider === "telnyx" ? "telnyx" : "twilio";
+            console.log(`[SARVAM-BRIDGE] Provider from customParameters: ${telephonyProvider}`);
+          }
 
           // Detect Telnyx from start event shape
-          if (!queryProvider && msg.start?.stream_id && !msg.start?.streamSid) {
+          if (!queryProvider && !customParams.provider && msg.start?.stream_id && !msg.start?.streamSid) {
             telephonyProvider = "telnyx";
           }
 
@@ -540,23 +570,8 @@ Deno.serve((req) => {
             agentConfig = await loadAgent();
             console.log(`[SARVAM-BRIDGE] Agent loaded, REST STT mode ready`);
 
-            // Send initial greeting after short delay
-            if (!greetingSent) {
-              greetingSent = true;
-              setTimeout(async () => {
-                if (!closed && agentConfig) {
-                  try {
-                    const greeting = await chatCompletion("The call has just started. Please greet the caller.");
-                    console.log(`[SARVAM-BRIDGE] Greeting: "${greeting.substring(0, 80)}..."`);
-                    await speakViaSarvamTTS(greeting);
-                  } catch (e) {
-                    console.error("[SARVAM-BRIDGE] Greeting error:", e);
-                    // Fallback greeting
-                    await speakViaSarvamTTS("Hello! How can I help you today?");
-                  }
-                }
-              }, 500);
-            }
+            // Send immediate deterministic greeting (no chat API call)
+            sendImmediateGreeting();
           } catch (e) {
             console.error("[SARVAM-BRIDGE] Agent load failed:", e);
             cleanup("agent_load_failed");
