@@ -297,7 +297,7 @@ Deno.serve(async (req) => {
             to: recipient_number,
             from: phoneConfig.phone_number,
             webhook_url: webhookUrl,
-            timeout_secs: 90,
+            timeout_secs: 30,
           }),
         });
         if (!telnyxResponse.ok) {
@@ -426,7 +426,7 @@ Deno.serve(async (req) => {
           to: recipient_number,
           from: phoneConfig.phone_number,
           webhook_url: webhookUrl,
-          timeout_secs: 90,
+          timeout_secs: 30,
         };
 
         console.log(`[make-outbound-call] Placing Telnyx call to ${recipient_number} from ${phoneConfig.phone_number}, connection_id=${telnyxConnectionId}, webhook=${webhookUrl}`);
