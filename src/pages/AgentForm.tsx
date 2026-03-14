@@ -418,7 +418,7 @@ export default function AgentForm() {
                         <Input value={form.voice} onChange={e => setForm({ ...form, voice: e.target.value })} placeholder="Enter ElevenLabs voice ID" />
                         <p className="text-xs text-muted-foreground">Paste your ElevenLabs voice ID for a custom voice.</p>
                       </div>
-                    ) : loadingVoices && form.ai_provider !== "gemini" ? (
+                    ) : loadingVoices && form.ai_provider !== "gemini" && form.ai_provider !== "sarvam" ? (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading voices...</div>
                     ) : (
                       <div className="space-y-2">
