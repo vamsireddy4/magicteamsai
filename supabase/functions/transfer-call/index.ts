@@ -37,12 +37,32 @@ Deno.serve(async (req) => {
     console.log(`Transfer call ${call_sid} via ${provider}, agent_id: ${agent_id}`);
 
     // Find the call log to get phone config details
-    const { data: callLog } = await supabase
-      .from("call_logs")
-      .select("*, agents(phone_number_id)")
-      .or(`twilio_call_sid.eq.${call_sid},ultravox_call_id.eq.${call_sid}`)
-      .limit(1)
-      .single();
+    let callLog: any = null;
+    
+    // Primary lookup by call_sid
+    if (call_sid) {
+      const { data } = await supabase
+        .from("call_logs")
+        .select("*, agents(phone_number_id)")
+        .or(`twilio_call_sid.eq.${call_sid},ultravox_call_id.eq.${call_sid}`)
+        .limit(1)
+        .single();
+      callLog = data;
+    }
+
+    // Fallback: lookup by agent_id for active calls
+    if (!callLog && agent_id) {
+      console.log(`[TRANSFER] Primary lookup failed, trying agent_id fallback: ${agent_id}`);
+      const { data } = await supabase
+        .from("call_logs")
+        .select("*, agents(phone_number_id)")
+        .eq("agent_id", agent_id)
+        .in("status", ["initiated", "in-progress"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      callLog = data;
+    }
 
     if (!callLog) {
       return new Response(
