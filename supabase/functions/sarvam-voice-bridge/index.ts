@@ -501,9 +501,13 @@ Deno.serve((req) => {
       // 20ms frame @ 8kHz PCMU = 160 bytes
       const FRAME_SIZE = 160;
       const FRAME_DELAY_MS = 20;
+      const currentToken = ++playbackToken;
+      isSendingTts = true;
 
       const sendFrames = async () => {
         for (let i = 0; i < mulawBytes.length; i += FRAME_SIZE) {
+          if (currentToken !== playbackToken) break;
+
           const frame = mulawBytes.slice(i, i + FRAME_SIZE);
           if (socket.readyState !== WebSocket.OPEN || closed) break;
 
@@ -535,47 +539,72 @@ Deno.serve((req) => {
         });
         await twilioSendChain;
       }
+
+      if (currentToken === playbackToken) {
+        isSendingTts = false;
+      }
+    }
+
+    async function synthesizeSarvamMulaw(text: string): Promise<Uint8Array | null> {
+      if (!text.trim() || !agentConfig) return null;
+      console.log(`[SARVAM-BRIDGE] TTS: voice=${agentConfig.voice} text="${text.substring(0, 80)}"`);
+
+      const res = await fetch(SARVAM_TTS_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "api-subscription-key": sarvamApiKey!,
+        },
+        body: JSON.stringify({
+          inputs: [text],
+          target_language_code: agentConfig.languageHint || "en-IN",
+          speaker: agentConfig.voice || "anushka",
+          model: "bulbul:v2",
+          audio_format: "mulaw",
+          sample_rate: 8000,
+        }),
+      });
+
+      if (!res.ok) {
+        console.error(`[SARVAM-BRIDGE] TTS error: ${res.status} ${await res.text()}`);
+        return null;
+      }
+
+      const data = await res.json();
+      const audioB64 = data.audios?.[0];
+      if (!audioB64) {
+        console.error("[SARVAM-BRIDGE] No audio in TTS response");
+        return null;
+      }
+
+      const rawAudioBytes = b64decode(audioB64);
+      console.log(`[SARVAM-BRIDGE] TTS raw response: ${rawAudioBytes.length} bytes, first4=[${rawAudioBytes[0]},${rawAudioBytes[1]},${rawAudioBytes[2]},${rawAudioBytes[3]}]`);
+      const mulawBytes = parseTTSAudioToMulaw(rawAudioBytes);
+      console.log(`[SARVAM-BRIDGE] TTS mulaw output: ${mulawBytes.length} bytes (${(mulawBytes.length / 8000 * 1000).toFixed(0)}ms audio)`);
+      return mulawBytes;
     }
 
     // ── TTS ──
-    async function speakViaSarvamTTS(text: string) {
+    async function speakViaSarvamTTS(text: string, options?: { cacheKey?: string }) {
       if (!text.trim() || !agentConfig) return;
       const ttsStartMs = Date.now();
-      console.log(`[SARVAM-BRIDGE] TTS: voice=${agentConfig.voice} text="${text.substring(0, 80)}"`);
 
       try {
-        const res = await fetch(SARVAM_TTS_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "api-subscription-key": sarvamApiKey!,
-          },
-          body: JSON.stringify({
-            inputs: [text],
-            target_language_code: agentConfig.languageHint || "en-IN",
-            speaker: agentConfig.voice || "anushka",
-            model: "bulbul:v2",
-            audio_format: "mulaw",
-            sample_rate: 8000,
-          }),
-        });
+        let mulawBytes: Uint8Array | null = null;
 
-        if (!res.ok) {
-          console.error(`[SARVAM-BRIDGE] TTS error: ${res.status} ${await res.text()}`);
-          return;
+        if (options?.cacheKey && GREETING_AUDIO_CACHE.has(options.cacheKey)) {
+          const cached = GREETING_AUDIO_CACHE.get(options.cacheKey)!;
+          mulawBytes = cached.slice();
+          console.log(`[SARVAM-BRIDGE] TTS cache hit: key=${options.cacheKey}`);
+        } else {
+          mulawBytes = await synthesizeSarvamMulaw(text);
+          if (mulawBytes && options?.cacheKey) {
+            GREETING_AUDIO_CACHE.set(options.cacheKey, mulawBytes.slice());
+          }
         }
 
-        const data = await res.json();
-        const audioB64 = data.audios?.[0];
-        if (!audioB64) {
-          console.error("[SARVAM-BRIDGE] No audio in TTS response");
-          return;
-        }
+        if (!mulawBytes) return;
 
-        const rawAudioBytes = b64decode(audioB64);
-        console.log(`[SARVAM-BRIDGE] TTS raw response: ${rawAudioBytes.length} bytes, first4=[${rawAudioBytes[0]},${rawAudioBytes[1]},${rawAudioBytes[2]},${rawAudioBytes[3]}]`);
-        const mulawBytes = parseTTSAudioToMulaw(rawAudioBytes);
-        console.log(`[SARVAM-BRIDGE] TTS mulaw output: ${mulawBytes.length} bytes (${(mulawBytes.length / 8000 * 1000).toFixed(0)}ms audio)`);
         await sendAudioToTelephony(mulawBytes);
         const ttsLatency = Date.now() - ttsStartMs;
         console.log(`[SARVAM-BRIDGE] TTS sent ${mulawBytes.length} bytes latency=${ttsLatency}ms provider=${telephonyProvider}`);
