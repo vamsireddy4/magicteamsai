@@ -242,11 +242,13 @@ Deno.serve((req) => {
     let rtpSeq = 0;
     let rtpTimestamp = 0;
     let rtpSsrc = Math.floor(Math.random() * 0xffffffff);
+    let playbackToken = 0;
+    let isSendingTts = false;
 
     // ── VAD + Audio Buffering for REST STT ──
-    const SPEECH_THRESHOLD = 250;
-    const SILENCE_DURATION_MS = 800;
-    const MIN_SPEECH_MS = 400;
+    const SPEECH_THRESHOLD = 180;
+    const SILENCE_DURATION_MS = 500;
+    const MIN_SPEECH_MS = 250;
     const MAX_BUFFER_MS = 15000;
     const SAMPLE_RATE = 8000;
     const BYTES_PER_MS = (SAMPLE_RATE * 2) / 1000;
@@ -262,6 +264,22 @@ Deno.serve((req) => {
     const turnQueue: Uint8Array[] = [];
 
     const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+    function interruptPlayback(reason: string) {
+      playbackToken++;
+      if (isSendingTts) {
+        console.log(`[SARVAM-BRIDGE] Interrupting playback: ${reason}`);
+      }
+      isSendingTts = false;
+
+      if (telephonyProvider === "twilio" && streamSid && socket.readyState === WebSocket.OPEN) {
+        try {
+          socket.send(JSON.stringify({ event: "clear", streamSid }));
+        } catch (e) {
+          console.warn("[SARVAM-BRIDGE] Failed to clear Twilio buffered audio:", e);
+        }
+      }
+    }
 
     function createRtpPacket(payload: Uint8Array): Uint8Array {
       const packet = new Uint8Array(12 + payload.length);
