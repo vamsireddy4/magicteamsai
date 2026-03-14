@@ -246,7 +246,7 @@ Deno.serve(async (req) => {
           { headers: { ...corsHeaders, "Content-Type": "text/xml" } }
         );
       }
-      streamUrl = `${supabaseUrl}/functions/v1/sarvam-voice-bridge?agent_id=${agent.id}`.replace("https://", "wss://");
+      streamUrl = `${supabaseUrl}/functions/v1/sarvam-voice-bridge?agent_id=${agent.id}&provider=${provider}`.replace("https://", "wss://");
       console.log(`Sarvam bridge URL: ${streamUrl}`);
     } else {
       // --- ULTRAVOX PATH ---
