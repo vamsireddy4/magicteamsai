@@ -557,9 +557,10 @@ Deno.serve(async (req) => {
       };
       if (ultravoxTools.length > 0) {
         ultravoxBody.selectedTools = ultravoxTools;
+        console.log(`[make-outbound-call] selectedTools (${ultravoxTools.length}): ${JSON.stringify(ultravoxTools.map(t => t.temporaryTool?.modelToolName || "unknown"))}`);
       }
 
-      console.log(`[make-outbound-call] Creating Ultravox call with model=${modelName}, voice=${agent.voice}, provider=${provider}, medium=${JSON.stringify(medium)}`);
+      console.log(`[make-outbound-call] Creating Ultravox call with model=${modelName}, voice=${agent.voice}, provider=${provider}, medium=${JSON.stringify(medium)}, tools=${ultravoxTools.length}`);
 
       const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
         method: "POST",

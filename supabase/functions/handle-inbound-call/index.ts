@@ -355,6 +355,7 @@ Deno.serve(async (req) => {
       };
       if (ultravoxTools.length > 0) {
         ultravoxBody.selectedTools = ultravoxTools;
+        console.log(`[handle-inbound-call] selectedTools (${ultravoxTools.length}): ${JSON.stringify(ultravoxTools.map((t: any) => t.temporaryTool?.modelToolName || "unknown"))}`);
       }
 
       const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
