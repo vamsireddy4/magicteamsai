@@ -451,7 +451,7 @@ Deno.serve((req) => {
         }
 
         const audioBytes = b64decode(audioB64);
-        sendAudioToTelephony(audioBytes);
+        await sendAudioToTelephony(audioBytes);
         const ttsLatency = Date.now() - ttsStartMs;
         console.log(`[SARVAM-BRIDGE] TTS sent ${audioBytes.length} bytes latency=${ttsLatency}ms provider=${telephonyProvider}`);
       } catch (e) {
