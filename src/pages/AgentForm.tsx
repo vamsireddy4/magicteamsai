@@ -272,6 +272,9 @@ export default function AgentForm() {
     if (form.ai_provider === "gemini") {
       return GEMINI_VOICES.map(v => ({ voiceId: v.value, name: v.value, description: v.label, languageLabel: "Gemini Native", provider: "gemini" } as UltravoxVoice));
     }
+    if (form.ai_provider === "sarvam") {
+      return SARVAM_VOICES.map(v => ({ voiceId: v.value, name: v.value, description: v.label, languageLabel: "Sarvam AI", provider: "sarvam" } as UltravoxVoice));
+    }
     return voices;
   }, [voices, form.ai_provider]);
 
