@@ -727,8 +727,12 @@ Deno.serve((req) => {
           agentId = customParams.agent_id;
           console.log(`[BRIDGE] Got agent_id from customParameters: ${agentId}`);
         }
+        // Detect provider from stream event
+        if (customParams.provider === "telnyx" || (!msg.start?.streamSid && msg.start?.stream_id)) {
+          telephonyProvider = "telnyx";
+        }
         
-        console.log(`[BRIDGE] Stream started: sid=${streamSid} agent_id=${agentId} callSid=${callSid}`);
+        console.log(`[BRIDGE] Stream started: sid=${streamSid} agent_id=${agentId} callSid=${callSid} provider=${telephonyProvider}`);
         console.log(`[BRIDGE] Start event keys: ${JSON.stringify(Object.keys(msg.start || {}))}`);
 
         if (!agentId) {
