@@ -86,7 +86,11 @@ Deno.serve(async (req) => {
       supabase.from("call_forwarding_numbers").select("*").eq("agent_id", agent.id).order("priority", { ascending: true }),
     ]);
 
+    // Inject current date/time so AI agent knows the correct date
+    const now = new Date();
     let systemPrompt = agent.system_prompt;
+    systemPrompt += `\n\n--- CURRENT DATE & TIME ---\nToday is ${now.toISOString().split("T")[0]} (${now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}). Current time (UTC): ${now.toISOString()}.\n`;
+
     if (kbItems && kbItems.length > 0) {
       systemPrompt += "\n\n--- KNOWLEDGE BASE ---\n";
       for (const item of kbItems) {
@@ -351,6 +355,7 @@ Deno.serve(async (req) => {
       };
       if (ultravoxTools.length > 0) {
         ultravoxBody.selectedTools = ultravoxTools;
+        console.log(`[handle-inbound-call] selectedTools (${ultravoxTools.length}): ${JSON.stringify(ultravoxTools.map((t: any) => t.temporaryTool?.modelToolName || "unknown"))}`);
       }
 
       const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
