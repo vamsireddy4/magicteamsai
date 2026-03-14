@@ -197,7 +197,7 @@ Deno.serve(async (req) => {
               baseUrlPattern: checkAvailabilityUrl,
               httpMethod: "POST",
             },
-            automaticParameters: [
+            staticParameters: [
               { name: "provider", location: "PARAMETER_LOCATION_BODY", value: apptTool.provider },
               { name: "integration_id", location: "PARAMETER_LOCATION_BODY", value: integration.id },
             ],
@@ -220,7 +220,7 @@ Deno.serve(async (req) => {
               baseUrlPattern: bookAppointmentUrl,
               httpMethod: "POST",
             },
-            automaticParameters: [
+            staticParameters: [
               { name: "provider", location: "PARAMETER_LOCATION_BODY", value: apptTool.provider },
               { name: "integration_id", location: "PARAMETER_LOCATION_BODY", value: integration.id },
             ],
@@ -251,7 +251,7 @@ Deno.serve(async (req) => {
             baseUrlPattern: transferUrl,
             httpMethod: "POST",
           },
-          automaticParameters: [
+          staticParameters: [
             { name: "provider", location: "PARAMETER_LOCATION_BODY", value: provider },
             { name: "agent_id", location: "PARAMETER_LOCATION_BODY", value: agent.id },
           ],
