@@ -11,9 +11,9 @@ const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ultravoxApiKey = Deno.env.get("ULTRAVOX_API_KEY") || "";
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Ultravox has a strict 2.5s timeout for tool responses.
-// We return an optimistic success after 2.1s so the agent stays confident.
-const ULTRAVOX_TIMEOUT_MS = 2100; 
+// Ultravox has a strict 2.5s timeout. We use 2.3s to allow 
+// for a small network transit buffer.
+const ULTRAVOX_TIMEOUT_MS = 2300; 
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
