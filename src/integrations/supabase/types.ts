@@ -205,6 +205,7 @@ export type Database = {
           display_name: string
           id: string
           is_active: boolean
+          logo_url: string | null
           provider: string
           refresh_token: string | null
           token_expires_at: string | null
@@ -220,6 +221,7 @@ export type Database = {
           display_name?: string
           id?: string
           is_active?: boolean
+          logo_url?: string | null
           provider: string
           refresh_token?: string | null
           token_expires_at?: string | null
@@ -235,6 +237,7 @@ export type Database = {
           display_name?: string
           id?: string
           is_active?: boolean
+          logo_url?: string | null
           provider?: string
           refresh_token?: string | null
           token_expires_at?: string | null
@@ -653,6 +656,7 @@ export type Database = {
           friendly_name: string | null
           id: string
           is_active: boolean
+          logo_url: string | null
           phone_number: string
           provider: string
           telnyx_api_key: string | null
@@ -667,6 +671,7 @@ export type Database = {
           friendly_name?: string | null
           id?: string
           is_active?: boolean
+          logo_url?: string | null
           phone_number: string
           provider?: string
           telnyx_api_key?: string | null
@@ -681,6 +686,7 @@ export type Database = {
           friendly_name?: string | null
           id?: string
           is_active?: boolean
+          logo_url?: string | null
           phone_number?: string
           provider?: string
           telnyx_api_key?: string | null
@@ -698,7 +704,9 @@ export type Database = {
           company_name: string | null
           created_at: string
           full_name: string | null
+          gemini_api_key: string | null
           id: string
+          onboarding_completed: boolean
           updated_at: string
           user_id: string
         }
@@ -707,7 +715,9 @@ export type Database = {
           company_name?: string | null
           created_at?: string
           full_name?: string | null
+          gemini_api_key?: string | null
           id?: string
+          onboarding_completed?: boolean
           updated_at?: string
           user_id: string
         }
@@ -716,7 +726,9 @@ export type Database = {
           company_name?: string | null
           created_at?: string
           full_name?: string | null
+          gemini_api_key?: string | null
           id?: string
+          onboarding_completed?: boolean
           updated_at?: string
           user_id?: string
         }

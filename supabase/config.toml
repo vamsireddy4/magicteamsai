@@ -1,4 +1,4 @@
-project_id = "dezotzdwfhiwxkrgsiuv"
+project_id = "ugoogotxaxhimjjgmrws"
 
 [functions.handle-inbound-call]
 verify_jwt = false

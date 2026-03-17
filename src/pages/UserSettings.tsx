@@ -13,7 +13,7 @@ export default function UserSettings() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ full_name: "", company_name: "" });
+  const [form, setForm] = useState({ full_name: "", company_name: "", gemini_api_key: "" });
 
   // Password change state
   const [newPassword, setNewPassword] = useState("");
@@ -37,6 +37,7 @@ export default function UserSettings() {
           setForm({
             full_name: data.full_name || "",
             company_name: data.company_name || "",
+            gemini_api_key: data.gemini_api_key || "",
           });
         }
       });
@@ -115,6 +116,20 @@ export default function UserSettings() {
                   onChange={(e) => setForm({ ...form, company_name: e.target.value })}
                   placeholder="Your company"
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>Gemini API Key</Label>
+                <div className="relative">
+                  <Input
+                    type={showNew ? "text" : "password"} // Reusing showNew for simplicity or creating a new state
+                    value={form.gemini_api_key}
+                    onChange={(e) => setForm({ ...form, gemini_api_key: e.target.value })}
+                    placeholder="AIzaSy..."
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Your API key is used for AI-powered prompt enhancement and call analysis.
+                </p>
               </div>
               <Button type="submit" disabled={loading}>
                 {loading ? "Saving..." : "Save Settings"}

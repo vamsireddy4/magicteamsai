@@ -19,10 +19,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
+    const apiKey = Deno.env.get("GEMINI_API_KEY");
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: "AI gateway not configured" }),
+        JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -63,18 +63,22 @@ Rules:
 - Deduplicate rows that have the same phone number, merging any differing child/name fields with commas
 - In "summary", describe what the data is about`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "user", content: prompt },
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: prompt }],
+          },
         ],
-        temperature: 0.1,
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: "application/json",
+        },
       }),
     });
 
@@ -88,7 +92,7 @@ Rules:
     }
 
     const aiData = await response.json();
-    const content = aiData.choices?.[0]?.message?.content || "";
+    const content = aiData?.candidates?.[0]?.content?.parts?.map((part: any) => part?.text || "").join("") || "";
 
     // Parse JSON from AI response (handle potential markdown wrapping)
     let parsed;

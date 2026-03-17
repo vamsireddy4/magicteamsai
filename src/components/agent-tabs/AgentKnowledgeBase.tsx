@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Separator } from "@/components/ui/separator";
 import { Plus, BookOpen, FileText, Globe, Trash2, Upload, Link, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { getFunctionUnavailableMessage, isEdgeFunctionUnavailable } from "@/lib/edge-functions";
+import { extractKnowledgeFromFileWithGemini, extractKnowledgeFromUrlWithGemini } from "@/lib/gemini";
 
 interface Props {
   agentId: string;
@@ -33,6 +36,7 @@ interface KBItem {
 type ContentTab = "files" | "urls";
 
 export default function AgentKnowledgeBase({ agentId, userId }: Props) {
+  const { profile } = useAuth();
   const { toast } = useToast();
   const [items, setItems] = useState<KBItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,11 +79,40 @@ export default function AgentKnowledgeBase({ agentId, userId }: Props) {
         body: { knowledge_item_id: itemId },
       });
       if (error) {
+        if (isEdgeFunctionUnavailable(error)) {
+          const { data: item } = await supabase
+            .from("knowledge_base_items")
+            .select("id, website_url, content")
+            .eq("id", itemId)
+            .single();
+
+          if (item?.website_url) {
+            const extractedContent = await extractKnowledgeFromUrlWithGemini(item.website_url, item.content, profile?.gemini_api_key);
+            const mergedContent = [item.content?.trim(), extractedContent].filter(Boolean).join("\n\n");
+            const { error: updateError } = await supabase
+              .from("knowledge_base_items")
+              .update({ content: mergedContent, processing_status: "completed" })
+              .eq("id", itemId);
+
+            if (updateError) {
+              throw updateError;
+            }
+            return;
+          }
+
+          toast({ title: "Processing unavailable", description: getFunctionUnavailableMessage("Knowledge extraction"), variant: "destructive" });
+          return;
+        }
         console.error("Processing error:", error);
         toast({ title: "Processing warning", description: "Content extraction started but may take a moment.", variant: "default" });
       }
     } catch (e) {
+      if (isEdgeFunctionUnavailable(e)) {
+        toast({ title: "Processing unavailable", description: getFunctionUnavailableMessage("Knowledge extraction"), variant: "destructive" });
+        return;
+      }
       console.error("Failed to trigger processing:", e);
+      toast({ title: "Processing error", description: e instanceof Error ? e.message : "Failed to process knowledge source", variant: "destructive" });
     }
   };
 
@@ -94,15 +127,21 @@ export default function AgentKnowledgeBase({ agentId, userId }: Props) {
 
     if (contentTab === "files" && files.length > 0) {
       for (const file of files) {
-        const path = `${userId}/${Date.now()}-${file.name}`;
-        const { error: uploadError } = await supabase.storage.from("knowledge-documents").upload(path, file);
-        if (uploadError) {
-          toast({ title: "Upload error", description: uploadError.message, variant: "destructive" });
+        let extractedContent = "";
+        try {
+          extractedContent = await extractKnowledgeFromFileWithGemini(file, profile?.gemini_api_key);
+        } catch (error: any) {
+          toast({ title: "File analysis error", description: error?.message || "Failed to extract file content", variant: "destructive" });
           setSaving(false);
           return;
         }
         const { data, error } = await supabase.from("knowledge_base_items").insert({
-          agent_id: agentId, user_id: userId, type: "document", title: name, content: description || null, file_path: path,
+          agent_id: agentId,
+          user_id: userId,
+          type: "text",
+          title: files.length > 1 ? `${name} - ${file.name}` : name,
+          content: [description?.trim(), extractedContent].filter(Boolean).join("\n\n"),
+          processing_status: "completed",
         }).select("id").single();
         if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); setSaving(false); return; }
         if (data) insertedIds.push(data.id);
@@ -130,9 +169,11 @@ export default function AgentKnowledgeBase({ agentId, userId }: Props) {
     setDialogOpen(false);
     setSaving(false);
 
-    // Trigger AI processing for URL and file items
+    // Trigger AI processing only for URL items
     for (const id of insertedIds) {
-      triggerProcessing(id);
+      if (contentTab !== "files") {
+        triggerProcessing(id);
+      }
     }
   };
 

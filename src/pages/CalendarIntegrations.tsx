@@ -12,15 +12,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Trash2, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
-import googleCalendarLogo from "@/assets/google-calendar-logo.png";
-import calcomLogo from "@/assets/calcom-logo.png";
-import gohighlevelLogo from "@/assets/gohighlevel-logo.png";
+import { getErrorMessage, getFunctionUnavailableMessage, isEdgeFunctionUnavailable } from "@/lib/edge-functions";
+import { CALENDAR_PROVIDER_META, getCachedLogoDataUrl } from "@/lib/provider-logos";
 
 interface CalendarIntegration {
   id: string;
   user_id: string;
   provider: string;
   display_name: string;
+  logo_url?: string | null;
   api_key: string | null;
   calendar_id: string | null;
   is_active: boolean;
@@ -35,11 +35,14 @@ interface CalComEventType {
   length?: number;
 }
 
+const CAL_API_BASE = "https://api.cal.com/v2";
+const CAL_API_VERSION = "2024-06-14";
+
 const PROVIDERS = [
   {
     id: "google_calendar",
-    name: "Google Calendar",
-    logo: googleCalendarLogo,
+    name: CALENDAR_PROVIDER_META.google_calendar.name,
+    logo: CALENDAR_PROVIDER_META.google_calendar.logo,
     description: "Check availability and book events on Google Calendar.",
     fields: [
       { key: "api_key", label: "Google API Key", placeholder: "AIza...", help: "Create an API key in Google Cloud Console with Calendar API enabled." },
@@ -48,8 +51,8 @@ const PROVIDERS = [
   },
   {
     id: "cal_com",
-    name: "Cal.com",
-    logo: calcomLogo,
+    name: CALENDAR_PROVIDER_META.cal_com.name,
+    logo: CALENDAR_PROVIDER_META.cal_com.logo,
     description: "Check availability and create bookings via Cal.com.",
     fields: [
       { key: "api_key", label: "Cal.com API Key (v2)", placeholder: "cal_live_...", help: "Create a v2 API key in Cal.com → Settings → Developer → API Keys." },
@@ -57,8 +60,8 @@ const PROVIDERS = [
   },
   {
     id: "gohighlevel",
-    name: "GoHighLevel",
-    logo: gohighlevelLogo,
+    name: CALENDAR_PROVIDER_META.gohighlevel.name,
+    logo: CALENDAR_PROVIDER_META.gohighlevel.logo,
     description: "Check availability and book appointments via GoHighLevel.",
     fields: [
       { key: "api_key", label: "GHL API Key", placeholder: "ghl-...", help: "Find your API key in GoHighLevel → Settings → Business Profile → API Key." },
@@ -83,14 +86,52 @@ export default function CalendarIntegrations() {
   const [calEventTypes, setCalEventTypes] = useState<CalComEventType[]>([]);
   const [calUsername, setCalUsername] = useState("");
   const [calSelectedEventType, setCalSelectedEventType] = useState<string>("");
-  const [calStep, setCalStep] = useState<"api_key" | "select_event">("api_key");
+  const [calStep, setCalStep] = useState<"api_key" | "select_event" | "manual">("api_key");
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
+
+  const fetchCalComProfileAndEventType = async (apiKey: string) => {
+    const headers = {
+      Authorization: `Bearer ${apiKey}`,
+      "cal-api-version": CAL_API_VERSION,
+    };
+
+    const profileRes = await fetch(`${CAL_API_BASE}/me`, { headers });
+    const profileJson = await profileRes.json();
+    if (!profileRes.ok || profileJson?.status !== "success") {
+      throw new Error(profileJson?.message || "Failed to fetch Cal.com profile");
+    }
+
+    const username = profileJson?.data?.username || "";
+    const eventTypesUrl = username
+      ? `${CAL_API_BASE}/event-types?username=${encodeURIComponent(username)}&sortCreatedAt=asc`
+      : `${CAL_API_BASE}/event-types?sortCreatedAt=asc`;
+
+    const eventTypesRes = await fetch(eventTypesUrl, { headers });
+    const eventTypesJson = await eventTypesRes.json();
+    if (!eventTypesRes.ok || eventTypesJson?.status !== "success") {
+      throw new Error(eventTypesJson?.message || "Failed to fetch Cal.com event types");
+    }
+
+    const eventTypes = Array.isArray(eventTypesJson?.data) ? eventTypesJson.data : [];
+    if (eventTypes.length === 0) {
+      throw new Error("No event types found in this Cal.com account");
+    }
+
+    const firstEventType = eventTypes[0];
+    return {
+      username,
+      eventTypeId: String(firstEventType.id),
+      displayName: firstEventType.title || "Cal.com",
+    };
+  };
 
   const fetchData = async () => {
     if (!user) return;
     const { data } = await supabase.from("calendar_integrations").select("*").order("created_at");
-    setIntegrations((data as CalendarIntegration[]) || []);
+    const rows = (data as CalendarIntegration[]) || [];
+    setIntegrations(rows);
     setLoading(false);
+    void backfillMissingLogos(rows);
   };
 
   useEffect(() => {
@@ -126,7 +167,31 @@ export default function CalendarIntegrations() {
         toast({ title: "No event types found", description: "Create an event type in Cal.com first.", variant: "destructive" });
       }
     } catch (err: any) {
-      toast({ title: "Failed to connect", description: err.message || "Invalid API key or Cal.com error.", variant: "destructive" });
+      if (isEdgeFunctionUnavailable(err)) {
+        try {
+          const calComData = await fetchCalComProfileAndEventType(form.api_key);
+          await saveCalComIntegration(
+            form.api_key,
+            calComData.username,
+            calComData.eventTypeId,
+            calComData.displayName
+          );
+        } catch (clientErr: any) {
+          toast({
+            title: "Failed to connect",
+            description: getErrorMessage(clientErr) || "Could not fetch Cal.com username and event type ID.",
+            variant: "destructive"
+          });
+        }
+        setCalFetching(false);
+        return;
+      } else {
+        toast({
+          title: "Failed to connect",
+          description: getErrorMessage(err) || "Invalid API key or Cal.com error.",
+          variant: "destructive"
+        });
+      }
     }
     setCalFetching(false);
   };
@@ -138,6 +203,7 @@ export default function CalendarIntegrations() {
       user_id: user.id,
       provider: "cal_com",
       display_name: displayName || "Cal.com",
+      logo_url: await getCachedLogoDataUrl(CALENDAR_PROVIDER_META.cal_com.logo),
       api_key: apiKey,
       calendar_id: eventTypeId,
       config: { username },
@@ -158,6 +224,19 @@ export default function CalendarIntegrations() {
     await saveCalComIntegration(form.api_key, calUsername, calSelectedEventType, et?.title || "Cal.com");
   };
 
+  const handleManualCalComSave = async () => {
+    if (!form.api_key || !form.calendar_id) {
+      toast({ title: "Missing fields", description: "API key and Event Type ID are required.", variant: "destructive" });
+      return;
+    }
+    await saveCalComIntegration(
+      form.api_key,
+      form.username || "",
+      form.calendar_id,
+      form.username ? `Cal.com (${form.username})` : "Cal.com"
+    );
+  };
+
   const handleConnect = async () => {
     if (!user || !selectedProvider) return;
 
@@ -174,6 +253,7 @@ export default function CalendarIntegrations() {
       user_id: user.id,
       provider: selectedProvider,
       display_name: provider?.name || selectedProvider,
+      logo_url: await getCachedLogoDataUrl(CALENDAR_PROVIDER_META[selectedProvider].logo),
       api_key: form.api_key || null,
       calendar_id: form.calendar_id || null,
       config: {},
@@ -223,7 +303,13 @@ export default function CalendarIntegrations() {
       if (error) throw error;
       toast({ title: "Connection successful", description: `${integration.display_name} is working correctly.` });
     } catch (err: any) {
-      toast({ title: "Connection failed", description: err.message || "Could not reach the calendar API.", variant: "destructive" });
+      toast({
+        title: "Connection failed",
+        description: isEdgeFunctionUnavailable(err)
+          ? getFunctionUnavailableMessage("Calendar connection test")
+          : getErrorMessage(err) || "Could not reach the calendar API.",
+        variant: "destructive"
+      });
     }
     setTesting(null);
   };
@@ -272,7 +358,7 @@ export default function CalendarIntegrations() {
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-4">
-                            <img src={provider?.logo} alt={provider?.name} className="h-8 w-8 rounded object-contain" />
+                            <img src={integration.logo_url || provider?.logo} alt={provider?.name} className="h-8 w-8 rounded object-contain" />
                             <div>
                               <div className="flex items-center gap-2">
                                 <span className="font-medium">{integration.display_name}</span>
@@ -390,8 +476,11 @@ export default function CalendarIntegrations() {
                         "Connect Cal.com"
                       )}
                     </Button>
+                    <Button type="button" variant="outline" onClick={() => setCalStep("manual")} className="w-full">
+                      Enter details manually
+                    </Button>
                   </>
-                ) : (
+                ) : calStep === "select_event" ? (
                   <>
                     <p className="text-sm text-muted-foreground">
                       Connected as <span className="font-medium text-foreground">{calUsername}</span>. Select an event type:
@@ -410,6 +499,45 @@ export default function CalendarIntegrations() {
                     </Select>
                     <Button onClick={handleCalComSelectAndSave} disabled={saving || !calSelectedEventType} className="w-full">
                       {saving ? "Saving..." : "Save & Connect"}
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => setCalStep("manual")} className="w-full">
+                      Enter event type manually
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Cal.com API Key (v2)</Label>
+                      <Input
+                        type="password"
+                        placeholder="cal_live_..."
+                        value={form.api_key || ""}
+                        onChange={e => setForm({ ...form, api_key: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Username</Label>
+                      <Input
+                        placeholder="your-calcom-username"
+                        value={form.username || ""}
+                        onChange={e => setForm({ ...form, username: e.target.value })}
+                      />
+                      <p className="text-xs text-muted-foreground">Optional, but useful for display and future availability checks.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Event Type ID</Label>
+                      <Input
+                        placeholder="123456"
+                        value={form.calendar_id || ""}
+                        onChange={e => setForm({ ...form, calendar_id: e.target.value })}
+                      />
+                      <p className="text-xs text-muted-foreground">Use the numeric Cal.com event type ID you want this app to book against.</p>
+                    </div>
+                    <Button onClick={handleManualCalComSave} disabled={saving || !form.api_key || !form.calendar_id} className="w-full">
+                      {saving ? "Saving..." : "Save & Connect"}
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => setCalStep("api_key")} className="w-full">
+                      Back to automatic lookup
                     </Button>
                   </>
                 )
@@ -439,3 +567,15 @@ export default function CalendarIntegrations() {
     </DashboardLayout>
   );
 }
+  const backfillMissingLogos = async (rows: CalendarIntegration[]) => {
+    const missing = rows.filter((row) => !row.logo_url && CALENDAR_PROVIDER_META[row.provider]);
+    if (missing.length === 0) return;
+
+    await Promise.all(
+      missing.map(async (row) => {
+        const meta = CALENDAR_PROVIDER_META[row.provider];
+        const logoUrl = await getCachedLogoDataUrl(meta.logo);
+        await supabase.from("calendar_integrations").update({ logo_url: logoUrl } as any).eq("id", row.id);
+      })
+    );
+  };

@@ -10,12 +10,19 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Plus, Trash2, Pencil, Calendar } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, Calendar, MoreHorizontal } from "lucide-react";
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu";
 import { useNavigate } from "react-router-dom";
 import CreateAppointmentToolDialog from "./CreateAppointmentToolDialog";
 import googleCalendarLogo from "@/assets/google-calendar-logo.png";
 import calcomLogo from "@/assets/calcom-logo.png";
 import gohighlevelLogo from "@/assets/gohighlevel-logo.png";
+import { getErrorMessage, getFunctionUnavailableMessage, isEdgeFunctionUnavailable } from "@/lib/edge-functions";
 
 interface CalendarIntegration {
   id: string; user_id: string; provider: string; display_name: string;
@@ -79,6 +86,10 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
   const [availabilityData, setAvailabilityData] = useState<any>(null);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [viewTab, setViewTab] = useState("config");
+  const [bookingSlot, setBookingSlot] = useState<{ time: string; date: string } | null>(null);
+  const [bookingName, setBookingName] = useState("Test User");
+  const [bookingEmail, setBookingEmail] = useState("");
+  const [bookingInProgress, setBookingInProgress] = useState(false);
 
   const fetchData = async () => {
     const [intRes, toolsRes] = await Promise.all([
@@ -125,11 +136,43 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
       if (error) throw error;
       setAvailabilityData(data);
     } catch (err: any) {
-      setAvailabilityData({ error: err.message || "Failed to fetch availability" });
+      setAvailabilityData({
+        error: isEdgeFunctionUnavailable(err)
+          ? getFunctionUnavailableMessage("Calendar availability")
+          : getErrorMessage(err) || "Failed to fetch availability"
+      });
     } finally {
       setLoadingAvailability(false);
     }
   }, []);
+
+  const handleBookSlot = async () => {
+    if (!viewTool?.calendar_integration_id || !bookingSlot) return;
+    setBookingInProgress(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("book-calendar-appointment", {
+        body: {
+          integration_id: viewTool.calendar_integration_id,
+          start_time: bookingSlot.time,
+          attendee_name: bookingName,
+          attendee_email: bookingEmail || undefined,
+        },
+      });
+      if (error) throw error;
+      toast({ title: "Appointment booked successfully!", description: "The slot has been reserved." });
+      setBookingSlot(null);
+      // Refresh availability
+      fetchAvailability(viewTool, availabilityFromDate);
+    } catch (err: any) {
+      toast({
+        title: "Booking failed",
+        description: getErrorMessage(err) || "Failed to book appointment",
+        variant: "destructive",
+      });
+    } finally {
+      setBookingInProgress(false);
+    }
+  };
 
   const openViewTool = (tool: AppointmentTool) => {
     setViewTool(tool);
@@ -196,14 +239,31 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
                         </Badge>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(tool)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Switch checked={tool.is_active} onCheckedChange={() => toggleTool(tool.id, tool.is_active)} />
-                      <Button variant="ghost" size="icon" onClick={() => deleteTool(tool.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                    <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-3">
+                        <Switch checked={tool.is_active} onCheckedChange={() => toggleTool(tool.id, tool.is_active)} />
+                        
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openEdit(tool)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              className="text-destructive focus:text-destructive" 
+                              onClick={() => deleteTool(tool.id)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -344,20 +404,24 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
                             <h4 className="font-semibold text-sm">Available Slots ({availabilityFromDate} to {availabilityToDate})</h4>
                             {(Array.isArray(availabilityData.slots) && availabilityData.slots.length === 0) ? (
                               <p className="text-sm text-muted-foreground">No available slots found.</p>
-                            ) : Array.isArray(availabilityData.slots) ? (
-                              <div className="grid grid-cols-3 gap-2">
-                                {availabilityData.slots.map((slot: any, i: number) => {
-                                  const slotTime = typeof slot === "string" ? slot : (slot.time || slot.start || "");
-                                  const slotDate = typeof slot === "object" && slot.date ? slot.date : "";
-                                  const dt = slotTime ? new Date(slotTime) : null;
-                                  return (
-                                    <div key={i} className="rounded-md border px-2 py-1.5 text-xs text-center font-medium">
-                                      {slotDate && <div className="text-muted-foreground">{new Date(slotDate + "T00:00:00").toLocaleDateString([], { day: '2-digit', month: 'short' })}</div>}
-                                      {dt ? dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : JSON.stringify(slot)}
-                                    </div>
-                                  );
-                                })}
-                              </div>
+                              ) : Array.isArray(availabilityData.slots) ? (
+                                <div className="grid grid-cols-3 gap-2">
+                                  {availabilityData.slots.map((slot: any, i: number) => {
+                                    const slotTime = typeof slot === "string" ? slot : (slot.time || slot.start || "");
+                                    const slotDate = typeof slot === "object" && slot.date ? slot.date : "";
+                                    const dt = slotTime ? new Date(slotTime) : null;
+                                    return (
+                                      <div
+                                        key={i}
+                                        className="rounded-md border px-2 py-1.5 text-xs text-center font-medium hover:bg-accent hover:border-primary cursor-pointer transition-colors"
+                                        onClick={() => setBookingSlot({ time: slotTime, date: slotDate })}
+                                      >
+                                        {slotDate && <div className="text-muted-foreground">{new Date(slotDate + "T00:00:00").toLocaleDateString([], { day: '2-digit', month: 'short' })}</div>}
+                                        {dt ? dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : JSON.stringify(slot)}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                             ) : (
                               <pre className="text-xs bg-muted p-2 rounded overflow-auto">{JSON.stringify(availabilityData.slots, null, 2)}</pre>
                             )}
@@ -383,6 +447,36 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
               </TabsContent>
             </Tabs>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Manual Booking Dialog */}
+      <Dialog open={!!bookingSlot} onOpenChange={(open) => { if (!open) setBookingSlot(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Book Appointment</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="text-sm text-muted-foreground bg-accent/50 p-3 rounded-md">
+              <span className="font-semibold text-foreground">Selected Slot:</span>{" "}
+              {bookingSlot && new Date(bookingSlot.time).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="book-name">Attendee Name</Label>
+              <Input id="book-name" value={bookingName} onChange={e => setBookingName(e.target.value)} placeholder="Full Name" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="book-email">Attendee Email (optional)</Label>
+              <Input id="book-email" type="email" value={bookingEmail} onChange={e => setBookingEmail(e.target.value)} placeholder="email@example.com" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setBookingSlot(null)} disabled={bookingInProgress}>Cancel</Button>
+            <Button onClick={handleBookSlot} disabled={bookingInProgress || !bookingName.trim()}>
+              {bookingInProgress ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {bookingInProgress ? "Booking..." : "Confirm Booking"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

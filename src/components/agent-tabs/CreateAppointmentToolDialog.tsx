@@ -44,6 +44,28 @@ interface Props {
   onToolCreated: () => void;
 }
 
+function CalendarSourceIcon({ src, alt, label, size = "sm" }: { src?: string; alt: string; label: string; size?: "sm" | "md" }) {
+  const [failed, setFailed] = useState(false);
+  const dimensions = size === "md" ? "h-6 w-6" : "h-4 w-4";
+
+  if (!src || failed) {
+    return (
+      <div className={`${dimensions} rounded bg-muted border flex items-center justify-center text-[10px] font-semibold text-muted-foreground shrink-0`}>
+        {label.slice(0, 2).toUpperCase()}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={`${dimensions} rounded object-contain shrink-0`}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 export default function CreateAppointmentToolDialog({
   open,
   onOpenChange,
@@ -169,7 +191,7 @@ export default function CreateAppointmentToolDialog({
                     <div key={source.id} className="flex items-center gap-2">
                       <RadioGroupItem value={source.id} id={source.id} />
                       <Label htmlFor={source.id} className="flex items-center gap-1.5 cursor-pointer text-sm">
-                        <img src={source.logo} alt={source.name} className="h-4 w-4 rounded object-contain" />
+                        <CalendarSourceIcon src={source.logo} alt={source.name} label={source.name} />
                         {source.name}
                       </Label>
                     </div>
@@ -185,7 +207,7 @@ export default function CreateAppointmentToolDialog({
 
                 {connectedForSource ? (
                   <div className="rounded-lg border bg-muted/30 p-4 flex items-center gap-3">
-                    <img src={sourceConfig?.logo} alt="" className="h-6 w-6 rounded object-contain" />
+                    <CalendarSourceIcon src={sourceConfig?.logo} alt={sourceConfig?.name || "Calendar"} label={sourceConfig?.name || "Calendar"} size="md" />
                     <div>
                       <p className="text-sm font-medium">{connectedForSource.display_name}</p>
                       <p className="text-xs text-muted-foreground">Calendar: {connectedForSource.calendar_id || "Default"}</p>

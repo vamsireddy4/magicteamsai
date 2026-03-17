@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Wrench, Code2 } from "lucide-react";
 import CreateToolDialog from "@/components/custom-tools/CreateToolDialog";
+import { getFunctionUnavailableMessage, isEdgeFunctionUnavailable } from "@/lib/edge-functions";
 
 interface AgentToolRow {
   id: string;
@@ -61,6 +62,9 @@ export default function AgentCustomTools({ agentId, agentName, userId }: Props) 
       });
     } catch (err) {
       console.error("Ultravox sync failed:", err);
+      if (isEdgeFunctionUnavailable(err)) {
+        toast({ title: "Sync unavailable", description: getFunctionUnavailableMessage("Ultravox sync"), variant: "destructive" });
+      }
     }
   };
 

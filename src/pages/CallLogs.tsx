@@ -4,7 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PhoneIncoming, PhoneOutgoing, History, Copy, Check, FileText, Clock, User } from "lucide-react";
 import { toast } from "sonner";
@@ -26,35 +25,114 @@ interface CallLog {
   agents: { name: string } | null;
 }
 
+interface TranscriptMessage {
+  role?: string;
+  text?: string;
+  timestamp?: string | number | null;
+}
+
 export default function CallLogs() {
   const { user } = useAuth();
   const [calls, setCalls] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [selectedCall, setSelectedCall] = useState<CallLog | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const fetchCalls = () => {
-    if (!user) return;
-    supabase
+  const fetchCalls = async () => {
+    if (!user) return [] as CallLog[];
+
+    const { data, error } = await supabase
       .from("call_logs")
       .select("*, agents(name)")
-      .order("started_at", { ascending: false })
-      .then(({ data }) => {
-        setCalls((data as any) || []);
-        setLoading(false);
-      });
+      .order("started_at", { ascending: false });
+
+    if (error) {
+      toast.error("Failed to load call history", { description: error.message });
+      setLoading(false);
+      return [] as CallLog[];
+    }
+
+    const nextCalls = ((data as any) || []) as CallLog[];
+    setCalls(nextCalls);
+    setSelectedCall((current) => {
+      if (!current) return current;
+      return nextCalls.find((call) => call.id === current.id) || current;
+    });
+    setLoading(false);
+    return nextCalls;
+  };
+
+  const needsSync = (call: CallLog) => {
+    return (
+      Boolean(call.ultravox_call_id || call.twilio_call_sid) &&
+      (
+        call.status === "initiated" ||
+        call.status === "in-progress" ||
+        call.duration === null ||
+        call.transcript === null
+      )
+    );
+  };
+
+  const syncCalls = async (showErrors = false) => {
+    if (!user || syncing) return;
+
+    setSyncing(true);
+    const { data, error } = await supabase.functions.invoke("sync-call-data");
+    setSyncing(false);
+
+    if (error) {
+      if (showErrors) {
+        toast.error("Failed to sync call data", { description: error.message });
+      }
+      return;
+    }
+
+    if (data?.error && showErrors) {
+      toast.error("Failed to sync call data", { description: data.error });
+      return;
+    }
+
+    await fetchCalls();
   };
 
   useEffect(() => {
-    fetchCalls();
+    let cancelled = false;
 
     const channel = supabase
       .channel('call-logs-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_logs' }, () => fetchCalls())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_logs' }, () => {
+        fetchCalls();
+      })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    const load = async () => {
+      const initialCalls = await fetchCalls();
+      if (cancelled) return;
+
+      if (initialCalls.some(needsSync)) {
+        await syncCalls(false);
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
   }, [user]);
+
+  useEffect(() => {
+    if (!user || !calls.some(needsSync)) return;
+
+    const pollTimer = window.setInterval(() => {
+      void syncCalls(false);
+    }, 10000);
+
+    return () => window.clearInterval(pollTimer);
+  }, [user, calls, syncing]);
 
   const formatDuration = (seconds: number | null) => {
     if (!seconds) return "—";
@@ -100,6 +178,47 @@ export default function CallLogs() {
   const handleSelectCall = (call: CallLog) => {
     setSelectedCall(call);
   };
+
+  const syncUltravoxCallFromLocal = async (call: CallLog) => {
+    if (!call.ultravox_call_id) return;
+
+    const response = await fetch(`/api/local/ultravox-call-details?callId=${encodeURIComponent(call.ultravox_call_id)}`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || "Failed to fetch Ultravox call details");
+    }
+
+    const updateData = {
+      duration: data?.duration ?? call.duration,
+      started_at: data?.started_at ?? call.started_at,
+      ended_at: data?.ended_at ?? call.ended_at,
+      status: data?.status ?? call.status,
+      summary: data?.summary ?? call.summary,
+      transcript: data?.transcript ?? call.transcript,
+    };
+
+    setCalls((currentCalls) =>
+      currentCalls.map((currentCall) =>
+        currentCall.id === call.id ? { ...currentCall, ...updateData } : currentCall
+      )
+    );
+    setSelectedCall((current) =>
+      current?.id === call.id ? { ...current, ...updateData } : current
+    );
+
+    await supabase
+      .from("call_logs")
+      .update(updateData)
+      .eq("id", call.id);
+  };
+
+  useEffect(() => {
+    if (!selectedCall?.ultravox_call_id || selectedCall.transcript) return;
+
+    void syncUltravoxCallFromLocal(selectedCall).catch((error: Error) => {
+      console.error("Failed to sync Ultravox call from local route", error);
+    });
+  }, [selectedCall?.id, selectedCall?.ultravox_call_id, selectedCall?.transcript]);
 
   return (
     <DashboardLayout>
@@ -273,7 +392,7 @@ export default function CallLogs() {
                     <p className="text-sm font-medium mb-2">Transcript</p>
                     <div className="rounded-lg bg-muted p-4 text-sm space-y-3 max-h-80 overflow-auto">
                       {Array.isArray(selectedCall.transcript)
-                        ? (selectedCall.transcript as any[]).map((msg, i) => (
+                        ? (selectedCall.transcript as TranscriptMessage[]).map((msg, i) => (
                             <div key={i} className="flex gap-2">
                               <Badge
                                 variant={msg.role === "agent" ? "default" : "secondary"}

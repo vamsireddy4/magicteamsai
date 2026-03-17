@@ -63,28 +63,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className={cn("flex h-16 items-center border-b border-border", collapsed ? "justify-center px-2" : "justify-between px-6")}>
           {collapsed ? (
             <button
-              onClick={() => setCollapsed(false)}
+              onClick={() => {
+                setCollapsed(false);
+                setLogoHovered(false);
+              }}
               onMouseEnter={() => setLogoHovered(true)}
               onMouseLeave={() => setLogoHovered(false)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary transition-all"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-transparent transition-all"
             >
               {logoHovered ? (
-                <PanelLeftOpen className="h-4 w-4 text-primary-foreground" />
+                <PanelLeftOpen className="h-5 w-5 text-muted-foreground" />
               ) : (
-                <Phone className="h-4 w-4 text-primary-foreground" />
+                <img src="/logo.png" alt="MagicTeams" className="h-8 w-8 object-contain" />
               )}
             </button>
           ) : (
             <>
-              <Link to="/dashboard" className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
-                  <Phone className="h-4 w-4 text-primary-foreground" />
-                </div>
-                <span className="text-lg font-bold tracking-tight">MagicTeams</span>
-              </Link>
+              <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                <Link to="/dashboard" className="flex items-center gap-2.5 overflow-hidden">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-transparent">
+                    <img src="/logo.png" alt="MagicTeams" className="h-9 w-9 object-contain" />
+                  </div>
+                  <span className="text-lg font-bold tracking-tight truncate">MagicTeams</span>
+                </Link>
+              </div>
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => setCollapsed(true)}
+                  onClick={() => {
+                    setCollapsed(true);
+                    setLogoHovered(false);
+                  }}
                   className="hidden lg:flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 >
                   <PanelLeftClose className="h-4 w-4" />
@@ -163,8 +171,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Menu className="h-5 w-5" />
           </button>
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
-              <Phone className="h-3.5 w-3.5 text-primary-foreground" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-transparent">
+              <img src="/logo.png" alt="MagicTeams" className="h-7 w-7 object-contain" />
             </div>
             <span className="font-bold">MagicTeams</span>
           </div>

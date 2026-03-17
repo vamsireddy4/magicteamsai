@@ -43,6 +43,118 @@ interface Campaign {
 
 interface AgentRow { id: string; name: string; }
 interface PhoneConfigRow { id: string; phone_number: string; friendly_name: string | null; provider: string; }
+interface CampaignCallLog {
+  id: string;
+  recipient_number: string | null;
+  caller_number?: string | null;
+  status: string;
+  duration: number | null;
+  started_at: string | null;
+  summary: string | null;
+  ended_at: string | null;
+  transcript: any;
+  ultravox_call_id: string | null;
+}
+
+const upsertCampaignOutcome = async (
+  campaignId: string,
+  contact: any,
+  outcome: string,
+  attemptNumber: number,
+  userId: string,
+) => {
+  const { data: existing, error: existingError } = await supabase
+    .from("call_outcomes")
+    .select("id")
+    .eq("campaign_id", campaignId)
+    .eq("contact_id", contact.id || null)
+    .eq("attempt_number", attemptNumber)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(existingError.message);
+  }
+
+  const payload = {
+    user_id: userId,
+    campaign_id: campaignId,
+    phone_number: contact.phone_number,
+    parent_name: contact.first_name || null,
+    child_names: contact.child_names || null,
+    venue_name: contact.venue_name || null,
+    contact_id: contact.id || null,
+    outcome,
+    attempt_number: attemptNumber,
+  };
+
+  if (existing?.id) {
+    const { error } = await supabase
+      .from("call_outcomes")
+      .update(payload)
+      .eq("id", existing.id);
+    if (error) {
+      throw new Error(error.message);
+    }
+    return existing.id;
+  }
+
+  const { data, error } = await supabase
+    .from("call_outcomes")
+    .insert(payload)
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data.id;
+};
+
+const getInvokeErrorMessage = async (err: any) => {
+  if (!err) return "Unknown error";
+  const context = err.context;
+  if (context instanceof Response) {
+    const payload = await context.clone().json().catch(async () => ({ error: await context.text().catch(() => "") }));
+    return payload?.error || payload?.details || err.message || "Function call failed";
+  }
+  return err.message || "Function call failed";
+};
+
+const shouldFallbackToLocalCampaign = (err: any) => {
+  const message = String(err?.message || "").toLowerCase();
+  return (
+    message.includes("cors") ||
+    message.includes("failed to fetch") ||
+    message.includes("non-2xx") ||
+    message.includes("typeerror: failed to fetch") ||
+    message.includes("networkerror")
+  );
+};
+
+const normalizeCampaignPhoneNumber = (raw: string, fromNumber?: string | null) => {
+  const trimmed = String(raw || "").trim();
+  if (!trimmed) return trimmed;
+  if (trimmed.startsWith("+")) return trimmed;
+  if (trimmed.startsWith("00")) return `+${trimmed.slice(2)}`;
+
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) return trimmed;
+  if (digits.length >= 11) return `+${digits}`;
+
+  const fromDigits = String(fromNumber || "").replace(/\D/g, "");
+  if (digits.length === 10 && fromDigits.length >= 11) {
+    const countryCode = fromDigits.slice(0, fromDigits.length - 10);
+    if (countryCode) return `+${countryCode}${digits}`;
+  }
+
+  return trimmed;
+};
+
+const normalizeComparablePhone = (raw: string | null | undefined) =>
+  String(raw || "").replace(/\D/g, "");
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -74,12 +186,144 @@ export default function CampaignsTab() {
   const [outcomeCounts, setOutcomeCounts] = useState<Record<string, number>>({});
   const [contacts, setContacts] = useState<any[]>([]);
   const [callOutcomes, setCallOutcomes] = useState<any[]>([]);
+  const [campaignCallLogs, setCampaignCallLogs] = useState<CampaignCallLog[]>([]);
+  const [contactDialogOpen, setContactDialogOpen] = useState(false);
+  const [editingContact, setEditingContact] = useState<any | null>(null);
+  const [contactForm, setContactForm] = useState<Record<string, string>>({});
+  const [contactMetadataForm, setContactMetadataForm] = useState<Record<string, string>>({});
+  const [savingContact, setSavingContact] = useState(false);
   // Contact selection for calling
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
   const [detailAgent, setDetailAgent] = useState("");
   const [detailPhone, setDetailPhone] = useState("");
   const [detailDelay, setDetailDelay] = useState("30");
   const [startingCall, setStartingCall] = useState(false);
+  const startCampaignInFlightRef = React.useRef(false);
+
+  const startCampaignLocal = async (campaign: Campaign, contactIds?: string[]) => {
+    if (!user) throw new Error("User not found");
+
+    const { data: agent, error: agentError } = await supabase.from("agents").select("*").eq("id", campaign.agent_id).single();
+    if (agentError || !agent) throw new Error(agentError?.message || "Agent not found");
+
+    const { data: phoneConfig, error: phoneError } = await supabase.from("phone_configs").select("*").eq("id", campaign.phone_config_id).single();
+    if (phoneError || !phoneConfig) throw new Error(phoneError?.message || "Phone config not found");
+
+    let selectedContacts = contacts;
+    if (!selectedContacts.length || selectedCampaign?.id !== campaign.id) {
+      const { data: fetchedContacts, error: contactsError } = await supabase
+        .from("contacts")
+        .select("*")
+        .eq("campaign_id", campaign.id)
+        .order("created_at");
+      if (contactsError) throw new Error(contactsError.message);
+      selectedContacts = fetchedContacts || [];
+    }
+
+    if (contactIds?.length) {
+      const contactIdSet = new Set(contactIds);
+      selectedContacts = selectedContacts.filter((contact) => contactIdSet.has(contact.id));
+    }
+
+    if (!selectedContacts.length) {
+      throw new Error("No contacts found for this campaign");
+    }
+
+    await supabase.from("campaigns").update({
+      status: "active",
+      agent_id: campaign.agent_id,
+      phone_config_id: campaign.phone_config_id,
+      delay_seconds: campaign.delay_seconds,
+      total_contacts: selectedContacts.length,
+      calls_made: 0,
+    }).eq("id", campaign.id);
+
+    const delayMs = (campaign.delay_seconds || 30) * 1000;
+    let initiated = 0;
+
+    for (let index = 0; index < selectedContacts.length; index += 1) {
+      const contact = selectedContacts[index];
+      const recipientNumber = normalizeCampaignPhoneNumber(contact.phone_number, phoneConfig.phone_number);
+      const attemptNumber = campaign.round || 1;
+
+      await upsertCampaignOutcome(campaign.id, contact, "PENDING", attemptNumber, user.id);
+
+      const { error: remoteError } = await supabase.functions.invoke("make-outbound-call", {
+        body: {
+          agent_id: agent.id,
+          recipient_number: recipientNumber,
+          phone_config_id: phoneConfig.id,
+        },
+      });
+
+      if (remoteError) {
+        const response = await fetch("/api/local/outbound-call", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            agent,
+            phoneConfig,
+            recipientNumber,
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.error || data?.details || "Failed to place campaign call");
+        }
+      }
+
+      initiated += 1;
+      await supabase.from("campaigns").update({ calls_made: initiated }).eq("id", campaign.id);
+
+      if (index < selectedContacts.length - 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+      }
+    }
+
+    await supabase.from("campaigns").update({ status: "completed" }).eq("id", campaign.id);
+    return { total: initiated };
+  };
+
+  const getCampaignResultFromCallLog = (callLog: CampaignCallLog) => {
+    if (callLog.status === "completed" && (callLog.duration || 0) > 10) return "ANSWERED";
+    if (callLog.status === "completed" && (callLog.duration || 0) <= 10) return "VOICEMAIL";
+    if (["no-answer", "canceled", "busy"].includes(callLog.status)) return "NO_ANSWER";
+    if (callLog.status === "failed") return "DECLINED";
+    if (["initiated", "in-progress", "ringing", "queued"].includes(callLog.status)) return "PENDING";
+    return String(callLog.status || "PENDING").toUpperCase();
+  };
+
+  const syncCampaignCallLogsFromUltravox = async (callLogs: CampaignCallLog[]) => {
+    const ultravoxLogs = callLogs.filter((log) => log.ultravox_call_id);
+    if (ultravoxLogs.length === 0) return callLogs;
+
+    const syncedLogs = await Promise.all(
+      ultravoxLogs.map(async (log) => {
+        try {
+          const response = await fetch(`/api/local/ultravox-call-details?callId=${encodeURIComponent(log.ultravox_call_id!)}`);
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) return log;
+
+          const updateData = {
+            duration: data?.duration ?? log.duration,
+            started_at: data?.started_at ?? log.started_at,
+            ended_at: data?.ended_at ?? log.ended_at,
+            status: data?.status ?? log.status,
+            summary: data?.summary ?? log.summary,
+            transcript: data?.transcript ?? log.transcript,
+          };
+
+          await supabase.from("call_logs").update(updateData).eq("id", log.id);
+          return { ...log, ...updateData };
+        } catch {
+          return log;
+        }
+      }),
+    );
+
+    const syncedById = new Map(syncedLogs.map((log) => [log.id, log]));
+    return callLogs.map((log) => syncedById.get(log.id) || log);
+  };
 
   const fetchData = async () => {
     if (!user) return;
@@ -106,22 +350,85 @@ export default function CampaignsTab() {
 
   const openCampaignDetail = async (c: Campaign) => {
     setSelectedCampaign(c);
+    await supabase.functions.invoke("sync-call-data").catch(() => null);
     const [{ data: contactsData, count: cCount }, { data: outcomes }] = await Promise.all([
       supabase.from("contacts").select("*", { count: "exact" }).eq("campaign_id", c.id).order("created_at"),
       supabase.from("call_outcomes").select("*").eq("campaign_id", c.id).order("created_at", { ascending: false }),
     ]);
+    const campaignPhoneNumber = phoneConfigs.find((pc) => pc.id === c.phone_config_id)?.phone_number || null;
+    const recipientNumbers = [...new Set(
+      (contactsData || [])
+        .flatMap((contact: any) => {
+          const raw = String(contact.phone_number || "").trim();
+          const normalized = normalizeCampaignPhoneNumber(raw, campaignPhoneNumber);
+          return [raw, normalized].filter(Boolean);
+        })
+    )];
+    let callLogsData: CampaignCallLog[] = [];
+    if (recipientNumbers.length > 0) {
+      const query = supabase
+        .from("call_logs")
+        .select("id, recipient_number, caller_number, status, duration, started_at, ended_at, summary, transcript, ultravox_call_id")
+        .eq("direction", "outbound")
+        .in("recipient_number", recipientNumbers)
+        .order("started_at", { ascending: false });
+      const narrowedQuery = c.agent_id ? query.eq("agent_id", c.agent_id) : query;
+      const callerScopedQuery = campaignPhoneNumber ? narrowedQuery.eq("caller_number", campaignPhoneNumber) : narrowedQuery;
+      const { data } = await callerScopedQuery;
+      callLogsData = ((data as CampaignCallLog[]) || []).filter((log) => {
+        const recipientDigits = normalizeComparablePhone(log.recipient_number);
+        return (contactsData || []).some((contact: any) => {
+          const rawDigits = normalizeComparablePhone(contact.phone_number);
+          const normalizedDigits = normalizeComparablePhone(normalizeCampaignPhoneNumber(contact.phone_number, campaignPhoneNumber));
+          return recipientDigits === rawDigits || recipientDigits === normalizedDigits;
+        });
+      });
+    }
+    callLogsData = await syncCampaignCallLogsFromUltravox(callLogsData);
     setContacts(contactsData || []);
     setContactCount(cCount || 0);
     setCallOutcomes(outcomes || []);
+    setCampaignCallLogs(callLogsData);
     const counts: Record<string, number> = {};
-    (outcomes || []).forEach((o: any) => { counts[o.outcome] = (counts[o.outcome] || 0) + 1; });
+    if (callLogsData.length > 0) {
+      callLogsData.forEach((log) => {
+        const outcome = getCampaignResultFromCallLog(log);
+        counts[outcome] = (counts[outcome] || 0) + 1;
+      });
+    } else {
+      (outcomes || []).forEach((o: any) => { counts[o.outcome] = (counts[o.outcome] || 0) + 1; });
+    }
     setOutcomeCounts(counts);
-    // Pre-select all contacts and pre-fill agent/phone from campaign
-    setSelectedContactIds(new Set((contactsData || []).map((ct: any) => ct.id)));
+    // Pre-select all contacts only when opening a different campaign.
+    // While polling the same campaign, preserve the user's manual selection
+    // and only drop ids that no longer exist.
+    setSelectedContactIds((prev) => {
+      const nextIds = new Set((contactsData || []).map((ct: any) => ct.id));
+
+      if (selectedCampaign?.id !== c.id || prev.size === 0) {
+        return nextIds;
+      }
+
+      const preserved = new Set(
+        Array.from(prev).filter((id) => nextIds.has(id)),
+      );
+
+      return preserved.size > 0 ? preserved : nextIds;
+    });
     setDetailAgent(c.agent_id || "");
     setDetailPhone(c.phone_config_id || "");
     setDetailDelay(String(c.delay_seconds || 30));
   };
+
+  useEffect(() => {
+    if (!selectedCampaign) return;
+
+    const interval = window.setInterval(() => {
+      openCampaignDetail(selectedCampaign);
+    }, 15000);
+
+    return () => window.clearInterval(interval);
+  }, [selectedCampaign, phoneConfigs]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -161,21 +468,52 @@ export default function CampaignsTab() {
   };
 
   const startCampaign = async (campaignId: string) => {
+    if (startCampaignInFlightRef.current) return;
+    startCampaignInFlightRef.current = true;
     setRunningCampaign(campaignId);
     try {
+      if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+        const campaign = campaigns.find((item) => item.id === campaignId);
+        if (!campaign) throw new Error("Campaign not found");
+        const result = await startCampaignLocal(campaign);
+        toast({ title: "Campaign started", description: `${result.total || 0} calls queued locally` });
+        fetchData();
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke("run-campaign", { body: { campaign_id: campaignId } });
       if (error) throw error;
       toast({ title: "Campaign started", description: `${data?.total || 0} calls queued` });
       fetchData();
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    } finally { setRunningCampaign(null); }
+      if (shouldFallbackToLocalCampaign(err)) {
+        const campaign = campaigns.find((item) => item.id === campaignId);
+        if (!campaign) {
+          toast({ title: "Error", description: "Campaign not found", variant: "destructive" });
+        } else {
+          try {
+            const result = await startCampaignLocal(campaign);
+            toast({ title: "Campaign started", description: `${result.total || 0} calls queued locally` });
+            fetchData();
+          } catch (localErr: any) {
+            toast({ title: "Error", description: localErr.message || "Failed to start local campaign", variant: "destructive" });
+          }
+        }
+      } else {
+        toast({ title: "Error", description: await getInvokeErrorMessage(err), variant: "destructive" });
+      }
+    } finally {
+      setRunningCampaign(null);
+      startCampaignInFlightRef.current = false;
+    }
   };
 
   const startSelectedCalls = async () => {
+    if (startCampaignInFlightRef.current) return;
     if (!selectedCampaign || !user) return;
     if (!detailAgent || !detailPhone) { toast({ title: "Select agent & phone number", variant: "destructive" }); return; }
     if (selectedContactIds.size === 0) { toast({ title: "No contacts selected", variant: "destructive" }); return; }
+    startCampaignInFlightRef.current = true;
     setStartingCall(true);
     try {
       // Update campaign with agent/phone if changed
@@ -183,6 +521,20 @@ export default function CampaignsTab() {
         agent_id: detailAgent, phone_config_id: detailPhone,
         delay_seconds: parseInt(detailDelay) || 30,
       }).eq("id", selectedCampaign.id);
+
+      if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+        const localCampaign = {
+          ...selectedCampaign,
+          agent_id: detailAgent,
+          phone_config_id: detailPhone,
+          delay_seconds: parseInt(detailDelay) || 30,
+        } as Campaign;
+        const result = await startCampaignLocal(localCampaign, Array.from(selectedContactIds));
+        toast({ title: "Campaign started", description: `${result.total || 0} calls queued locally` });
+        openCampaignDetail(localCampaign);
+        fetchData();
+        return;
+      }
 
       // Pass selected contact IDs so only those are called
       const { data, error } = await supabase.functions.invoke("run-campaign", {
@@ -195,8 +547,28 @@ export default function CampaignsTab() {
       openCampaignDetail(updated as Campaign);
       fetchData();
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    } finally { setStartingCall(false); }
+      if (shouldFallbackToLocalCampaign(err)) {
+        try {
+          const localCampaign = {
+            ...selectedCampaign,
+            agent_id: detailAgent,
+            phone_config_id: detailPhone,
+            delay_seconds: parseInt(detailDelay) || 30,
+          } as Campaign;
+          const result = await startCampaignLocal(localCampaign, Array.from(selectedContactIds));
+          toast({ title: "Campaign started", description: `${result.total || 0} calls queued locally` });
+          openCampaignDetail(localCampaign);
+          fetchData();
+        } catch (localErr: any) {
+          toast({ title: "Error", description: localErr.message || "Failed to start local campaign", variant: "destructive" });
+        }
+      } else {
+        toast({ title: "Error", description: await getInvokeErrorMessage(err), variant: "destructive" });
+      }
+    } finally {
+      setStartingCall(false);
+      startCampaignInFlightRef.current = false;
+    }
   };
 
   const toggleContactSelect = (id: string) => {
@@ -205,6 +577,113 @@ export default function CampaignsTab() {
   const toggleAllContacts = () => {
     if (selectedContactIds.size === contacts.length) setSelectedContactIds(new Set());
     else setSelectedContactIds(new Set(contacts.map((ct) => ct.id)));
+  };
+
+  const getContactEditableFields = (contact: any) => {
+    const baseKeys = Object.keys(contact || {}).filter((key) => ![
+      "id",
+      "campaign_id",
+      "user_id",
+      "created_at",
+      "updated_at",
+      "metadata",
+    ].includes(key));
+
+    return Array.from(new Set([
+      "first_name",
+      "phone_number",
+      "email",
+      ...baseKeys,
+    ]));
+  };
+
+  const formatFieldLabel = (key: string) =>
+    key.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+
+  const openContactEditor = (contact: any) => {
+    const nextForm: Record<string, string> = {};
+    getContactEditableFields(contact).forEach((key) => {
+      nextForm[key] = contact?.[key] == null ? "" : String(contact[key]);
+    });
+
+    const nextMetadataForm: Record<string, string> = {};
+    const metadata = contact?.metadata && typeof contact.metadata === "object"
+      ? contact.metadata as Record<string, any>
+      : {};
+    Object.entries(metadata).forEach(([key, value]) => {
+      nextMetadataForm[key] = value == null ? "" : String(value);
+    });
+
+    setEditingContact(contact);
+    setContactForm(nextForm);
+    setContactMetadataForm(nextMetadataForm);
+    setContactDialogOpen(true);
+  };
+
+  const saveContactEdits = async () => {
+    if (!editingContact) return;
+
+    setSavingContact(true);
+    try {
+      const payload: Record<string, any> = {};
+      Object.entries(contactForm).forEach(([key, value]) => {
+        payload[key] = value.trim() === "" ? null : value;
+      });
+      payload.metadata = Object.fromEntries(
+        Object.entries(contactMetadataForm).map(([key, value]) => [key, value.trim() === "" ? null : value]),
+      );
+
+      const { error } = await supabase
+        .from("contacts")
+        .update(payload)
+        .eq("id", editingContact.id);
+
+      if (error) throw error;
+
+      toast({ title: "Contact updated" });
+      setContactDialogOpen(false);
+      setEditingContact(null);
+      if (selectedCampaign) {
+        await openCampaignDetail(selectedCampaign);
+      } else {
+        await fetchData();
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update contact",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingContact(false);
+    }
+  };
+
+  const deleteContact = async (contactId: string) => {
+    try {
+      const { error: detachError } = await supabase
+        .from("call_outcomes")
+        .update({ contact_id: null })
+        .eq("contact_id", contactId);
+
+      if (detachError) throw detachError;
+
+      const { error } = await supabase.from("contacts").delete().eq("id", contactId);
+      if (error) throw error;
+
+      toast({ title: "Contact deleted" });
+      if (selectedCampaign) {
+        await openCampaignDetail(selectedCampaign);
+      } else {
+        await fetchData();
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete contact",
+        variant: "destructive",
+      });
+    }
   };
 
   const filtered = filter === "all" ? campaigns : campaigns.filter((c) => c.status === filter);
@@ -269,28 +748,10 @@ export default function CampaignsTab() {
         <div className="grid gap-4 grid-cols-2">
           <Card><CardContent className="pt-6 text-center"><Users className="h-8 w-8 mx-auto text-primary mb-2" /><p className="text-2xl font-bold">{contactCount}</p><p className="text-xs text-muted-foreground">Total Contacts</p></CardContent></Card>
           <Card><CardContent className="pt-6 text-center"><Phone className="h-8 w-8 mx-auto text-primary mb-2" /><p className="text-2xl font-bold">{c.calls_made}</p><p className="text-xs text-muted-foreground">Calls Made</p></CardContent></Card>
-          <Card><CardContent className="pt-6 text-center"><Target className="h-8 w-8 mx-auto text-primary mb-2" /><p className="text-2xl font-bold">{c.booking_target ?? "—"}</p><p className="text-xs text-muted-foreground">Booking Target</p></CardContent></Card>
-          <Card><CardContent className="pt-6 text-center"><Hash className="h-8 w-8 mx-auto text-primary mb-2" /><p className="text-2xl font-bold">{totalOutcomes}</p><p className="text-xs text-muted-foreground">Total Outcomes</p></CardContent></Card>
         </div>
 
         {c.total_contacts > 0 && (
           <Card><CardContent className="pt-6"><div className="flex justify-between text-sm mb-2"><span className="text-muted-foreground">Call Progress</span><span className="font-medium">{c.calls_made} / {c.total_contacts}</span></div><Progress value={c.total_contacts > 0 ? (c.calls_made / c.total_contacts) * 100 : 0} className="h-3" /></CardContent></Card>
-        )}
-
-        {Object.keys(outcomeCounts).length > 0 && (
-          <Card>
-            <CardHeader><CardTitle className="text-base">Outcome Breakdown</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-                {Object.entries(outcomeCounts).sort((a, b) => b[1] - a[1]).map(([outcome, count]) => (
-                  <div key={outcome} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                    <span className="text-sm font-medium">{outcome}</span>
-                    <Badge variant="secondary">{count}</Badge>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
         )}
 
         <Card>
@@ -347,6 +808,7 @@ export default function CampaignsTab() {
                       {displayCols.map((col) => (
                         <TableHead key={col.key}>{col.label}</TableHead>
                       ))}
+                      <TableHead className="w-24 text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -369,6 +831,28 @@ export default function CampaignsTab() {
                             </TableCell>
                           );
                         })}
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button type="button" variant="ghost" size="icon">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => openContactEditor(ct)}>
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => deleteContact(ct.id)}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -415,55 +899,70 @@ export default function CampaignsTab() {
           </Card>
         )}
 
-        {/* Call Outcomes Table */}
-        {callOutcomes.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Phone className="h-4 w-4" /> Call Results ({callOutcomes.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="max-h-[400px]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Parent</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead>Outcome</TableHead>
-                      <TableHead>Attempt</TableHead>
-                      <TableHead>Summary</TableHead>
-                      <TableHead>Time</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {callOutcomes.map((co) => (
-                      <TableRow key={co.id}>
-                        <TableCell className="font-medium">{co.parent_name || "—"}</TableCell>
-                        <TableCell>{co.phone_number}</TableCell>
-                        <TableCell>
-                          <Badge variant={co.outcome === "ANSWERED" ? "default" : co.outcome === "VOICEMAIL" || co.outcome === "NO_ANSWER" ? "secondary" : "outline"}>
-                            {co.outcome}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{co.attempt_number}</TableCell>
-                        <TableCell className="max-w-[200px] truncate">{co.summary || "—"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                          {co.call_timestamp ? new Date(co.call_timestamp).toLocaleString() : "—"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        )}
-
         <div className="flex gap-3">
           <Button variant="outline" onClick={() => editCampaign(c)}><Pencil className="h-4 w-4 mr-2" /> Edit</Button>
           <Button variant="destructive" onClick={() => deleteCampaign(c.id)}><Trash2 className="h-4 w-4 mr-2" /> Delete</Button>
         </div>
+
+        <Dialog
+          open={contactDialogOpen}
+          onOpenChange={(open) => {
+            setContactDialogOpen(open);
+            if (!open) {
+              setEditingContact(null);
+              setContactForm({});
+              setContactMetadataForm({});
+            }
+          }}
+        >
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Contact</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-6">
+              <div className="grid gap-4 sm:grid-cols-2">
+                {Object.keys(contactForm).map((key) => (
+                  <div key={key} className="space-y-2">
+                    <Label>{formatFieldLabel(key)}</Label>
+                    <Input
+                      value={contactForm[key] ?? ""}
+                      onChange={(e) => setContactForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {Object.keys(contactMetadataForm).length > 0 && (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-medium">Additional Details</h3>
+                    <p className="text-sm text-muted-foreground">Metadata fields stored with this contact.</p>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {Object.keys(contactMetadataForm).map((key) => (
+                      <div key={key} className="space-y-2">
+                        <Label>{formatFieldLabel(key)}</Label>
+                        <Input
+                          value={contactMetadataForm[key] ?? ""}
+                          onChange={(e) => setContactMetadataForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <Button type="button" onClick={saveContactEdits} disabled={savingContact}>
+                  {savingContact ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</> : "Save Contact"}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setContactDialogOpen(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }

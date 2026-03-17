@@ -11,6 +11,20 @@ import RetryCSVTab from "@/components/campaigns/RetryCSVTab";
 export default function Campaigns() {
   const [activeTab, setActiveTab] = useState("data-cleaning");
 
+  const renderActiveTab = () => {
+    switch (activeTab) {
+      case "campaigns":
+        return <CampaignsTab />;
+      case "outcomes":
+        return <OutcomesTab />;
+      case "retry-csv":
+        return <RetryCSVTab />;
+      case "data-cleaning":
+      default:
+        return <DataCleaningTab />;
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-in">
@@ -35,10 +49,9 @@ export default function Campaigns() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="data-cleaning"><DataCleaningTab /></TabsContent>
-          <TabsContent value="campaigns"><CampaignsTab /></TabsContent>
-          <TabsContent value="outcomes"><OutcomesTab /></TabsContent>
-          <TabsContent value="retry-csv"><RetryCSVTab /></TabsContent>
+          <TabsContent value={activeTab} forceMount>
+            {renderActiveTab()}
+          </TabsContent>
         </Tabs>
       </div>
     </DashboardLayout>

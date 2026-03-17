@@ -10,6 +10,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PhoneCall, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Tables } from "@/integrations/supabase/types";
+import { getErrorMessage, getFunctionUnavailableMessage, isEdgeFunctionUnavailable } from "@/lib/edge-functions";
+
+const OUTBOUND_REQUEST_TIMEOUT_MS = 20000;
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
 
 export default function OutboundCall() {
   const { user } = useAuth();
@@ -30,7 +47,56 @@ export default function OutboundCall() {
   }, [user]);
 
   const selectedAgent = agents.find((a) => a.id === form.agent_id);
-  
+  const selectedPhoneConfig = phoneConfigs.find((pc) => pc.id === form.phone_config_id);
+
+  const startDirectFallbackCall = async () => {
+    if (!user || !selectedPhoneConfig || !selectedAgent) {
+      throw new Error("Select an agent and phone number first");
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), OUTBOUND_REQUEST_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+      response = await fetch("/api/local/outbound-call", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          agent: selectedAgent,
+          phoneConfig: selectedPhoneConfig,
+          recipientNumber: form.recipient_number,
+        }),
+        signal: controller.signal,
+      });
+    } catch (error: any) {
+      if (error?.name === "AbortError") {
+        throw new Error("Local outbound call request timed out");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = data?.details ? ` ${String(data.details)}` : "";
+      throw new Error(`${data?.error || "Failed to place outbound call"}${detail}`);
+    }
+
+    await supabase.from("call_logs").insert({
+      user_id: user.id,
+      agent_id: selectedAgent.id,
+      direction: "outbound",
+      caller_number: selectedPhoneConfig.phone_number,
+      recipient_number: form.recipient_number,
+      status: "initiated",
+      twilio_call_sid: data?.providerCallId || null,
+      ultravox_call_id: data?.ultravoxCallId || null,
+    });
+  };
 
   const handleCall = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,19 +104,46 @@ export default function OutboundCall() {
     setLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke("make-outbound-call", {
-        body: {
-          agent_id: form.agent_id,
-          recipient_number: form.recipient_number,
-          phone_config_id: form.phone_config_id,
-        },
-      });
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke("make-outbound-call", {
+          body: {
+            agent_id: form.agent_id,
+            recipient_number: form.recipient_number,
+            phone_config_id: form.phone_config_id,
+          },
+        }),
+        OUTBOUND_REQUEST_TIMEOUT_MS,
+        "Outbound call request timed out",
+      );
 
-      if (error) throw error;
+      if (error) {
+        if (isEdgeFunctionUnavailable(error)) {
+          await startDirectFallbackCall();
+          toast({ title: "Call initiated!", description: "The outbound call is being placed via direct provider fallback." });
+          setForm({ ...form, recipient_number: "" });
+          return;
+        }
+        const detail = (error as any)?.context?.details || (error as any)?.details || "";
+        throw new Error(`${getErrorMessage(error)}${detail ? ` ${detail}` : ""}`);
+      }
+
+      if (!data) {
+        throw new Error("Outbound call request returned no data");
+      }
+
       toast({ title: "Call initiated!", description: "The outbound call is being placed." });
       setForm({ ...form, recipient_number: "" });
     } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      const timeoutLike = String(error?.message || "").toLowerCase().includes("timed out");
+      toast({
+        title: "Error",
+        description: timeoutLike
+          ? "Outbound call request timed out. The provider or function did not respond in time."
+          : isEdgeFunctionUnavailable(error)
+          ? getFunctionUnavailableMessage("Outbound calling")
+          : getErrorMessage(error),
+        variant: "destructive"
+      });
     } finally {
       setLoading(false);
     }

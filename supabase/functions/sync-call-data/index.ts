@@ -26,7 +26,16 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const anonKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
+    const anonKey =
+      Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ||
+      Deno.env.get("VITE_SUPABASE_PUBLISHABLE_KEY") ||
+      Deno.env.get("SUPABASE_ANON_KEY");
+    if (!anonKey) {
+      return new Response(JSON.stringify({ error: "Supabase publishable key is not configured for sync-call-data" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const anonClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -97,7 +106,7 @@ Deno.serve(async (req) => {
               headers: { "X-API-Key": ultravoxApiKey },
             }),
             call.transcript === null
-              ? fetch(`https://api.ultravox.ai/api/calls/${call.ultravox_call_id}/messages`, {
+              ? fetch(`https://api.ultravox.ai/api/calls/${call.ultravox_call_id}/messages?mode=in_call&pageSize=500`, {
                   headers: { "X-API-Key": ultravoxApiKey },
                 })
               : Promise.resolve(null),
@@ -138,12 +147,27 @@ Deno.serve(async (req) => {
             const messages = messagesData.results || messagesData;
             if (Array.isArray(messages) && messages.length > 0) {
               const transcript = messages
-                .filter((m: any) => m.role && m.text)
-                .map((m: any) => ({
-                  role: m.role === "MESSAGE_ROLE_AGENT" ? "agent" : m.role === "MESSAGE_ROLE_USER" ? "user" : m.role,
-                  text: m.text,
-                  timestamp: m.created || m.ordinal || null,
-                }));
+                .filter((m: any) => typeof m?.text === "string" && m.text.trim().length > 0)
+                .map((m: any) => {
+                  const role = m.role === "MESSAGE_ROLE_AGENT"
+                    ? "agent"
+                    : m.role === "MESSAGE_ROLE_USER"
+                    ? "user"
+                    : typeof m.role === "string" && m.role.startsWith("MESSAGE_ROLE_")
+                    ? m.role.replace("MESSAGE_ROLE_", "").toLowerCase()
+                    : m.role || "system";
+
+                  return {
+                    role,
+                    text: m.text,
+                    timestamp:
+                      m.wallClockTimespan?.start ||
+                      m.timespan?.start ||
+                      m.created ||
+                      m.ordinal ||
+                      null,
+                  };
+                });
               if (transcript.length > 0) updateData.transcript = transcript;
             }
           }

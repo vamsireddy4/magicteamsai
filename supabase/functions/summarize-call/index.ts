@@ -14,9 +14,9 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
 
-    if (!lovableApiKey) {
+    if (!geminiApiKey) {
       return new Response(
         JSON.stringify({ error: "AI API key not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -94,18 +94,18 @@ Deno.serve(async (req) => {
 
 Keep the summary concise and actionable. Use plain text, no markdown headers.`;
 
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Call Details:\n- Direction: ${call.direction}\n- Agent: ${call.agents?.name || "Unknown"}\n- Duration: ${call.duration ? Math.floor(call.duration / 60) + "m " + (call.duration % 60) + "s" : "Unknown"}\n- Phone: ${call.direction === "inbound" ? call.caller_number : call.recipient_number}\n\nTranscript:\n${transcriptText}` },
-        ],
+        contents: [{
+          role: "user",
+          parts: [{
+            text: `${systemPrompt}\n\nCall Details:\n- Direction: ${call.direction}\n- Agent: ${call.agents?.name || "Unknown"}\n- Duration: ${call.duration ? Math.floor(call.duration / 60) + "m " + (call.duration % 60) + "s" : "Unknown"}\n- Phone: ${call.direction === "inbound" ? call.caller_number : call.recipient_number}\n\nTranscript:\n${transcriptText}`,
+          }],
+        }],
       }),
     });
 
@@ -131,7 +131,7 @@ Keep the summary concise and actionable. Use plain text, no markdown headers.`;
     }
 
     const aiData = await aiResponse.json();
-    const summary = aiData.choices?.[0]?.message?.content || "No summary generated.";
+    const summary = aiData?.candidates?.[0]?.content?.parts?.map((part: any) => part?.text || "").join("") || "No summary generated.";
 
     return new Response(
       JSON.stringify({ success: true, summary }),

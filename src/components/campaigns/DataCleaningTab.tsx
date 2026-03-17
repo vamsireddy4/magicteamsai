@@ -11,11 +11,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Upload, FileSpreadsheet, Loader2, Sparkles, Save } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { analyzeCsvWithGemini } from "@/lib/gemini";
 
 interface ColumnDef { key: string; label: string; type: "text" | "phone" | "date" | "number" | "email"; }
 
 export default function DataCleaningTab() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { toast } = useToast();
   const [customerFile, setCustomerFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -33,9 +34,7 @@ export default function DataCleaningTab() {
     setProcessing(true);
     try {
       const csvContent = await customerFile.text();
-      const { data, error } = await supabase.functions.invoke("analyze-csv", { body: { csvContent } });
-      if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || "Analysis failed");
+      const data = await analyzeCsvWithGemini(csvContent, profile?.gemini_api_key);
       setColumns(data.columns || []); setRows(data.rows || []); setSummary(data.summary || "");
       setSelectedIndices(new Set((data.rows || []).map((_: any, i: number) => i)));
       toast({ title: "Analysis complete", description: data.summary || `${data.rows?.length || 0} contacts found.` });

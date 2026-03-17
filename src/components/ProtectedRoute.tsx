@@ -1,8 +1,14 @@
 import { useAuth } from "@/hooks/useAuth";
 import { Navigate } from "react-router-dom";
 
-export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+export default function ProtectedRoute({
+  children,
+  allowIncompleteOnboarding = false,
+}: {
+  children: React.ReactNode;
+  allowIncompleteOnboarding?: boolean;
+}) {
+  const { user, loading, needsOnboarding } = useAuth();
 
   if (loading) {
     return (
@@ -14,6 +20,10 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   if (!user) {
     return <Navigate to="/auth" replace />;
+  }
+
+  if (needsOnboarding && !allowIncompleteOnboarding) {
+    return <Navigate to="/onboarding" replace />;
   }
 
   return <>{children}</>;

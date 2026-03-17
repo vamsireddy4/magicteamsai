@@ -1,16 +1,23 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
+import { Database } from "@/integrations/supabase/types";
+
+type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
+  profile: Profile | null;
   loading: boolean;
+  needsOnboarding: boolean;
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
+  completeOnboarding: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -18,27 +25,73 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const fetchProfile = async (nextUser: User | null) => {
+    if (!nextUser) {
+      setProfile(null);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("user_id", nextUser.id)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    setProfile(data ?? null);
+  };
 
   useEffect(() => {
     let isMounted = true;
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (_event, nextSession) => {
         if (!isMounted) return;
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
+
+        const nextUser = nextSession?.user ?? null;
+        setSession(nextSession);
+        setUser(nextUser);
+
+        Promise.resolve(fetchProfile(nextUser))
+          .catch(() => {
+            if (isMounted) {
+              setProfile(null);
+            }
+          })
+          .finally(() => {
+            if (isMounted) {
+              setLoading(false);
+            }
+          });
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session: nextSession } }) => {
       if (!isMounted) return;
 
+      const nextUser = nextSession?.user ?? null;
+
       // Prevent stale null getSession responses from overriding a fresh OAuth session
-      setSession((current) => current ?? session);
-      setUser((current) => current ?? session?.user ?? null);
-      setLoading(false);
+      setSession((current) => current ?? nextSession);
+      setUser((current) => current ?? nextUser);
+
+      try {
+        await fetchProfile(nextUser);
+      } catch {
+        if (isMounted) {
+          setProfile(null);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
     });
 
     return () => {
@@ -53,7 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
       options: {
         data: { full_name: fullName },
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: `${window.location.origin}/auth`,
       },
     });
     if (error) throw error;
@@ -65,8 +118,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithGoogle = async () => {
-    const { error } = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: `${window.location.origin}/dashboard`,
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth`,
+      },
+    });
+    if (error) throw error;
+  };
+
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth`,
     });
     if (error) throw error;
   };
@@ -76,8 +139,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   };
 
+  const refreshProfile = async () => {
+    await fetchProfile(user);
+  };
+
+  const completeOnboarding = async () => {
+    if (!user) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ onboarding_completed: true })
+        .eq("user_id", user.id);
+
+      if (error) {
+        console.warn("Could not update onboarding status (column might be missing):", error.message);
+      }
+    } catch (e) {
+      console.warn("Error completing onboarding:", e);
+    }
+
+    await fetchProfile(user);
+  };
+
+  const needsOnboarding = Boolean(user && profile && profile.onboarding_completed === false);
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signInWithGoogle, signOut }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        session,
+        profile,
+        loading,
+        needsOnboarding,
+        signUp,
+        signIn,
+        signInWithGoogle,
+        resetPassword,
+        signOut,
+        refreshProfile,
+        completeOnboarding,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

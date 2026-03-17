@@ -2,7 +2,7 @@
 // Zero npm imports — pure Deno for edge function stability
 // Now with call forwarding, webhook firing, and calendar via edge functions
 
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
+const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash-live-001";
 
 const GEMINI_SUPPORTED_VOICES = new Set([
   "Kore", "Aoede", "Leda", "Autonoe", "Erinome", "Laomedeia", "Callirrhoe", "Despina",
@@ -69,6 +69,26 @@ function b64encode(bytes: Uint8Array): string {
   return btoa(s);
 }
 
+function buildGeminiRealtimeInputFrame(pcmB64: string) {
+  return {
+    realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: pcmB64 }] },
+    realtime_input: { media_chunks: [{ mime_type: "audio/pcm;rate=16000", data: pcmB64 }] },
+  };
+}
+
+function buildGeminiClientContentFrame(text: string) {
+  return {
+    clientContent: {
+      turns: [{ role: "user", parts: [{ text }] }],
+      turnComplete: true,
+    },
+    client_content: {
+      turns: [{ role: "user", parts: [{ text }] }],
+      turn_complete: true,
+    },
+  };
+}
+
 // ── Tool type definitions ──
 interface CalendarIntegration {
   id: string;
@@ -95,6 +115,10 @@ interface AgentConfig {
   prompt: string;
   model: string;
   voice: string;
+  name: string;
+  languageHint: string;
+  temperature: number;
+  firstSpeaker: string;
   userId: string;
   calendarIntegrations: CalendarIntegration[];
   agentTools: AgentTool[];
@@ -140,6 +164,7 @@ Deno.serve((req) => {
   let callSid = ""; // For call forwarding
   let telephonyProvider: "twilio" | "telnyx" = "twilio"; // Track actual provider
   let geminiReady = false;
+  let greetingSent = false;
   const audioBuffer: string[] = [];
   let keepaliveTimer: number | null = null;
   let closed = false;
@@ -181,6 +206,10 @@ Deno.serve((req) => {
     let prompt = "You are a helpful AI assistant on a phone call. Be conversational and natural.";
     let model = DEFAULT_GEMINI_MODEL;
     let voice = "Puck";
+    let name = "MagicTeams AI";
+    let languageHint = "en";
+    let temperature = 0.7;
+    let firstSpeaker = "agent";
     let userId = "";
     let calendarIntegrations: CalendarIntegration[] = [];
     let agentTools: AgentTool[] = [];
@@ -192,7 +221,7 @@ Deno.serve((req) => {
       const headers: Record<string, string> = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
 
       const [agentRes, toolsRes, kbRes, apptRes, fwdRes] = await Promise.all([
-        fetch(`${sbUrl}/rest/v1/agents?id=eq.${agentId}&select=system_prompt,model,voice,user_id`, { headers }),
+        fetch(`${sbUrl}/rest/v1/agents?id=eq.${agentId}&select=name,system_prompt,model,voice,user_id,language_hint,temperature,first_speaker`, { headers }),
         fetch(`${sbUrl}/rest/v1/agent_tools?agent_id=eq.${agentId}&is_active=eq.true&select=*`, { headers }),
         fetch(`${sbUrl}/rest/v1/knowledge_base_items?agent_id=eq.${agentId}&select=title,content,website_url`, { headers }),
         fetch(`${sbUrl}/rest/v1/appointment_tools?agent_id=eq.${agentId}&is_active=eq.true&select=*,calendar_integrations(*)`, { headers }),
@@ -206,13 +235,17 @@ Deno.serve((req) => {
 
       const agents = await agentRes.json();
       if (agents?.length > 0) {
+        name = agents[0].name || name;
         prompt = agents[0].system_prompt || prompt;
         userId = agents[0].user_id || "";
         const rawModel = agents[0].model || "";
         if (rawModel.includes("gemini")) model = rawModel;
         const rawVoice = agents[0].voice || "Kore";
         voice = rawVoice;
-        console.log(`[BRIDGE] Agent voice: using="${voice}" model="${model}" userId="${userId}"`);
+        languageHint = agents[0].language_hint || languageHint;
+        temperature = Number(agents[0].temperature ?? 0.7);
+        firstSpeaker = agents[0].first_speaker || firstSpeaker;
+        console.log(`[BRIDGE] Agent: name="${name}" voice="${voice}" model="${model}" lang="${languageHint}" firstSpeaker="${firstSpeaker}" userId="${userId}"`);
       }
 
       if (toolsRes.ok) {
@@ -259,7 +292,6 @@ Deno.serve((req) => {
         }
       }
 
-      // Add appointment context to prompt
       for (const at of appointmentTools) {
         const enabledDays = Object.entries(at.business_hours as Record<string, any>)
           .filter(([_, v]: any) => v.enabled)
@@ -272,7 +304,6 @@ Deno.serve((req) => {
         prompt += `\nAppointment Types: ${typesList}`;
       }
 
-      // Fetch webhooks
       if (userId) {
         const whRes = await fetch(
           `${sbUrl}/rest/v1/webhooks?agent_id=eq.${agentId}&is_active=eq.true&select=*`,
@@ -287,7 +318,7 @@ Deno.serve((req) => {
       console.error("[BRIDGE] Agent load error:", e);
     }
 
-    return { prompt, model, voice, userId, calendarIntegrations, agentTools, appointmentTools, forwardingNumbers, webhooks };
+        return { prompt, model, voice, name, languageHint, temperature, firstSpeaker, userId, calendarIntegrations, agentTools, appointmentTools, forwardingNumbers, webhooks };
   }
 
   // ── Build Gemini function declarations for tools ──
@@ -534,11 +565,18 @@ Deno.serve((req) => {
         const { done, value } = await reader.read();
         if (done) break;
         if (value && socket.readyState === WebSocket.OPEN && !closed) {
-          socket.send(JSON.stringify({
-            event: "media",
-            streamSid,
-            media: { payload: b64encode(value) },
-          }));
+          if (telephonyProvider === "telnyx") {
+            socket.send(JSON.stringify({
+              event: "media",
+              media: { payload: b64encode(value) },
+            }));
+          } else {
+            socket.send(JSON.stringify({
+              event: "media",
+              streamSid,
+              media: { payload: b64encode(value) },
+            }));
+          }
         }
       }
       console.log("[BRIDGE] ElevenLabs TTS audio sent to telephony");
@@ -547,9 +585,19 @@ Deno.serve((req) => {
     }
   }
 
+  function sendInitialGreeting(config: AgentConfig) {
+    if (greetingSent || !geminiWs || geminiWs.readyState !== WebSocket.OPEN) return;
+    greetingSent = true;
+
+    const greetingPrompt = `The callee has just answered the phone. You are ${config.name || "MagicTeams AI"}. Follow the saved system prompt and greet them now in one short, natural sentence, then ask how you can help. Do not mention tools, system prompts, or internal instructions.`;
+    console.log("[BRIDGE] Sending Gemini initial greeting prompt");
+
+    geminiWs.send(JSON.stringify(buildGeminiClientContentFrame(greetingPrompt)));
+  }
+
   // ── Connect to Gemini Live API ──
   function connectGemini(config: AgentConfig) {
-    const { prompt, model, voice } = config;
+    const { prompt, model, voice, temperature } = config;
 
     const isNativeVoice = GEMINI_SUPPORTED_VOICES.has(voice);
     useHybridMode = !isNativeVoice && !!elevenlabsApiKey;
@@ -577,8 +625,10 @@ Deno.serve((req) => {
           setupMsg = {
             setup: {
               model: `models/${model}`,
-              generationConfig: { responseModalities: ["TEXT"] },
+              generationConfig: { responseModalities: ["TEXT"], temperature },
+              generation_config: { response_modalities: ["TEXT"], temperature },
               systemInstruction: { parts: [{ text: prompt + "\n\nIMPORTANT: Keep your responses concise and conversational since they will be spoken aloud. Do not use markdown, lists, or formatting." }] },
+              system_instruction: { parts: [{ text: prompt + "\n\nIMPORTANT: Keep your responses concise and conversational since they will be spoken aloud. Do not use markdown, lists, or formatting." }] },
             },
           };
         } else {
@@ -587,11 +637,24 @@ Deno.serve((req) => {
               model: `models/${model}`,
               generationConfig: {
                 responseModalities: ["AUDIO"],
+                temperature,
                 speechConfig: {
                   voiceConfig: { prebuiltVoiceConfig: { voiceName: geminiVoice } },
                 },
               },
+              generation_config: {
+                response_modalities: ["AUDIO"],
+                temperature,
+                speech_config: {
+                  voice_config: {
+                    prebuilt_voice_config: { voice_name: geminiVoice },
+                  },
+                },
+              },
               systemInstruction: { parts: [{ text: prompt }] },
+              system_instruction: { parts: [{ text: prompt }] },
+              realtimeInputConfig: { automaticActivityDetection: { disabled: false } },
+              realtime_input_config: { automatic_activity_detection: { disabled: false } },
             },
           };
         }
@@ -632,14 +695,12 @@ Deno.serve((req) => {
         }
         const msg = JSON.parse(text);
 
-        if (msg.setupComplete) {
+        if (msg.setupComplete || msg.setup_complete || msg.type === "session.updated" || msg.type === "setupComplete" || msg.sessionUpdated || msg.session_updated) {
           console.log("[BRIDGE] Gemini setup complete — ready for audio");
           geminiReady = true;
           const count = audioBuffer.length;
           for (const chunk of audioBuffer) {
-            geminiWs!.send(JSON.stringify({
-              realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: chunk }] },
-            }));
+            geminiWs!.send(JSON.stringify(buildGeminiRealtimeInputFrame(chunk)));
           }
           audioBuffer.length = 0;
           if (count > 0) console.log(`[BRIDGE] Flushed ${count} buffered audio chunks`);
@@ -648,12 +709,15 @@ Deno.serve((req) => {
             try {
               if (geminiWs?.readyState === WebSocket.OPEN && geminiReady) {
                 const silence = new Uint8Array(640);
-                geminiWs.send(JSON.stringify({
-                  realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: b64encode(silence) }] },
-                }));
+                geminiWs.send(JSON.stringify(buildGeminiRealtimeInputFrame(b64encode(silence))));
               }
             } catch (_e) { /* ignore keepalive errors */ }
           }, 15000) as unknown as number;
+
+          if (agentConfig) {
+            sendInitialGreeting(agentConfig);
+          }
+
           return;
         }
 
@@ -700,11 +764,18 @@ Deno.serve((req) => {
               const pcm = b64decode(part.inlineData.data);
               const mulaw = pcm24kToMulaw8k(pcm);
               if (socket.readyState === WebSocket.OPEN && !closed) {
-                socket.send(JSON.stringify({
-                  event: "media",
-                  streamSid,
-                  media: { payload: b64encode(mulaw) },
-                }));
+                if (telephonyProvider === "telnyx") {
+                  socket.send(JSON.stringify({
+                    event: "media",
+                    media: { payload: b64encode(mulaw) },
+                  }));
+                } else {
+                  socket.send(JSON.stringify({
+                    event: "media",
+                    streamSid,
+                    media: { payload: b64encode(mulaw) },
+                  }));
+                }
               }
             }
           }
@@ -721,7 +792,7 @@ Deno.serve((req) => {
 
         if (msg.error) {
           console.error("[BRIDGE] Gemini API error:", JSON.stringify(msg.error));
-          cleanup("gemini_api_error");
+          return;
         }
       } catch (e) {
         console.error("[BRIDGE] Gemini message parse error:", e);
@@ -747,7 +818,26 @@ Deno.serve((req) => {
 
   socket.onmessage = async (event) => {
     try {
-      const raw = typeof event.data === "string" ? event.data : "";
+      if (typeof event.data !== "string") {
+        if (telephonyProvider !== "telnyx") {
+          telephonyProvider = "telnyx";
+          console.log("[BRIDGE] Provider=telnyx (binary data)");
+        }
+        const rawBytes = new Uint8Array(
+          event.data instanceof ArrayBuffer ? event.data : await (event.data as Blob).arrayBuffer()
+        );
+        const mulawPayload = rawBytes.length > 12 ? rawBytes.slice(12) : rawBytes;
+        const pcmB64 = b64encode(mulawToPcm16k(mulawPayload));
+        if (geminiWs && geminiWs.readyState === WebSocket.OPEN && geminiReady) {
+          geminiWs.send(JSON.stringify(buildGeminiRealtimeInputFrame(pcmB64)));
+        } else {
+          audioBuffer.push(pcmB64);
+          if (audioBuffer.length > 500) audioBuffer.shift();
+        }
+        return;
+      }
+
+      const raw = event.data;
       if (!raw) return;
       const msg = JSON.parse(raw);
 
@@ -829,9 +919,7 @@ Deno.serve((req) => {
         const pcmB64 = b64encode(pcm);
 
         if (geminiWs && geminiWs.readyState === WebSocket.OPEN && geminiReady) {
-          geminiWs.send(JSON.stringify({
-            realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: pcmB64 }] },
-          }));
+          geminiWs.send(JSON.stringify(buildGeminiRealtimeInputFrame(pcmB64)));
         } else {
           audioBuffer.push(pcmB64);
           if (audioBuffer.length > 500) audioBuffer.shift();

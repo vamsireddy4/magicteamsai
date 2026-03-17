@@ -5,19 +5,22 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-ultravox-tool-key",
 };
 
+// Initialize once to reuse across requests
+const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const ultravoxApiKey = Deno.env.get("ULTRAVOX_API_KEY") || "";
+const supabase = createClient(supabaseUrl, supabaseKey);
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
-  try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+  const startTime = Date.now();
 
+  try {
     const authHeader = req.headers.get("Authorization");
     const ultravoxToolKey = req.headers.get("x-ultravox-tool-key");
-    const ultravoxApiKey = Deno.env.get("ULTRAVOX_API_KEY") || "";
     const isTrustedUltravoxTool = !!ultravoxToolKey && !!ultravoxApiKey && ultravoxToolKey === ultravoxApiKey;
 
     const token = authHeader?.replace("Bearer ", "") || "";
@@ -54,7 +57,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Look up integration — service role and trusted tool skip user_id filter
+    // Look up integration
     let query = supabase.from("calendar_integrations").select("*").eq("id", integration_id);
     if (!isServiceRole && !isTrustedUltravoxTool && userId) {
       query = query.eq("user_id", userId);
@@ -99,13 +102,18 @@ Deno.serve(async (req) => {
 async function handleGoogleCalendar(integration: any, opts: any) {
   const apiKey = integration.api_key;
   const calendarId = integration.calendar_id || "primary";
+  const isStandardKey = apiKey?.startsWith("AIza");
+
+  const headers: Record<string, string> = {};
+  if (!isStandardKey) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+  }
 
   if (opts.test) {
-    const res = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}?key=${apiKey}`
-    );
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}${isStandardKey ? `?key=${apiKey}` : ""}`;
+    const res = await fetch(url, { headers });
     if (!res.ok) {
-      const err = await res.json();
+      const err = await res.json().catch(() => ({}));
       throw new Error(`Google Calendar API error: ${err.error?.message || res.statusText}`);
     }
     const data = await res.json();
@@ -115,11 +123,10 @@ async function handleGoogleCalendar(integration: any, opts: any) {
   const timeMin = opts.date || new Date().toISOString();
   const timeMax = new Date(new Date(timeMin).getTime() + 24 * 60 * 60 * 1000).toISOString();
 
-  const res = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?key=${apiKey}&timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime`
-  );
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime${isStandardKey ? `&key=${apiKey}` : ""}`;
+  const res = await fetch(url, { headers });
   if (!res.ok) {
-    const err = await res.json();
+    const err = await res.json().catch(() => ({}));
     throw new Error(`Google Calendar API error: ${err.error?.message || res.statusText}`);
   }
   const data = await res.json();
@@ -222,26 +229,19 @@ async function handleCalCom(integration: any, opts: any) {
   }
 
   const url = `https://api.cal.com/v2/slots/available?${params.toString()}`;
-  console.log("Cal.com v2 slots request:", url);
-
   const res = await fetch(url, { headers: authHeaders });
   if (!res.ok) {
     const errBody = await res.text();
-    console.error("Cal.com v2 slots error:", res.status, errBody);
     throw new Error(`Cal.com API error (${res.status}): ${errBody}`);
   }
 
   const data = await res.json();
   const slotsObj = data.data?.slots || data.slots || {};
-
   const flatSlots: any[] = [];
   for (const [dateKey, daySlots] of Object.entries(slotsObj)) {
     if (Array.isArray(daySlots)) {
       for (const slot of daySlots) {
-        flatSlots.push({
-          date: dateKey,
-          time: (slot as any).time || (slot as any).start,
-        });
+        flatSlots.push({ date: dateKey, time: (slot as any).time || (slot as any).start });
       }
     }
   }
@@ -253,26 +253,40 @@ async function handleGoHighLevel(integration: any, opts: any) {
   const apiKey = integration.api_key;
   const calendarId = integration.calendar_id;
 
-  if (opts.test) {
-    const res = await fetch("https://rest.gohighlevel.com/v1/calendars/" + calendarId, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    if (!res.ok) {
-      throw new Error(`GoHighLevel API error: ${res.statusText}`);
-    }
-    const data = await res.json();
-    return { success: true, calendar: data.calendar?.name || data.name };
+  if (!apiKey || !calendarId) {
+    throw new Error("GoHighLevel requires both an API Key and a Calendar ID.");
   }
 
-  const startDate = opts.date ? new Date(opts.date).getTime() : Date.now();
-  const endDate = startDate + 24 * 60 * 60 * 1000;
-  const res = await fetch(
-    `https://rest.gohighlevel.com/v1/appointments/slots?calendarId=${calendarId}&startDate=${startDate}&endDate=${endDate}`,
-    { headers: { Authorization: `Bearer ${apiKey}` } }
-  );
-  if (!res.ok) {
-    throw new Error(`GoHighLevel API error: ${res.statusText}`);
+  const isV2 = apiKey.length > 50 || apiKey.startsWith("ghl-v2-");
+
+  if (isV2) {
+    const headers = { "Authorization": `Bearer ${apiKey}`, "Version": "2021-04-15" };
+    if (opts.test) {
+      const res = await fetch(`https://services.leadconnectorhq.com/calendars/${calendarId}`, { headers });
+      if (!res.ok) throw new Error(`GHL V2 API error: ${res.statusText}`);
+      const data = await res.json();
+      return { success: true, calendar: data.calendar?.name || data.name };
+    }
+    const startDate = opts.date ? new Date(opts.date).getTime() : Date.now();
+    const endDate = startDate + 24 * 60 * 60 * 1000;
+    const url = `https://services.leadconnectorhq.com/calendars/slots?calendarId=${calendarId}&startDate=${startDate}&endDate=${endDate}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`GHL V2 slots error: ${res.statusText}`);
+    const data = await res.json();
+    return { success: true, slots: data.slots || [] };
+  } else {
+    const headers = { Authorization: `Bearer ${apiKey}` };
+    if (opts.test) {
+      const res = await fetch("https://rest.gohighlevel.com/v1/calendars/" + calendarId, { headers });
+      if (!res.ok) throw new Error(`GHL V1 API error: ${res.statusText}`);
+      const data = await res.json();
+      return { success: true, calendar: data.calendar?.name || data.name };
+    }
+    const startDate = opts.date ? new Date(opts.date).getTime() : Date.now();
+    const endDate = startDate + 24 * 60 * 60 * 1000;
+    const res = await fetch(`https://rest.gohighlevel.com/v1/appointments/slots?calendarId=${calendarId}&startDate=${startDate}&endDate=${endDate}`, { headers });
+    if (!res.ok) throw new Error(`GHL V1 slots error: ${res.statusText}`);
+    const data = await res.json();
+    return { success: true, slots: data.slots || [] };
   }
-  const data = await res.json();
-  return { success: true, slots: data.slots || [] };
 }

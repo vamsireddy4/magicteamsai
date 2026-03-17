@@ -12,7 +12,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Webhook, Loader2, Globe } from "lucide-react";
+import { Plus, Trash2, Webhook, Loader2, Globe, Pencil, MoreVertical } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { getFunctionUnavailableMessage, isEdgeFunctionUnavailable } from "@/lib/edge-functions";
 
 const WEBHOOK_EVENTS = [
   { value: "call.started", label: "Call Started" },
@@ -56,6 +63,7 @@ export default function Webhooks() {
     events: ["call.completed"] as string[],
     secret: "",
   });
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const fetchData = async () => {
     if (!user) return;
@@ -85,42 +93,92 @@ export default function Webhooks() {
         : [...f.events, event],
     }));
   };
+  const syncToUltravox = async (agentId: string | null) => {
+    try {
+      await supabase.functions.invoke("sync-ultravox-agent", {
+        body: { agent_id: agentId || "global" },
+      });
+    } catch (err) {
+      console.error("Ultravox sync failed:", err);
+      if (isEdgeFunctionUnavailable(err)) {
+        toast({ title: "Sync unavailable", description: getFunctionUnavailableMessage("Ultravox sync"), variant: "destructive" });
+      }
+    }
+  };
 
-  const handleCreate = async () => {
-    if (!user || !form.name || !form.url) return;
+  const handleSave = async () => {
+    if (!user || !form.url) return;
     setSaving(true);
-    const { error } = await supabase.from("webhooks").insert({
+    
+    // Generate a default name from URL if name is empty
+    const webhookName = form.name || (() => {
+      try { return new URL(form.url).hostname; } catch { return "Webhook"; }
+    })();
+
+    const payload = {
       user_id: user.id,
-      name: form.name,
+      name: webhookName,
       url: form.url,
       agent_id: form.agent_id === "all" ? null : form.agent_id,
       events: form.events,
       secret: form.secret || null,
-    } as any);
+    };
+
+    let error;
+    if (editingId) {
+      const { error: err } = await supabase
+        .from("webhooks")
+        .update(payload as any)
+        .eq("id", editingId);
+      error = err;
+    } else {
+      const { error: err } = await supabase
+        .from("webhooks")
+        .insert(payload as any);
+      error = err;
+    }
+
     setSaving(false);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Webhook created" });
+      toast({ title: editingId ? "Webhook updated" : "Webhook created" });
+      const targetAgentId = form.agent_id === "all" ? null : form.agent_id;
+      syncToUltravox(targetAgentId);
       setForm({ name: "", url: "", agent_id: "all", events: ["call.completed"], secret: "" });
+      setEditingId(null);
       setDialogOpen(false);
       fetchData();
     }
   };
 
-  const handleDelete = async (id: string) => {
-    const { error } = await supabase.from("webhooks").delete().eq("id", id);
+  const handleEdit = (wh: WebhookRow) => {
+    setEditingId(wh.id);
+    setForm({
+      name: wh.name,
+      url: wh.url,
+      agent_id: wh.agent_id || "all",
+      events: wh.events,
+      secret: wh.secret || "",
+    });
+    setDialogOpen(true);
+  };
+
+  const handleDelete = async (row: WebhookRow) => {
+    const { error } = await supabase.from("webhooks").delete().eq("id", row.id);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Webhook deleted" });
       fetchData();
+      syncToUltravox(row.agent_id);
     }
   };
 
-  const toggleActive = async (id: string, current: boolean) => {
-    await supabase.from("webhooks").update({ is_active: !current } as any).eq("id", id);
+  const toggleActive = async (row: WebhookRow) => {
+    await supabase.from("webhooks").update({ is_active: !row.is_active } as any).eq("id", row.id);
     fetchData();
+    syncToUltravox(row.agent_id);
   };
 
   const getAgentName = (agentId: string | null) => {
@@ -136,19 +194,21 @@ export default function Webhooks() {
             <h1 className="text-3xl font-bold tracking-tight">Webhooks</h1>
             <p className="text-muted-foreground mt-1">Send call data to external URLs when events occur.</p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <Dialog open={dialogOpen} onOpenChange={(open) => {
+            setDialogOpen(open);
+            if (!open) {
+              setEditingId(null);
+              setForm({ name: "", url: "", agent_id: "all", events: ["call.completed"], secret: "" });
+            }
+          }}>
             <DialogTrigger asChild>
               <Button><Plus className="h-4 w-4 mr-2" /> Add Webhook</Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg">
               <DialogHeader>
-                <DialogTitle>Create Webhook</DialogTitle>
+                <DialogTitle>{editingId ? "Edit Webhook" : "Create Webhook"}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Name</Label>
-                  <Input placeholder="e.g. CRM Integration" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-                </div>
                 <div className="space-y-2">
                   <Label>URL</Label>
                   <Input placeholder="https://your-api.com/webhook" value={form.url} onChange={e => setForm({ ...form, url: e.target.value })} />
@@ -182,8 +242,8 @@ export default function Webhooks() {
                   <Input placeholder="Signing secret for verification" value={form.secret} onChange={e => setForm({ ...form, secret: e.target.value })} />
                   <p className="text-xs text-muted-foreground">Used to sign webhook payloads for verification.</p>
                 </div>
-                <Button onClick={handleCreate} disabled={saving || !form.name || !form.url || form.events.length === 0} className="w-full">
-                  {saving ? "Creating..." : "Create Webhook"}
+                <Button onClick={handleSave} disabled={saving || !form.url || form.events.length === 0} className="w-full">
+                  {saving ? "Saving..." : (editingId ? "Update Webhook" : "Create Webhook")}
                 </Button>
               </div>
             </DialogContent>
@@ -205,31 +265,60 @@ export default function Webhooks() {
         ) : (
           <div className="grid gap-4">
             {webhooks.map(wh => (
-              <Card key={wh.id}>
+              <Card key={wh.id} className="overflow-hidden">
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-4 min-w-0">
-                    <Globe className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="bg-primary/10 p-2 rounded-lg shrink-0">
+                      <Globe className="h-5 w-5 text-primary" />
+                    </div>
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{wh.name}</span>
-                        <Badge variant={wh.is_active ? "default" : "secondary"}>
-                          {wh.is_active ? "Active" : "Inactive"}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground truncate">{wh.url}</p>
-                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                        <span className="text-xs text-muted-foreground">{getAgentName(wh.agent_id)} ·</span>
+                      <p className="font-medium text-sm truncate">{wh.url}</p>
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        <span className="text-[10px] text-muted-foreground mr-1">{getAgentName(wh.agent_id)}</span>
                         {wh.events.map(ev => (
-                          <Badge key={ev} variant="outline" className="text-xs">{ev}</Badge>
+                          <Badge key={ev} variant="outline" className="text-[10px] py-0 px-1.5 h-4 bg-muted/30">
+                            {ev.replace("call.", "")}
+                          </Badge>
                         ))}
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Switch checked={wh.is_active} onCheckedChange={() => toggleActive(wh.id, wh.is_active)} />
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(wh.id)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+
+                  <div className="flex items-center gap-4 shrink-0">
+                    <div className="flex items-center gap-2 mr-2">
+                      <Switch 
+                        checked={wh.is_active} 
+                        onCheckedChange={() => toggleActive(wh)} 
+                        className="scale-90"
+                      />
+                      <Badge 
+                        variant={wh.is_active ? "default" : "secondary"}
+                        className="text-[10px] py-0 px-1.5 h-4"
+                      >
+                        {wh.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </div>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleEdit(wh)}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          onClick={() => handleDelete(wh)}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </CardContent>
               </Card>

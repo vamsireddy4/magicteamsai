@@ -2,10 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  scroll-behavior: smooth;
+}
 
-html, body, #root {
+body, #root {
   height: 100%;
-  overflow: hidden;
 }
 
 @layer base {
@@ -19,17 +21,17 @@ html, body, #root {
     --popover: 0 0% 100%;
     --popover-foreground: 224 30% 12%;
 
-    --primary: 243 75% 59%;
+    --primary: 262 83% 58%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 14% 92%;
-    --secondary-foreground: 224 30% 12%;
+    --secondary: 262 20% 96%;
+    --secondary-foreground: 262 30% 12%;
 
-    --muted: 220 14% 95%;
-    --muted-foreground: 220 10% 46%;
+    --muted: 262 20% 95%;
+    --muted-foreground: 262 10% 46%;
 
-    --accent: 243 75% 95%;
-    --accent-foreground: 243 75% 40%;
+    --accent: 262 83% 95%;
+    --accent-foreground: 262 83% 40%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
@@ -40,20 +42,20 @@ html, body, #root {
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 220 13% 89%;
-    --input: 220 13% 89%;
-    --ring: 243 75% 59%;
+    --border: 262 13% 89%;
+    --input: 262 13% 89%;
+    --ring: 262 83% 58%;
 
-    --radius: 0.75rem;
+    --radius: 0.6rem;
 
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 224 30% 12%;
-    --sidebar-primary: 243 75% 59%;
+    --sidebar-foreground: 262 30% 12%;
+    --sidebar-primary: 262 83% 58%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 243 75% 95%;
-    --sidebar-accent-foreground: 243 75% 40%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 243 75% 59%;
+    --sidebar-accent: 262 83% 95%;
+    --sidebar-accent-foreground: 262 83% 40%;
+    --sidebar-border: 262 13% 91%;
+    --sidebar-ring: 262 83% 58%;
   }
 
   .dark {
@@ -66,17 +68,17 @@ html, body, #root {
     --popover: 224 25% 10%;
     --popover-foreground: 220 14% 92%;
 
-    --primary: 243 75% 65%;
+    --primary: 262 83% 65%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 224 20% 16%;
-    --secondary-foreground: 220 14% 92%;
+    --secondary: 262 20% 16%;
+    --secondary-foreground: 262 14% 92%;
 
-    --muted: 224 20% 14%;
-    --muted-foreground: 220 10% 55%;
+    --muted: 262 20% 14%;
+    --muted-foreground: 262 10% 55%;
 
-    --accent: 243 50% 18%;
-    --accent-foreground: 243 75% 80%;
+    --accent: 262 50% 18%;
+    --accent-foreground: 262 83% 80%;
 
     --destructive: 0 62% 45%;
     --destructive-foreground: 0 0% 100%;
@@ -87,18 +89,18 @@ html, body, #root {
     --warning: 38 80% 45%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 224 20% 18%;
-    --input: 224 20% 18%;
-    --ring: 243 75% 65%;
+    --border: 262 20% 18%;
+    --input: 262 20% 18%;
+    --ring: 262 83% 65%;
 
-    --sidebar-background: 224 25% 10%;
-    --sidebar-foreground: 220 14% 92%;
-    --sidebar-primary: 243 75% 65%;
+    --sidebar-background: 262 25% 10%;
+    --sidebar-foreground: 262 14% 92%;
+    --sidebar-primary: 262 83% 65%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 243 50% 18%;
-    --sidebar-accent-foreground: 243 75% 80%;
-    --sidebar-border: 224 20% 18%;
-    --sidebar-ring: 243 75% 65%;
+    --sidebar-accent: 262 50% 18%;
+    --sidebar-accent-foreground: 262 83% 80%;
+    --sidebar-border: 262 20% 18%;
+    --sidebar-ring: 262 83% 65%;
   }
 }
 
@@ -108,8 +110,13 @@ html, body, #root {
   }
 
   body {
-    @apply bg-background text-foreground font-sans antialiased;
-    font-family: 'Satoshi', system-ui, sans-serif;
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Satoshi', system-ui, sans-serif !important;
+  }
+
+  button, a, input, select, textarea {
+    @apply transition-all duration-200;
+    font-family: inherit;
   }
 }
 

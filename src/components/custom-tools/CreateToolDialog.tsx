@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Plus, Trash2, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getFunctionUnavailableMessage, isEdgeFunctionUnavailable } from "@/lib/edge-functions";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const PARAM_LOCATIONS = ["Body", "Query String", "Path", "Header"];
@@ -223,6 +224,9 @@ export default function CreateToolDialog({ agents, userId, onCreated }: CreateTo
         });
       } catch (syncErr) {
         console.error("Ultravox sync after tool creation failed:", syncErr);
+        if (isEdgeFunctionUnavailable(syncErr)) {
+          toast({ title: "Tool created with warning", description: getFunctionUnavailableMessage("Ultravox sync"), variant: "destructive" });
+        }
       }
       resetForm();
       setOpen(false);

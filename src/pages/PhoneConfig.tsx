@@ -11,13 +11,13 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Phone, Trash2, Settings, Eye, EyeOff, CheckCircle2, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import twilioLogo from "@/assets/twilio-logo.png";
-import telnyxLogo from "@/assets/telnyx-logo.png";
+import { getCachedLogoDataUrl, PHONE_PROVIDER_META } from "@/lib/provider-logos";
 
 interface PhoneConfig {
   id: string;
   user_id: string;
   provider: string;
+  logo_url?: string | null;
   phone_number: string;
   twilio_account_sid: string | null;
   twilio_auth_token: string | null;
@@ -32,8 +32,8 @@ interface PhoneConfig {
 const PROVIDERS = [
   {
     id: "twilio",
-    name: "Twilio",
-    logo: twilioLogo,
+    name: PHONE_PROVIDER_META.twilio.name,
+    logo: PHONE_PROVIDER_META.twilio.logo,
     description: "Industry-standard cloud communications platform for voice calls.",
     fields: [
       { key: "twilio_account_sid", label: "Account SID", placeholder: "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", type: "text", help: "Find this in your Twilio Console dashboard." },
@@ -43,8 +43,8 @@ const PROVIDERS = [
   },
   {
     id: "telnyx",
-    name: "Telnyx",
-    logo: telnyxLogo,
+    name: PHONE_PROVIDER_META.telnyx.name,
+    logo: PHONE_PROVIDER_META.telnyx.logo,
     description: "Global carrier-grade voice platform with competitive pricing.",
     fields: [
       { key: "telnyx_api_key", label: "API Key", placeholder: "KEY...", type: "password", help: "Find your API key in the Telnyx Mission Control Portal under Auth." },
@@ -66,11 +66,26 @@ export default function PhoneConfig() {
   const [saving, setSaving] = useState(false);
   const [editingConfig, setEditingConfig] = useState<PhoneConfig | null>(null);
 
+  const backfillMissingLogos = async (rows: PhoneConfig[]) => {
+    const missing = rows.filter((row) => !row.logo_url && PHONE_PROVIDER_META[row.provider]);
+    if (missing.length === 0) return;
+
+    await Promise.all(
+      missing.map(async (row) => {
+        const meta = PHONE_PROVIDER_META[row.provider];
+        const logoUrl = await getCachedLogoDataUrl(meta.logo);
+        await supabase.from("phone_configs").update({ logo_url: logoUrl } as any).eq("id", row.id);
+      })
+    );
+  };
+
   const fetchConfigs = async () => {
     if (!user) return;
     const { data } = await supabase.from("phone_configs").select("*").order("created_at", { ascending: false });
-    setConfigs((data as PhoneConfig[]) || []);
+    const rows = (data as PhoneConfig[]) || [];
+    setConfigs(rows);
     setLoading(false);
+    void backfillMissingLogos(rows);
   };
 
   useEffect(() => {
@@ -111,6 +126,7 @@ export default function PhoneConfig() {
     const data: Record<string, any> = {
       user_id: user.id,
       provider: selectedProvider,
+      logo_url: await getCachedLogoDataUrl(PHONE_PROVIDER_META[selectedProvider].logo),
       phone_number: form.phone_number,
     };
 
@@ -182,7 +198,7 @@ export default function PhoneConfig() {
                     <Card key={config.id}>
                       <CardContent className="flex items-center justify-between p-4">
                         <div className="flex items-center gap-3">
-                          <img src={provider?.logo} alt={provider?.name} className="h-8 w-8 rounded object-contain" />
+                          <img src={config.logo_url || provider?.logo} alt={provider?.name} className="h-8 w-8 rounded object-contain" />
                           <div>
                             <div className="flex items-center gap-2">
                               <p className="font-medium">{config.phone_number}</p>

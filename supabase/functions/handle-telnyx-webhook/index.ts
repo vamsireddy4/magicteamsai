@@ -6,6 +6,39 @@ const corsHeaders = {
 };
 
 const TERMINAL_STATUSES = new Set(["completed", "busy", "no-answer", "canceled", "failed"]);
+const TELNYX_TRANSFER_STATE_PREFIX = "transfer-state:";
+const TELNYX_TRANSFER_LEG_TYPE = "transfer-leg";
+
+function decodeTelnyxTransferState(value: string | null | undefined) {
+  if (!value || !value.startsWith(TELNYX_TRANSFER_STATE_PREFIX)) return null;
+  try {
+    return JSON.parse(atob(value.slice(TELNYX_TRANSFER_STATE_PREFIX.length)));
+  } catch {
+    return null;
+  }
+}
+
+function encodeTelnyxTransferState(payload: {
+  currentIndex: number;
+  forwardingNumbers: Array<{ phone_number: string; label?: string | null }>;
+  fromNumber: string;
+  currentLegAnswered?: boolean;
+}) {
+  return `${TELNYX_TRANSFER_STATE_PREFIX}${btoa(JSON.stringify(payload))}`;
+}
+
+function decodeTelnyxTransferLegState(value: string | null | undefined) {
+  if (!value) return null;
+  try {
+    const decoded = JSON.parse(atob(value));
+    if (decoded?.type === TELNYX_TRANSFER_LEG_TYPE && decoded?.originalCallControlId) {
+      return decoded as { type: string; originalCallControlId: string; currentIndex: number };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
 
 async function fireAgentWebhooks(supabase: any, agentId: string, event: string, payload: Record<string, any>) {
   if (!agentId) return;
@@ -75,14 +108,53 @@ Deno.serve(async (req) => {
     }
 
     if (eventType === "call.answered") {
+      const legTransferState = decodeTelnyxTransferLegState(payload?.client_state);
       const { data: callState, error } = await supabase
         .from("telnyx_call_state")
         .select("*")
         .eq("call_control_id", callControlId)
         .single();
 
+      const transferState = decodeTelnyxTransferState(callState?.join_url);
+
       if (error || !callState) {
-        console.log(`[telnyx-webhook] No call state found for ${callControlId}, might be using inline stream params`);
+        if (legTransferState?.originalCallControlId) {
+          const { data: originalCallState } = await supabase
+            .from("telnyx_call_state")
+            .select("*")
+            .eq("call_control_id", legTransferState.originalCallControlId)
+            .maybeSingle();
+          const originalTransferState = decodeTelnyxTransferState(originalCallState?.join_url);
+          if (originalTransferState) {
+            console.log(`[telnyx-webhook] call.answered for transferred leg ${callControlId}, marking original chain as answered`);
+            await supabase
+              .from("telnyx_call_state")
+              .update({
+                join_url: encodeTelnyxTransferState({
+                  currentIndex: legTransferState.currentIndex,
+                  forwardingNumbers: originalTransferState.forwardingNumbers,
+                  fromNumber: originalTransferState.fromNumber,
+                  currentLegAnswered: true,
+                }),
+              })
+              .eq("call_control_id", legTransferState.originalCallControlId);
+          }
+        } else {
+          console.log(`[telnyx-webhook] No call state found for ${callControlId}, might be using inline stream params`);
+        }
+      } else if (transferState) {
+        console.log(`[telnyx-webhook] call.answered for transfer state ${callControlId}, no AI stream attach needed`);
+        await supabase
+          .from("telnyx_call_state")
+          .update({
+            join_url: encodeTelnyxTransferState({
+              currentIndex: transferState.currentIndex,
+              forwardingNumbers: transferState.forwardingNumbers,
+              fromNumber: transferState.fromNumber,
+              currentLegAnswered: true,
+            }),
+          })
+          .eq("call_control_id", callControlId);
       } else {
         console.log(`[telnyx-webhook] Starting streaming for call ${callControlId} -> ${callState.join_url}`);
 
@@ -158,6 +230,86 @@ Deno.serve(async (req) => {
         callStatus = "no-answer";
       } else if (normalizedCause.includes("unallocated") || normalizedCause.includes("no_route") || normalizedCause.includes("invalid")) {
         callStatus = "failed";
+      }
+
+      const legTransferState = decodeTelnyxTransferLegState(payload?.client_state);
+      const { data: callState } = await supabase
+        .from("telnyx_call_state")
+        .select("*")
+        .eq("call_control_id", callControlId)
+        .maybeSingle();
+
+      const transferState = decodeTelnyxTransferState(callState?.join_url);
+      const originalTransferCallControlId = legTransferState?.originalCallControlId || callControlId;
+
+      let originalTransferState = transferState;
+      let originalCallState = callState;
+      if (legTransferState?.originalCallControlId && legTransferState.originalCallControlId !== callControlId) {
+        const { data } = await supabase
+          .from("telnyx_call_state")
+          .select("*")
+          .eq("call_control_id", legTransferState.originalCallControlId)
+          .maybeSingle();
+        originalCallState = data;
+        originalTransferState = decodeTelnyxTransferState(data?.join_url);
+      }
+
+      const currentTransferIndex = legTransferState?.currentIndex ?? originalTransferState?.currentIndex ?? 0;
+      const currentLegAnswered = Boolean(originalTransferState?.currentLegAnswered);
+      const shouldRetryTransfer =
+        originalTransferState &&
+        !currentLegAnswered &&
+        (callStatus === "busy" || callStatus === "no-answer" || callStatus === "failed" || callStatus === "completed") &&
+        currentTransferIndex + 1 < originalTransferState.forwardingNumbers.length;
+
+      if (shouldRetryTransfer) {
+        const nextIndex = currentTransferIndex + 1;
+        const nextEntry = originalTransferState.forwardingNumbers[nextIndex];
+        console.log(`[telnyx-webhook] Transfer fallback ${nextIndex + 1}/${originalTransferState.forwardingNumbers.length}: ${nextEntry.phone_number}`);
+
+        const transferResponse = await fetch(
+          `https://api.telnyx.com/v2/calls/${originalTransferCallControlId}/actions/transfer`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${originalCallState.telnyx_api_key}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              to: nextEntry.phone_number,
+              from: originalTransferState.fromNumber,
+              timeout_secs: 10,
+              park_after_unbridge: "self",
+              target_leg_client_state: btoa(JSON.stringify({
+                type: TELNYX_TRANSFER_LEG_TYPE,
+                originalCallControlId: originalTransferCallControlId,
+                currentIndex: nextIndex,
+              })),
+              command_id: crypto.randomUUID(),
+            }),
+          }
+        );
+
+        if (transferResponse.ok) {
+          await supabase
+            .from("telnyx_call_state")
+            .update({
+              join_url: encodeTelnyxTransferState({
+                currentIndex: nextIndex,
+                forwardingNumbers: originalTransferState.forwardingNumbers,
+                fromNumber: originalTransferState.fromNumber,
+                currentLegAnswered: false,
+              }),
+            })
+            .eq("call_control_id", originalTransferCallControlId);
+
+          return new Response(JSON.stringify({ ok: true, retried: true }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const retryErr = await transferResponse.text();
+        console.error(`[telnyx-webhook] Transfer fallback failed: ${retryErr}`);
       }
 
       const { error: updateError } = await supabase

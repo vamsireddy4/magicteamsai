@@ -77,10 +77,8 @@ const GEMINI_VOICES = [
 ];
 
 const SARVAM_MODELS: UltravoxModel[] = [
-  { name: "sarvam-m" },
   { name: "sarvam-30b" },
   { name: "sarvam-105b" },
-  { name: "sarvam-105b-32k" },
 ];
 
 const SARVAM_VOICES = [
@@ -178,37 +176,68 @@ export default function AgentForm() {
     });
 
     if (isEditing) {
-      supabase.from("agents").select("*").eq("id", id).single().then(async ({ data }) => {
-        if (data) {
-          const existingBotId = (data as any).ultravox_agent_id || null;
+      supabase.from("agents").select("*").eq("id", id).single().then(async ({ data, error }) => {
+        if (error || !data) {
+          toast({ title: "Agent not found", description: "This agent may have been deleted.", variant: "destructive" });
+          navigate("/agents");
+          return;
+        }
 
-          setForm({
-            name: data.name, system_prompt: data.system_prompt, voice: data.voice,
-            temperature: Number(data.temperature), first_speaker: data.first_speaker,
-            language_hint: data.language_hint || "en", max_duration: data.max_duration || 300,
-            is_active: data.is_active, phone_number_id: data.phone_number_id,
-            model: (data as any).model || "fixie-ai/ultravox-v0.7",
-            ai_provider: (data as any).ai_provider || "ultravox",
+        const existingBotId = (data as any).ultravox_agent_id || null;
+
+        setForm({
+          name: data.name, system_prompt: data.system_prompt, voice: data.voice,
+          temperature: Number(data.temperature), first_speaker: data.first_speaker,
+          language_hint: data.language_hint || "en", max_duration: data.max_duration || 300,
+          is_active: data.is_active, phone_number_id: data.phone_number_id,
+          model: (data as any).model || "fixie-ai/ultravox-v0.7",
+          ai_provider: (data as any).ai_provider || "ultravox",
+        });
+        setUltravoxAgentId(existingBotId);
+
+        if ((data as any).ai_provider === "ultravox" && !existingBotId) {
+          const { data: syncData } = await supabase.functions.invoke("sync-ultravox-agent", {
+            body: { agent_id: data.id },
           });
-          setUltravoxAgentId(existingBotId);
-
-          if ((data as any).ai_provider === "ultravox" && !existingBotId) {
-            const { data: syncData } = await supabase.functions.invoke("sync-ultravox-agent", {
-              body: { agent_id: data.id },
-            });
-            if (syncData?.ultravox_agent_id) {
-              setUltravoxAgentId(syncData.ultravox_agent_id);
-            }
+          if (syncData?.ultravox_agent_id) {
+            setUltravoxAgentId(syncData.ultravox_agent_id);
           }
         }
       });
 
       // Fetch forwarding numbers ordered by priority
-      supabase.from("call_forwarding_numbers").select("id, phone_number, label, priority").eq("agent_id", id)
+      supabase.from("call_forwarding_numbers")
+        .select("id, phone_number, label, priority")
+        .eq("agent_id", id)
         .order("priority", { ascending: true })
         .then(({ data }) => setForwardingNumbers(data || []));
     }
-  }, [user, id]);
+  }, [user, id, navigate, toast]);
+
+  const handleDelete = async () => {
+    if (!id || !window.confirm("Are you sure you want to delete this agent? This action cannot be undone.")) return;
+    
+    setLoading(true);
+    try {
+      const { error } = await supabase.functions.invoke("delete-ultravox-agent", {
+        body: { agent_id: id },
+      });
+      
+      // Even if backup sync fails, we try to delete locally if edge function is unavailable
+      if (error) {
+        console.error("Delete error:", error);
+        const { error: localError } = await supabase.from("agents").delete().eq("id", id);
+        if (localError) throw localError;
+      }
+
+      toast({ title: "Agent deleted" });
+      navigate("/agents");
+    } catch (err: any) {
+      toast({ title: "Error deleting agent", description: err.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if ((voices.length > 0 || GEMINI_VOICES.length > 0 || SARVAM_VOICES.length > 0) && form.voice) {
@@ -245,28 +274,22 @@ export default function AgentForm() {
         if (syncError || syncData?.error) {
           const errMsg = syncError?.message || syncData?.error || "Unknown sync error";
           console.error("Ultravox sync error:", errMsg, syncData?.details);
-          
-          // Rollback: delete the newly created agent if sync failed on creation
-          if (!isEditing && savedAgentId) {
-            await supabase.from("agents").delete().eq("id", savedAgentId);
-            toast({ title: "Agent creation failed", description: `Backend sync failed: ${errMsg}. The agent was not saved. Please try again.`, variant: "destructive" });
-            setLoading(false);
-            return;
-          }
-          
-          toast({ title: "Warning", description: `Agent saved but backend sync failed: ${errMsg}`, variant: "destructive" });
+
+          toast({
+            title: isEditing ? "Agent updated with warning" : "Agent created with warning",
+            description: `The agent was saved, but backend sync failed: ${errMsg}. You can retry by opening the agent again after Edge Functions are available.`,
+            variant: "destructive"
+          });
         } else if (syncData?.ultravox_agent_id) {
           setUltravoxAgentId(syncData.ultravox_agent_id);
         }
       } catch (err: any) {
         console.error("Ultravox sync error:", err);
-        // Rollback on creation
-        if (!isEditing && savedAgentId) {
-          await supabase.from("agents").delete().eq("id", savedAgentId);
-          toast({ title: "Agent creation failed", description: "Backend sync failed. The agent was not saved. Please try again.", variant: "destructive" });
-          setLoading(false);
-          return;
-        }
+        toast({
+          title: isEditing ? "Agent updated with warning" : "Agent created with warning",
+          description: "The agent was saved, but backend sync is unavailable right now. Retry later after the Supabase Edge Functions are deployed.",
+          variant: "destructive"
+        });
       }
     }
 
@@ -372,7 +395,7 @@ export default function AgentForm() {
                       const defaults = val === "gemini"
                         ? { model: "gemini-2.5-flash-preview-native-audio", voice: "Puck" }
                         : val === "sarvam"
-                        ? { model: "sarvam-m", voice: "anushka", language_hint: "en-IN" }
+                        ? { model: "sarvam-30b", voice: "anushka", language_hint: "en-IN" }
                         : { model: "fixie-ai/ultravox-v0.7", voice: "terrence" };
                       setForm({ ...form, ai_provider: val, ...defaults });
                       setUseCustomVoice(false);
@@ -565,9 +588,28 @@ export default function AgentForm() {
                 </Card>
               )}
 
-              <div className="flex gap-3">
-                <Button type="submit" disabled={loading}>{loading ? "Saving..." : isEditing ? "Update Agent" : "Create Agent"}</Button>
-                <Button type="button" variant="outline" onClick={() => navigate("/agents")}>Cancel</Button>
+              <div className="flex items-center justify-between gap-3 pt-6 border-t mt-4">
+                <div className="flex gap-3">
+                  <Button type="submit" disabled={loading}>{loading ? "Saving..." : isEditing ? "Update Agent" : "Create Agent"}</Button>
+                  <Button type="button" variant="outline" onClick={() => navigate("/agents")}>Cancel</Button>
+                </div>
+                
+                {isEditing && (
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10" 
+                    onClick={async () => {
+                      await handleDelete();
+                      // The user specifically asked for automatic refresh
+                      window.location.href = "/agents";
+                    }}
+                    disabled={loading}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Agent
+                  </Button>
+                )}
               </div>
             </form>
           </TabsContent>

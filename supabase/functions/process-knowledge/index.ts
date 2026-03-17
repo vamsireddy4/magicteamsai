@@ -13,11 +13,11 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
+  const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
 
-  if (!lovableApiKey) {
+  if (!geminiApiKey) {
     return new Response(
-      JSON.stringify({ error: "LOVABLE_API_KEY not configured" }),
+      JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
@@ -122,36 +122,24 @@ Deno.serve(async (req) => {
           const mimeType = isPdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
           // Use Gemini directly with the file as inline data
-          const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${lovableApiKey}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              model: "google/gemini-2.5-flash",
-              messages: [
-                {
-                  role: "system",
-                  content:
-                    "You are a knowledge extraction assistant. Your job is to extract and structure ALL key information from the provided document into clean, organized text that an AI phone agent can reference during calls. Include all important facts, details, policies, FAQs, pricing, contact info, services, procedures, and any other relevant information. Organize with clear headings and bullet points. Be thorough - do not omit any useful information. Output plain text only, no markdown formatting.",
-                },
-                {
-                  role: "user",
-                  content: [
-                    {
-                      type: "image_url",
-                      image_url: {
-                        url: `data:${mimeType};base64,${base64Data}`,
-                      },
+              contents: [{
+                role: "user",
+                parts: [
+                  { text: "You are a knowledge extraction assistant. Extract and structure all key information from this document into clean organized text for an AI phone agent. Include all important facts, policies, pricing, contact info, services, procedures, and FAQs. Output plain text only." },
+                  {
+                    inlineData: {
+                      mimeType,
+                      data: base64Data,
                     },
-                    {
-                      type: "text",
-                      text: "Extract and structure all key information from this document.",
-                    },
-                  ],
-                },
-              ],
+                  },
+                ],
+              }],
             }),
           });
 
@@ -169,7 +157,7 @@ Deno.serve(async (req) => {
           }
 
           const aiData = await aiResponse.json();
-          const extractedContent = aiData.choices?.[0]?.message?.content || "";
+          const extractedContent = aiData?.candidates?.[0]?.content?.parts?.map((part: any) => part?.text || "").join("") || "";
           const finalContent = extractedContent.slice(0, 15000);
 
           await supabase
@@ -222,26 +210,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Send to Gemini AI via Lovable AI Gateway for extraction
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a knowledge extraction assistant. Your job is to extract and structure ALL key information from the provided content into clean, organized text that an AI phone agent can reference during calls. Include all important facts, details, policies, FAQs, pricing, contact info, services, procedures, and any other relevant information. Organize with clear headings and bullet points. Be thorough - do not omit any useful information. Output plain text only, no markdown formatting.",
-          },
-          {
-            role: "user",
-            content: `Extract and structure all key information from the following content:\n\n${truncatedText}`,
-          },
-        ],
+        contents: [{
+          role: "user",
+          parts: [{
+            text: `You are a knowledge extraction assistant. Extract and structure ALL key information from the following content into clean organized text for an AI phone agent. Include facts, policies, pricing, contact info, services, procedures, and FAQs. Output plain text only.\n\n${truncatedText}`,
+          }],
+        }],
       }),
     });
 
@@ -281,7 +261,7 @@ Deno.serve(async (req) => {
     }
 
     const aiData = await aiResponse.json();
-    const extractedContent = aiData.choices?.[0]?.message?.content || "";
+    const extractedContent = aiData?.candidates?.[0]?.content?.parts?.map((part: any) => part?.text || "").join("") || "";
 
     // Truncate to ~15K chars for system prompt manageability
     const finalContent = extractedContent.slice(0, 15000);

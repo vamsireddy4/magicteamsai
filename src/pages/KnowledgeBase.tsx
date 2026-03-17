@@ -14,6 +14,8 @@ import { Separator } from "@/components/ui/separator";
 import { Plus, BookOpen, FileText, Globe, Trash2, MessageSquare, Upload, Link, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Tables } from "@/integrations/supabase/types";
+import { getErrorMessage, getFunctionUnavailableMessage, isEdgeFunctionUnavailable } from "@/lib/edge-functions";
+import { extractKnowledgeFromFileWithGemini, extractKnowledgeFromUrlWithGemini } from "@/lib/gemini";
 
 type ContentTab = "files" | "urls";
 
@@ -32,7 +34,7 @@ interface KBItem {
 }
 
 export default function KnowledgeBase() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { toast } = useToast();
   const [items, setItems] = useState<KBItem[]>([]);
   const [agents, setAgents] = useState<Tables<"agents">[]>([]);
@@ -82,9 +84,40 @@ export default function KnowledgeBase() {
       const { error } = await supabase.functions.invoke("process-knowledge", {
         body: { knowledge_item_id: itemId },
       });
-      if (error) console.error("Processing error:", error);
+      if (error) {
+        if (isEdgeFunctionUnavailable(error)) {
+          const { data: item } = await supabase
+            .from("knowledge_base_items")
+            .select("id, website_url, content")
+            .eq("id", itemId)
+            .single();
+
+          if (item?.website_url) {
+            const extractedContent = await extractKnowledgeFromUrlWithGemini(item.website_url, item.content, profile?.gemini_api_key);
+            const mergedContent = [item.content?.trim(), extractedContent].filter(Boolean).join("\n\n");
+            const { error: updateError } = await supabase
+              .from("knowledge_base_items")
+              .update({ content: mergedContent, processing_status: "completed" })
+              .eq("id", itemId);
+
+            if (updateError) {
+              throw updateError;
+            }
+            return;
+          }
+
+          toast({ title: "Processing unavailable", description: getFunctionUnavailableMessage("Knowledge extraction"), variant: "destructive" });
+          return;
+        }
+        console.error("Processing error:", error);
+      }
     } catch (e) {
+      if (isEdgeFunctionUnavailable(e)) {
+        toast({ title: "Processing unavailable", description: getFunctionUnavailableMessage("Knowledge extraction"), variant: "destructive" });
+        return;
+      }
       console.error("Failed to trigger processing:", e);
+      toast({ title: "Processing error", description: getErrorMessage(e), variant: "destructive" });
     }
   };
 
@@ -98,17 +131,21 @@ export default function KnowledgeBase() {
 
     if (contentTab === "files" && files.length > 0) {
       for (const file of files) {
-        const path = `${user.id}/${Date.now()}-${file.name}`;
-        const { error: uploadError } = await supabase.storage
-          .from("knowledge-documents")
-          .upload(path, file);
-        if (uploadError) {
-          toast({ title: "Upload error", description: uploadError.message, variant: "destructive" });
+        let extractedContent = "";
+        try {
+          extractedContent = await extractKnowledgeFromFileWithGemini(file, profile?.gemini_api_key);
+        } catch (error: any) {
+          toast({ title: "File analysis error", description: error?.message || "Failed to extract file content", variant: "destructive" });
           setSaving(false);
           return;
         }
         const { data, error } = await supabase.from("knowledge_base_items").insert({
-          agent_id: agentId, user_id: user.id, type: "document", title: name, content: description || null, file_path: path,
+          agent_id: agentId,
+          user_id: user.id,
+          type: "text",
+          title: files.length > 1 ? `${name} - ${file.name}` : name,
+          content: [description?.trim(), extractedContent].filter(Boolean).join("\n\n"),
+          processing_status: "completed",
         }).select("id").single();
         if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); setSaving(false); return; }
         if (data) insertedIds.push(data.id);
@@ -138,7 +175,9 @@ export default function KnowledgeBase() {
     fetchData();
 
     for (const id of insertedIds) {
-      triggerProcessing(id);
+      if (contentTab !== "files") {
+        triggerProcessing(id);
+      }
     }
   };
 

@@ -6,7 +6,7 @@ const SARVAM_STT_URL = "https://api.sarvam.ai/speech-to-text";
 const SARVAM_CHAT_URL = "https://api.sarvam.ai/v1/chat/completions";
 const SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech";
 
-const FAST_CHAT_MODEL = "sarvam-m";
+const FAST_CHAT_MODEL = "sarvam-30b";
 
 const LANGUAGE_MAP: Record<string, string> = {
   en: "en-IN", hi: "hi-IN", ta: "ta-IN", te: "te-IN",
@@ -20,6 +20,22 @@ const LANGUAGE_MAP: Record<string, string> = {
 };
 
 const GREETING_AUDIO_CACHE = new Map<string, Uint8Array>();
+
+const BULBUL_V2_VOICES = new Set([
+  "anushka",
+  "manisha",
+  "vidya",
+  "arya",
+  "abhilash",
+  "karun",
+  "hitesh",
+]);
+
+function getSarvamTtsModelForVoice(voice?: string | null) {
+  const normalized = (voice || "").trim().toLowerCase();
+  if (!normalized) return "bulbul:v2";
+  return BULBUL_V2_VOICES.has(normalized) ? "bulbul:v2" : "bulbul:v3";
+}
 
 // ── μ-law decode table ──
 const MULAW_DECODE_TABLE = new Int16Array(256);
@@ -139,7 +155,7 @@ function parseTTSAudioToMulaw(audioBytes: Uint8Array): Uint8Array {
   return audioBytes;
 }
 
-function buildWav(pcm16: Uint8Array): Uint8Array {
+function buildWav(pcm16: Uint8Array, sampleRate = 8000): Uint8Array {
   const dataSize = pcm16.length;
   const header = new ArrayBuffer(44);
   const view = new DataView(header);
@@ -151,8 +167,8 @@ function buildWav(pcm16: Uint8Array): Uint8Array {
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
   view.setUint16(22, 1, true);
-  view.setUint32(24, 8000, true);
-  view.setUint32(28, 16000, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
   view.setUint16(32, 2, true);
   view.setUint16(34, 16, true);
   writeStr(36, "data");
@@ -199,16 +215,31 @@ interface AppointmentToolConfig {
 }
 
 interface AgentConfig {
+  basePrompt: string;
+  name: string;
   prompt: string;
   model: string;
   voice: string;
   languageHint: string;
+  languageLabel: string;
+  firstSpeaker: string;
+  maxDuration: number;
   userId: string;
   agentTools: AgentTool[];
   calendarIntegrations: any[];
   appointmentTools: AppointmentToolConfig[];
   forwardingNumbers: any[];
   webhooks: any[];
+  temperature?: number;
+}
+
+interface SarvamToolCall {
+  id?: string;
+  type?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
 }
 
 Deno.serve((req) => {
@@ -258,9 +289,9 @@ Deno.serve((req) => {
     const BARGEIN_SUSTAINED_MS = 150;
 
     // ── VAD + Audio Buffering for REST STT ──
-    const SPEECH_THRESHOLD = 220;
+    const SPEECH_THRESHOLD = 140;
     const SILENCE_DURATION_MS = 600;
-    const MIN_SPEECH_MS = 400;
+    const MIN_SPEECH_MS = 200;
     const MAX_BUFFER_MS = 15000;
     const SAMPLE_RATE = 8000;
     const BYTES_PER_MS = (SAMPLE_RATE * 2) / 1000;
@@ -328,21 +359,27 @@ Deno.serve((req) => {
     }
 
     async function loadAgent(): Promise<AgentConfig> {
-      let prompt = "You are a helpful AI assistant on a phone call. Be conversational and natural.";
-      let model = "sarvam-m";
+      let name = "MagicTeams AI";
+      let basePrompt = "You are a helpful AI assistant on a phone call. Be conversational and natural.";
+      let prompt = basePrompt;
+      let model = "sarvam-30b";
       let voice = "anushka";
       let languageHint = "en-IN";
+      let languageLabel = "English (India)";
+      let firstSpeaker = "FIRST_SPEAKER_AGENT";
+      let maxDuration = 300;
       let userId = "";
       let agentTools: AgentTool[] = [];
       let calendarIntegrations: any[] = [];
       let appointmentTools: AppointmentToolConfig[] = [];
       let forwardingNumbers: any[] = [];
       let webhooks: any[] = [];
+      let temperature = 0.7;
 
       try {
         const headers: Record<string, string> = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
         const [agentRes, toolsRes, kbRes, apptRes, fwdRes] = await Promise.all([
-          fetch(`${sbUrl}/rest/v1/agents?id=eq.${agentId}&select=system_prompt,model,voice,user_id,language_hint`, { headers }),
+          fetch(`${sbUrl}/rest/v1/agents?id=eq.${agentId}&select=name,system_prompt,model,voice,user_id,language_hint,temperature,first_speaker,max_duration`, { headers }),
           fetch(`${sbUrl}/rest/v1/agent_tools?agent_id=eq.${agentId}&is_active=eq.true&select=*`, { headers }),
           fetch(`${sbUrl}/rest/v1/knowledge_base_items?agent_id=eq.${agentId}&select=title,content,website_url`, { headers }),
           fetch(`${sbUrl}/rest/v1/appointment_tools?agent_id=eq.${agentId}&is_active=eq.true&select=*,calendar_integrations(*)`, { headers }),
@@ -352,13 +389,33 @@ Deno.serve((req) => {
         if (agentRes.ok) {
           const agents = await agentRes.json();
           if (agents?.length > 0) {
-            prompt = agents[0].system_prompt || prompt;
+            name = agents[0].name || name;
+            basePrompt = agents[0].system_prompt || basePrompt;
+            prompt = basePrompt;
             model = agents[0].model || model;
             voice = agents[0].voice || voice;
             userId = agents[0].user_id || "";
+            temperature = Number(agents[0].temperature ?? 0.7);
             const hint = agents[0].language_hint || "en";
             languageHint = LANGUAGE_MAP[hint] || LANGUAGE_MAP[hint.split("-")[0]] || "en-IN";
-            console.log(`[SARVAM-BRIDGE] Agent: model=${model} voice=${voice} lang=${languageHint}`);
+            languageLabel = {
+              "en-IN": "English (India)",
+              "hi-IN": "Hindi",
+              "ta-IN": "Tamil",
+              "te-IN": "Telugu",
+              "kn-IN": "Kannada",
+              "ml-IN": "Malayalam",
+              "bn-IN": "Bengali",
+              "gu-IN": "Gujarati",
+              "mr-IN": "Marathi",
+              "pa-IN": "Punjabi",
+              "od-IN": "Odia",
+              "ur-IN": "Urdu",
+              unknown: "Auto-detect",
+            }[languageHint] || languageHint;
+            firstSpeaker = agents[0].first_speaker || firstSpeaker;
+            maxDuration = Number(agents[0].max_duration ?? 300);
+            console.log(`[SARVAM-BRIDGE] Agent: name=${name} model=${model} voice=${voice} lang=${languageHint} firstSpeaker=${firstSpeaker} maxDuration=${maxDuration}`);
           }
         }
 
@@ -382,10 +439,9 @@ Deno.serve((req) => {
           const appts = await apptRes.json();
           if (appts?.length > 0) {
             appointmentTools = appts;
-            // Also gather calendar integrations from appointment tools
             for (const at of appts) {
-              if (at.calendar_integrations) {
-                calendarIntegrations.push(at.calendar_integrations);
+              if ((at as any).calendar_integrations) {
+                calendarIntegrations.push((at as any).calendar_integrations);
               }
             }
           }
@@ -396,7 +452,6 @@ Deno.serve((req) => {
           if (fwds?.length > 0) forwardingNumbers = fwds;
         }
 
-        // Fetch webhooks
         if (userId) {
           const whRes = await fetch(
             `${sbUrl}/rest/v1/webhooks?agent_id=eq.${agentId}&is_active=eq.true&select=*`,
@@ -408,31 +463,26 @@ Deno.serve((req) => {
           }
         }
 
-        // Inject tool descriptions into system prompt
         const toolDescriptions: string[] = [];
 
-        // Appointment tools
         for (const at of appointmentTools) {
-          const cal = at.calendar_integrations as any;
+          const cal = (at as any).calendar_integrations;
           if (!cal) continue;
           const enabledDays = Object.entries(at.business_hours as Record<string, any>)
             .filter(([_, v]: any) => v.enabled)
             .map(([day, v]: any) => `${day}: ${v.start}-${v.end}`)
             .join(", ");
           const typesList = (at.appointment_types as any[]).map((t: any) => `${t.name} (${t.duration}min)`).join(", ");
-          
           prompt += `\n\n--- APPOINTMENT TOOL: ${at.name} ---`;
           prompt += `\nProvider: ${at.provider}`;
           prompt += `\nBusiness Hours: ${enabledDays}`;
           prompt += `\nAppointment Types: ${typesList}`;
-
           toolDescriptions.push(
             `- check_availability: Check calendar availability. Params: {"date": "YYYY-MM-DD"}`,
             `- book_appointment: Book an appointment. Params: {"start_time": "ISO8601", "attendee_name": "Name", "attendee_email": "email", "attendee_phone": "phone", "notes": "optional notes"}`
           );
         }
 
-        // Custom tools — only show dynamic params in description
         for (const tool of agentTools) {
           const dynamicParams = (tool.parameters || []).filter((p: any) => p.paramType !== "automatic");
           const paramDescs = dynamicParams.map((p: any) => {
@@ -442,7 +492,6 @@ Deno.serve((req) => {
           toolDescriptions.push(`- ${tool.name}: ${tool.description}. Params: {${paramDescs}}`);
         }
 
-        // Call forwarding
         if (forwardingNumbers.length > 0) {
           const numbersList = forwardingNumbers.map((fn: any, i: number) => `${i + 1}. ${fn.phone_number}${fn.label ? ` (${fn.label})` : ""}`).join(", ");
           prompt += `\n\n--- CALL FORWARDING ---`;
@@ -451,7 +500,6 @@ Deno.serve((req) => {
           toolDescriptions.push(`- transfer_call: Transfer the call to a human agent. Params: {} (no params needed)`);
         }
 
-        // Add tool instruction block to prompt
         if (toolDescriptions.length > 0) {
           prompt += `\n\n--- AVAILABLE TOOLS ---`;
           prompt += `\nWhen you need to perform an action, output EXACTLY this format on its own line:`;
@@ -463,12 +511,143 @@ Deno.serve((req) => {
           prompt += `\nAfter a tool call, wait for the result before responding to the user.`;
           prompt += `\nDo NOT mention the tool call syntax to the user. Just use it when needed.`;
         }
-
       } catch (e) {
         console.error("[SARVAM-BRIDGE] Agent load error:", e);
       }
 
-      return { prompt, model, voice, languageHint, userId, agentTools, calendarIntegrations, appointmentTools, forwardingNumbers, webhooks };
+      return { basePrompt, name, prompt, model, voice, languageHint, languageLabel, firstSpeaker, maxDuration, userId, agentTools, calendarIntegrations, appointmentTools, forwardingNumbers, webhooks, temperature };
+    }
+
+    function buildSarvamSystemPrompt(extraDirective?: string) {
+      if (!agentConfig) return "";
+
+      const supportingContext = agentConfig.prompt.replace(agentConfig.basePrompt, "").trim();
+      const lines = [
+        "PRIMARY BEHAVIOR INSTRUCTIONS FROM THE USER'S WEB APP:",
+        agentConfig.basePrompt,
+        "",
+        "CALL RULES:",
+        "You are in a live phone call.",
+        `You must reply in ${agentConfig.languageLabel} (${agentConfig.languageHint}) unless the user explicitly asks you to switch languages.`,
+        `Use the configured speaking persona and voice selection: ${agentConfig.voice}.`,
+        `Respect the configured maximum call duration: ${agentConfig.maxDuration} seconds.`,
+        "Keep responses to 1-2 short natural sentences.",
+        "Be concise, conversational, and helpful.",
+        "Do not use markdown, bullet points, or formatting.",
+      ];
+
+      if (supportingContext) {
+        lines.push("", "SUPPORTING CONTEXT:", supportingContext);
+      }
+
+      if (extraDirective) {
+        lines.push("", extraDirective);
+      }
+
+      return lines.join("\n");
+    }
+
+    function extractRequiredOpeningGreeting(prompt: string): string | null {
+      const quotedMatch = prompt.match(/REQUIRED OPENING GREETING:\s*["“]([^"”]+)["”]/i);
+      if (quotedMatch?.[1]?.trim()) {
+        return quotedMatch[1].trim();
+      }
+
+      const nextLineMatch = prompt.match(/REQUIRED OPENING GREETING:\s*\n([^\n]+)/i);
+      if (nextLineMatch?.[1]?.trim()) {
+        return nextLineMatch[1].trim().replace(/^["“]|["”]$/g, "");
+      }
+
+      return null;
+    }
+
+    function buildSarvamToolDefinitions() {
+      if (!agentConfig) return [] as any[];
+
+      const tools: any[] = [];
+
+      if (agentConfig.appointmentTools.length > 0) {
+        tools.push({
+          type: "function",
+          function: {
+            name: "check_availability",
+            description: "Check available calendar slots for a given date.",
+            parameters: {
+              type: "object",
+              properties: {
+                date: { type: "string", description: "Date in YYYY-MM-DD format." },
+                duration_minutes: { type: "number", description: "Duration in minutes." },
+              },
+              required: ["date"],
+            },
+          },
+        });
+
+        tools.push({
+          type: "function",
+          function: {
+            name: "book_appointment",
+            description: "Book an appointment in the configured calendar.",
+            parameters: {
+              type: "object",
+              properties: {
+                start_time: { type: "string", description: "Start time in ISO-8601 format." },
+                end_time: { type: "string", description: "End time in ISO-8601 format." },
+                attendee_name: { type: "string", description: "Name of the attendee." },
+                attendee_email: { type: "string", description: "Email of the attendee." },
+                attendee_phone: { type: "string", description: "Phone number of the attendee." },
+                notes: { type: "string", description: "Optional notes." },
+              },
+              required: ["start_time", "attendee_name"],
+            },
+          },
+        });
+      }
+
+      if (agentConfig.forwardingNumbers.length > 0) {
+        tools.push({
+          type: "function",
+          function: {
+            name: "transfer_call",
+            description: "Transfer the call to a human agent after confirming with the caller.",
+            parameters: {
+              type: "object",
+              properties: {},
+              required: [],
+            },
+          },
+        });
+      }
+
+      for (const tool of agentConfig.agentTools) {
+        const properties: Record<string, any> = {};
+        const required: string[] = [];
+
+        for (const param of tool.parameters || []) {
+          if (param.paramType === "automatic") continue;
+          const schema = param.schema || {};
+          properties[param.name] = {
+            type: schema.type || param.type || "string",
+            description: schema.description || param.description || "",
+          };
+          if (param.required) required.push(param.name);
+        }
+
+        tools.push({
+          type: "function",
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: {
+              type: "object",
+              properties,
+              required,
+            },
+          },
+        });
+      }
+
+      return tools;
     }
 
     // ── Tool execution ──
@@ -610,7 +789,7 @@ Deno.serve((req) => {
       }
     }
 
-    // Parse [TOOL_CALL:name|{...}] from response text — balanced brace parser for nested JSON
+    // Parse legacy [TOOL_CALL:name|{...}] from response text — balanced brace parser for nested JSON
     function extractToolCall(text: string): { toolName: string; args: Record<string, any>; cleanText: string } | null {
       const prefix = /\[TOOL_CALL:(\w+)\|/;
       const match = text.match(prefix);
@@ -636,13 +815,19 @@ Deno.serve((req) => {
       }
     }
 
+    function extractNativeToolCalls(data: any): SarvamToolCall[] {
+      const toolCalls = data?.choices?.[0]?.message?.tool_calls;
+      return Array.isArray(toolCalls) ? toolCalls : [];
+    }
+
     // ── REST STT ──
     async function transcribeAudio(pcm16Data: Uint8Array): Promise<string> {
       if (pcm16Data.length < 1600) return "";
 
-      const wavData = buildWav(pcm16Data);
+      const pcm16kData = resamplePcm16(pcm16Data, 8000, 16000);
+      const wavData = buildWav(pcm16kData, 16000);
       const durationMs = (pcm16Data.length / BYTES_PER_MS).toFixed(0);
-      console.log(`[SARVAM-BRIDGE] STT: ${pcm16Data.length}b PCM16 (${durationMs}ms)`);
+      console.log(`[SARVAM-BRIDGE] STT: ${pcm16Data.length}b PCM16@8k -> ${pcm16kData.length}b PCM16@16k (${durationMs}ms)`);
 
       try {
         const formData = new FormData();
@@ -650,6 +835,7 @@ Deno.serve((req) => {
         formData.append("file", wavBlob, "audio.wav");
         formData.append("language_code", agentConfig?.languageHint || "en-IN");
         formData.append("model", "saaras:v3");
+        formData.append("mode", "transcribe");
 
         const sttStart = Date.now();
         const res = await fetch(SARVAM_STT_URL, {
@@ -665,7 +851,15 @@ Deno.serve((req) => {
         }
 
         const data = await res.json();
-        const transcript = (data.transcript || "").trim();
+        const transcript = String(
+          data.transcript ??
+          data.text ??
+          data.result?.transcript ??
+          data.results?.transcript ??
+          data.results?.[0]?.transcript ??
+          data.results?.[0]?.text ??
+          ""
+        ).trim();
         const sttLatency = Date.now() - sttStart;
         console.log(`[SARVAM-BRIDGE] STT: "${transcript}" (${sttLatency}ms)`);
         return transcript;
@@ -687,12 +881,16 @@ Deno.serve((req) => {
         conversationHistory = conversationHistory.slice(-16);
       }
 
+      const tools = buildSarvamToolDefinitions();
       const messages = [
-        { role: "system", content: agentConfig.prompt + "\n\nCRITICAL: Keep responses to 1-2 short sentences max. You are on a phone call — be brief and natural. No markdown, no lists, no formatting." },
-        ...conversationHistory,
+        { role: "system", content: buildSarvamSystemPrompt() },
+        ...conversationHistory.map((message) => ({
+          role: message.role === "system" || message.role === "tool" ? "user" : message.role,
+          content: message.content,
+        })),
       ];
 
-      const model = FAST_CHAT_MODEL;
+      const model = agentConfig.model?.includes("sarvam") ? agentConfig.model : FAST_CHAT_MODEL;
 
       try {
         const controller = new AbortController();
@@ -707,8 +905,9 @@ Deno.serve((req) => {
           body: JSON.stringify({
             model,
             messages,
+            tools: tools.length > 0 ? tools : undefined,
             max_tokens: 150,
-            temperature: 0.7,
+            temperature: agentConfig.temperature ?? 0.7,
           }),
           signal: controller.signal,
         });
@@ -721,6 +920,62 @@ Deno.serve((req) => {
         }
 
         const data = await res.json();
+        const nativeToolCalls = extractNativeToolCalls(data);
+        if (nativeToolCalls.length > 0) {
+          console.log(`[SARVAM-BRIDGE] Native tool call detected: ${nativeToolCalls.map(tc => tc.function?.name).join(", ")}`);
+
+          const toolMessages: Array<{ role: string; content: string }> = [];
+
+          for (const toolCall of nativeToolCalls) {
+            const toolName = toolCall.function?.name || "";
+            const toolArgs = JSON.parse(toolCall.function?.arguments || "{}");
+            const toolResult = await executeToolCall(toolName, toolArgs);
+            toolMessages.push({
+              role: "user",
+              content: `Tool result for ${toolName}: ${JSON.stringify(toolResult)}.`,
+            });
+          }
+
+          conversationHistory.push({ role: "assistant", content: "[Tool calls executed]" });
+          for (const tm of toolMessages) {
+            conversationHistory.push({ role: "user", content: tm.content });
+          }
+
+          const followUpRes = await fetch(SARVAM_CHAT_URL, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "api-subscription-key": sarvamApiKey!,
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                {
+                  role: "system",
+                  content: buildSarvamSystemPrompt(
+                    "A tool has already been executed. Respond naturally to the caller using the tool result. Do not ask to repeat unless the tool result actually requires clarification."
+                  ),
+                },
+                ...conversationHistory.map((message) => ({
+                  role: message.role === "system" || message.role === "tool" ? "user" : message.role,
+                  content: message.content,
+                })),
+              ],
+              max_tokens: 100,
+              temperature: agentConfig.temperature ?? 0.7,
+            }),
+          });
+
+          if (followUpRes.ok) {
+            const followUpData = await followUpRes.json();
+            const followUpMsg = (followUpData.choices?.[0]?.message?.content || "").trim();
+            const spoken = followUpMsg.replace(/[*_`#>\-\[\](){}|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 150);
+            const finalMsg = spoken || "Done. Is there anything else I can help with?";
+            conversationHistory.push({ role: "assistant", content: finalMsg });
+            return finalMsg;
+          }
+        }
+
         const rawMsg = data.choices?.[0]?.message?.content || "I didn't catch that, could you repeat?";
 
         // Check for tool call pattern
@@ -737,10 +992,10 @@ Deno.serve((req) => {
           conversationHistory.push({ role: "user", content: `Tool result for ${toolCall.toolName}: ${JSON.stringify(toolResult)}. Now respond to the user based on this result. Do NOT use tool call syntax again.` });
 
           // Re-call chat to get spoken response
-          const followUpMessages = [
-            { role: "system", content: agentConfig.prompt + "\n\nCRITICAL: Keep responses to 1-2 short sentences max. Be brief and natural. No markdown. Do NOT output any [TOOL_CALL:...] syntax." },
-            ...conversationHistory,
-          ];
+          const followUpMessages = conversationHistory.map((message) => ({
+            role: message.role === "system" ? "user" : message.role,
+            content: message.content,
+          }));
 
           const followUpRes = await fetch(SARVAM_CHAT_URL, {
             method: "POST",
@@ -748,7 +1003,20 @@ Deno.serve((req) => {
               "Content-Type": "application/json",
               "api-subscription-key": sarvamApiKey!,
             },
-            body: JSON.stringify({ model, messages: followUpMessages, max_tokens: 100, temperature: 0.7 }),
+            body: JSON.stringify({
+              model,
+              messages: [
+                {
+                  role: "system",
+                  content: buildSarvamSystemPrompt(
+                    "A tool has already been executed. Respond naturally to the caller using the tool result. Do not output legacy [TOOL_CALL:...] syntax now."
+                  ),
+                },
+                ...followUpMessages,
+              ],
+              max_tokens: 100,
+              temperature: agentConfig.temperature ?? 0.7,
+            }),
           });
 
           if (followUpRes.ok) {
@@ -784,6 +1052,69 @@ Deno.serve((req) => {
           console.error(`[SARVAM-BRIDGE] turn=${turnId} chat_error:`, e);
         }
         return "I'm sorry, could you please repeat that?";
+      }
+    }
+
+    async function generatePromptDrivenGreeting(): Promise<string> {
+      if (!agentConfig) {
+        return "Hello, how can I help you today?";
+      }
+
+      const exactGreeting = extractRequiredOpeningGreeting(agentConfig.basePrompt);
+      if (exactGreeting && agentConfig.languageHint === "en-IN") {
+        console.log(`[SARVAM-BRIDGE] Using exact required opening greeting from prompt`);
+        return exactGreeting;
+      }
+
+      const metaPrompt =
+        buildSarvamSystemPrompt(
+          "This is the very first thing you say after the caller answers. Follow the primary behavior instructions exactly. Keep it to one short natural sentence. Do not ask the user to repeat themselves unless they already spoke and were inaudible."
+        );
+
+      try {
+        const res = await fetch(SARVAM_CHAT_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "api-subscription-key": sarvamApiKey!,
+          },
+          body: JSON.stringify({
+            model: agentConfig.model?.includes("sarvam") ? agentConfig.model : FAST_CHAT_MODEL,
+            messages: [
+              {
+                role: "system",
+                content: metaPrompt,
+              },
+              {
+                role: "user",
+                content:
+                  `The caller has just answered the phone. Say your opening line now based only on the instructions above. Reply only in ${agentConfig.languageLabel} (${agentConfig.languageHint}).`,
+              },
+            ],
+            max_tokens: 80,
+            temperature: agentConfig.temperature ?? 0.7,
+          }),
+        });
+
+        if (!res.ok) {
+          console.error(`[SARVAM-BRIDGE] Greeting chat error: ${res.status} ${await res.text()}`);
+          return "Hello, how can I help you today?";
+        }
+
+        const data = await res.json();
+        const raw = (data.choices?.[0]?.message?.content || "").trim();
+        const spoken = raw
+          .replace(/\[TOOL_CALL:[^\]]*\]/g, "")
+          .replace(/[*_`#>\-\[\](){}|]/g, " ")
+          .replace(/\n+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 160);
+
+        return spoken || "Hello, how can I help you today?";
+      } catch (e) {
+        console.error("[SARVAM-BRIDGE] Greeting generation error:", e);
+        return "Hello, how can I help you today?";
       }
     }
 
@@ -847,38 +1178,47 @@ Deno.serve((req) => {
       console.log(`[SARVAM-BRIDGE] TTS: voice=${agentConfig.voice} "${text.substring(0, 60)}"`);
 
       try {
-        const res = await fetch(SARVAM_TTS_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "api-subscription-key": sarvamApiKey!,
-          },
-          body: JSON.stringify({
-            inputs: [text],
-            target_language_code: agentConfig.languageHint || "en-IN",
-            speaker: agentConfig.voice || "anushka",
-            model: "bulbul:v2",
-            audio_format: "mulaw",
-            sample_rate: 8000,
-          }),
-        });
+        const speakerCandidates = agentConfig.voice
+          ? [agentConfig.voice]
+          : ["anushka"];
 
-        if (!res.ok) {
-          console.error(`[SARVAM-BRIDGE] TTS error: ${res.status} ${await res.text()}`);
-          return null;
+        for (const speaker of speakerCandidates) {
+          const ttsModel = getSarvamTtsModelForVoice(speaker);
+          const res = await fetch(SARVAM_TTS_URL, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "api-subscription-key": sarvamApiKey!,
+            },
+            body: JSON.stringify({
+              inputs: [text],
+              target_language_code: agentConfig.languageHint || "en-IN",
+              speaker,
+              model: ttsModel,
+              audio_format: "mulaw",
+              sample_rate: 8000,
+            }),
+          });
+
+          if (!res.ok) {
+            console.error(`[SARVAM-BRIDGE] TTS error for speaker=${speaker} model=${ttsModel}: ${res.status} ${await res.text()}`);
+            continue;
+          }
+
+          const data = await res.json();
+          const audioB64 = data.audios?.[0];
+          if (!audioB64) {
+            console.error(`[SARVAM-BRIDGE] No audio in TTS response for speaker=${speaker}`);
+            continue;
+          }
+
+          const rawAudioBytes = b64decode(audioB64);
+          const mulawBytes = parseTTSAudioToMulaw(rawAudioBytes);
+          console.log(`[SARVAM-BRIDGE] TTS: speaker=${speaker} ${mulawBytes.length}b mulaw (${(mulawBytes.length / 8).toFixed(0)}ms audio)`);
+          return mulawBytes;
         }
 
-        const data = await res.json();
-        const audioB64 = data.audios?.[0];
-        if (!audioB64) {
-          console.error("[SARVAM-BRIDGE] No audio in TTS response");
-          return null;
-        }
-
-        const rawAudioBytes = b64decode(audioB64);
-        const mulawBytes = parseTTSAudioToMulaw(rawAudioBytes);
-        console.log(`[SARVAM-BRIDGE] TTS: ${mulawBytes.length}b mulaw (${(mulawBytes.length / 8).toFixed(0)}ms audio)`);
-        return mulawBytes;
+        return null;
       } catch (e) {
         console.error("[SARVAM-BRIDGE] TTS error:", e);
         return null;
@@ -962,10 +1302,14 @@ Deno.serve((req) => {
 
     async function sendImmediateGreeting() {
       if (!agentConfig || greetingSent || closed) return;
+      if (agentConfig.firstSpeaker !== "FIRST_SPEAKER_AGENT") {
+        console.log("[SARVAM-BRIDGE] Skipping greeting because first speaker is user");
+        return;
+      }
       greetingSent = true;
 
-      const greetingText = "Hello! How can I help you today?";
-      const greetingCacheKey = `${agentConfig.voice}|${agentConfig.languageHint}|greeting_v2`;
+      const greetingText = await generatePromptDrivenGreeting();
+      const greetingCacheKey = `${agentConfig.voice}|${agentConfig.languageHint}|${greetingText}`;
       console.log(`[SARVAM-BRIDGE] Sending greeting`);
 
       await speakViaSarvamTTS(greetingText, { cacheKey: greetingCacheKey });

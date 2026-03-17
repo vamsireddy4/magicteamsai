@@ -20,21 +20,38 @@ import ScheduledCalls from "./pages/ScheduledCalls";
 import CustomTools from "./pages/CustomTools";
 import CalendarIntegrations from "./pages/CalendarIntegrations";
 import Support from "./pages/Support";
+import Onboarding from "./pages/Onboarding";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      staleTime: 0,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
-          <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/auth" element={<Auth />} />
+              <Route
+                path="/onboarding"
+                element={
+                  <ProtectedRoute allowIncompleteOnboarding>
+                    <Onboarding />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/agents" element={<ProtectedRoute><Agents /></ProtectedRoute>} />
             <Route path="/agents/new" element={<ProtectedRoute><AgentForm /></ProtectedRoute>} />
             <Route path="/agents/:id" element={<ProtectedRoute><AgentForm /></ProtectedRoute>} />

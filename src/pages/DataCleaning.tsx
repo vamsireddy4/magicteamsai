@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Upload, FileSpreadsheet, Users, Phone, Play, Loader2, Sparkles } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { analyzeCsvWithGemini } from "@/lib/gemini";
 
 interface ColumnDef {
   key: string;
@@ -24,7 +25,7 @@ interface AgentRow { id: string; name: string; }
 interface PhoneConfigRow { id: string; phone_number: string; friendly_name: string | null; provider: string; }
 
 export default function DataCleaning() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { toast } = useToast();
   const [customerFile, setCustomerFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -66,13 +67,7 @@ export default function DataCleaning() {
     setProcessing(true);
     try {
       const csvContent = await customerFile.text();
-
-      const { data, error } = await supabase.functions.invoke("analyze-csv", {
-        body: { csvContent },
-      });
-
-      if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || "Analysis failed");
+      const data = await analyzeCsvWithGemini(csvContent, profile?.gemini_api_key);
 
       setColumns(data.columns || []);
       setRows(data.rows || []);

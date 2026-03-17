@@ -6,6 +6,107 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+function normalizeUltravoxLanguageHint(languageHint: string | null | undefined) {
+  const value = String(languageHint || "").trim();
+  if (!value) return "en";
+
+  const normalized = value.toLowerCase();
+  const map: Record<string, string> = {
+    english: "en",
+    en: "en",
+    "en-us": "en",
+    "en-gb": "en",
+    hindi: "hi",
+    hi: "hi",
+    "hi-in": "hi",
+    telugu: "te",
+    te: "te",
+    "te-in": "te",
+    tamil: "ta",
+    ta: "ta",
+    "ta-in": "ta",
+    kannada: "kn",
+    kn: "kn",
+    "kn-in": "kn",
+    malayalam: "ml",
+    ml: "ml",
+    "ml-in": "ml",
+  };
+
+  return map[normalized] || value;
+}
+
+async function buildUltravoxCallBody(
+  ultravoxApiKey: string,
+  agent: any,
+  systemPrompt: string,
+  selectedTools: any[],
+  medium: any,
+) {
+  if (agent.ultravox_agent_id) {
+    const response = await fetch(`https://api.ultravox.ai/api/agents/${agent.ultravox_agent_id}`, {
+      headers: { "X-API-Key": ultravoxApiKey },
+    });
+
+    if (response.ok) {
+      const agentData = await response.json();
+      const template = agentData?.callTemplate;
+      if (template) {
+        const callBody: any = {
+          systemPrompt: systemPrompt || template.systemPrompt,
+          temperature: Number(agent.temperature ?? template.temperature ?? 0.7),
+          model: template.model,
+          voice: template.voice,
+          externalVoice: template.externalVoice,
+          languageHint: normalizeUltravoxLanguageHint(agent.language_hint || template.languageHint || "en"),
+          initialMessages: template.initialMessages,
+          joinTimeout: template.joinTimeout,
+          maxDuration: agent.max_duration ? `${agent.max_duration}s` : template.maxDuration || "300s",
+          timeExceededMessage: template.timeExceededMessage,
+          inactivityMessages: template.inactivityMessages,
+          selectedTools: selectedTools.length > 0 ? selectedTools : template.selectedTools,
+          medium,
+          recordingEnabled: template.recordingEnabled,
+          firstSpeaker: template.firstSpeaker,
+          transcriptOptional: template.transcriptOptional,
+          initialOutputMedium: template.initialOutputMedium,
+          vadSettings: template.vadSettings,
+          firstSpeakerSettings: template.firstSpeakerSettings,
+          experimentalSettings: template.experimentalSettings,
+          metadata: template.metadata,
+          initialState: template.initialState,
+          dataConnection: template.dataConnection,
+          callbacks: template.callbacks,
+          voiceOverrides: template.voiceOverrides,
+        };
+        return callBody;
+      }
+    } else {
+      console.warn(`[make-outbound-call] Failed to fetch Ultravox agent ${agent.ultravox_agent_id}: ${await response.text()}`);
+    }
+  }
+
+  let modelName = agent.model || "fixie-ai/ultravox-v0.7";
+  if (modelName && !modelName.includes("/")) {
+    modelName = `fixie-ai/${modelName}`;
+  }
+
+  const callBody: any = {
+    systemPrompt,
+    model: modelName,
+    voice: agent.voice,
+    temperature: Number(agent.temperature),
+    firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT" ? { agent: {} } : { user: {} },
+    medium,
+    languageHint: normalizeUltravoxLanguageHint(agent.language_hint || "en"),
+    maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
+  };
+  if (selectedTools.length > 0) {
+    callBody.selectedTools = selectedTools;
+  }
+  return callBody;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -534,33 +635,22 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Build Ultravox medium based on telephony provider
-      // Ensure model name has proper prefix
-      let modelName = agent.model || "fixie-ai/ultravox-v0.7";
-      if (modelName && !modelName.includes("/")) {
-        modelName = `fixie-ai/${modelName}`;
-      }
-
       const medium: any = provider === "telnyx"
         ? { telnyx: {} }
         : { twilio: {} };
 
-      const ultravoxBody: any = {
+      const ultravoxBody = await buildUltravoxCallBody(
+        ultravoxApiKey,
+        agent,
         systemPrompt,
-        model: modelName,
-        voice: agent.voice,
-        temperature: Number(agent.temperature),
-        firstSpeakerSettings: agent.first_speaker === "FIRST_SPEAKER_AGENT" ? { agent: {} } : { user: {} },
+        ultravoxTools,
         medium,
-        languageHint: agent.language_hint || "en",
-        maxDuration: agent.max_duration ? `${agent.max_duration}s` : "300s",
-      };
+      );
       if (ultravoxTools.length > 0) {
-        ultravoxBody.selectedTools = ultravoxTools;
         console.log(`[make-outbound-call] selectedTools (${ultravoxTools.length}): ${JSON.stringify(ultravoxTools.map(t => t.temporaryTool?.modelToolName || "unknown"))}`);
       }
 
-      console.log(`[make-outbound-call] Creating Ultravox call with model=${modelName}, voice=${agent.voice}, provider=${provider}, medium=${JSON.stringify(medium)}, tools=${ultravoxTools.length}`);
+      console.log(`[make-outbound-call] Creating Ultravox call with model=${ultravoxBody.model}, voice=${ultravoxBody.voice}, provider=${provider}, medium=${JSON.stringify(medium)}, tools=${ultravoxTools.length}`);
 
       const ultravoxResponse = await fetch("https://api.ultravox.ai/api/calls", {
         method: "POST",

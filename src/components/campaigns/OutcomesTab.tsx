@@ -8,12 +8,14 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Loader2, ArrowLeft, MapPin, Calendar, Clock, Sparkles, Download } from "lucide-react";
+import { summarizeCallTranscriptWithGemini } from "@/lib/gemini";
+import { Plus, Search, Loader2, ArrowLeft, MapPin, Calendar, Clock, Sparkles, Download, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 
 interface Outcome {
   id: string; campaign_id: string; phone_number: string; parent_name: string | null;
@@ -51,8 +53,11 @@ const OUTCOME_COLORS: Record<string, string> = {
 
 const OUTCOMES = ["ALL", "ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEMAIL", "FLAGGED_REVIEW"];
 
+const normalizeComparablePhone = (raw: string | null | undefined) =>
+  String(raw || "").replace(/\D/g, "");
+
 export default function OutcomesTab() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { toast } = useToast();
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -64,12 +69,17 @@ export default function OutcomesTab() {
   const [filterOutcome, setFilterOutcome] = useState("ALL");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCallLog, setSelectedCallLog] = useState<CallLog | null>(null);
+  const [selectedCampaignCallLogs, setSelectedCampaignCallLogs] = useState<CallLog[]>([]);
 
   const [summaries, setSummaries] = useState<Record<string, string>>({});
   const [summarizing, setSummarizing] = useState<Record<string, boolean>>({});
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addForm, setAddForm] = useState({ campaign_id: "", phone_number: "", parent_name: "", child_names: "", venue_name: "", outcome: "PENDING", transcript: "", summary: "", attempt_number: "1" });
+
+  const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
+  const [editName, setEditName] = useState("");
+  const [updating, setUpdating] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -93,6 +103,38 @@ export default function OutcomesTab() {
     setLoading(false);
   }, [user]);
 
+  const syncCampaignCallLogsFromUltravox = async (callLogsToSync: CallLog[]) => {
+    const ultravoxLogs = callLogsToSync.filter((log) => log.ultravox_call_id);
+    if (ultravoxLogs.length === 0) return callLogsToSync;
+
+    const syncedLogs = await Promise.all(
+      ultravoxLogs.map(async (log) => {
+        try {
+          const response = await fetch(`/api/local/ultravox-call-details?callId=${encodeURIComponent(log.ultravox_call_id!)}`);
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) return log;
+
+          const updateData = {
+            duration: data?.duration ?? log.duration,
+            started_at: data?.started_at ?? log.started_at,
+            ended_at: data?.ended_at ?? log.ended_at,
+            status: data?.status ?? log.status,
+            summary: data?.summary ?? log.summary,
+            transcript: data?.transcript ?? log.transcript,
+          };
+
+          await supabase.from("call_logs").update(updateData as any).eq("id", log.id);
+          return { ...log, ...updateData };
+        } catch {
+          return log;
+        }
+      }),
+    );
+
+    const syncedById = new Map(syncedLogs.map((log) => [log.id, log]));
+    return callLogsToSync.map((log) => syncedById.get(log.id) || log);
+  };
+
   useEffect(() => {
     fetchData();
     const channel = supabase
@@ -102,6 +144,34 @@ export default function OutcomesTab() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!selectedCampaign) {
+      setSelectedCampaignCallLogs([]);
+      return;
+    }
+
+    void supabase.functions.invoke("sync-call-data").catch(() => null);
+
+    const campContacts = contacts.filter((c) => c.campaign_id === selectedCampaign.id);
+    const campPhoneDigits = new Set(campContacts.map((c) => normalizeComparablePhone(c.phone_number)));
+    const matchedLogs = callLogs.filter((cl) => cl.recipient_number && campPhoneDigits.has(normalizeComparablePhone(cl.recipient_number)));
+
+    let cancelled = false;
+    const refresh = async () => {
+      const synced = await syncCampaignCallLogsFromUltravox(matchedLogs);
+      if (!cancelled) setSelectedCampaignCallLogs(synced);
+    };
+
+    setSelectedCampaignCallLogs(matchedLogs);
+    void refresh();
+
+    const interval = window.setInterval(refresh, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [selectedCampaign, callLogs, contacts]);
 
   const handleAddOutcome = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,12 +193,71 @@ export default function OutcomesTab() {
     }
   };
 
+  const handleUpdateCampaignName = async () => {
+    if (!editingCampaign || !editName.trim() || !user) return;
+    setUpdating(true);
+    try {
+      const { error } = await supabase
+        .from("campaigns")
+        .update({ venue_name: editName.trim() })
+        .eq("id", editingCampaign.id);
+
+      if (error) throw error;
+      
+      toast({ title: "Campaign updated" });
+      setEditingCampaign(null);
+      await fetchData();
+    } catch (err: any) {
+      toast({ title: "Update failed", description: err.message, variant: "destructive" });
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleDeleteCampaign = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${name}"? This will also delete all associated contacts and data.`)) return;
+    
+    try {
+      const { error } = await supabase.from("campaigns").delete().eq("id", id);
+      if (error) throw error;
+
+      toast({ title: "Campaign deleted" });
+      if (selectedCampaign?.id === id) setSelectedCampaign(null);
+      await fetchData();
+    } catch (err: any) {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+
   const handleSummarize = async (callLogId: string) => {
     setSummarizing((prev) => ({ ...prev, [callLogId]: true }));
     try {
-      const { data, error } = await supabase.functions.invoke("summarize-call", { body: { call_id: callLogId } });
-      if (error) throw error;
-      const summaryText = data?.summary || "No summary generated.";
+      let summaryText = "";
+      const callLog = callLogs.find((log) => log.id === callLogId);
+      try {
+        const { data, error } = await supabase.functions.invoke("summarize-call", { body: { call_id: callLogId } });
+        if (error) throw error;
+        summaryText = data?.summary || "";
+      } catch {
+        const transcriptText = callLog ? formatTranscript(callLog.transcript) : null;
+        if (!callLog || !transcriptText) {
+          throw new Error("No transcript available for this call.");
+        }
+
+        const matchedContact = contacts.find((contact) => normalizeComparablePhone(contact.phone_number) === normalizeComparablePhone(callLog.recipient_number));
+        summaryText = await summarizeCallTranscriptWithGemini({
+          transcript: transcriptText,
+          direction: callLog.direction,
+          durationSeconds: callLog.duration,
+          phoneNumber: callLog.direction === "inbound" ? callLog.caller_number : callLog.recipient_number,
+          agentName: matchedContact?.first_name || null,
+        }, profile?.gemini_api_key);
+      }
+
+      if (!summaryText) {
+        summaryText = "No summary generated.";
+      }
       setSummaries((prev) => ({ ...prev, [callLogId]: summaryText }));
       // Persist to database
       await supabase.from("call_logs").update({ summary: summaryText } as any).eq("id", callLogId);
@@ -187,8 +316,7 @@ export default function OutcomesTab() {
   // ─── Campaign Detail View ───
   if (selectedCampaign) {
     const campContacts = contacts.filter((c) => c.campaign_id === selectedCampaign.id);
-    const campPhones = new Set(campContacts.map((c) => c.phone_number));
-    const campCallLogs = callLogs.filter((cl) => cl.recipient_number && campPhones.has(cl.recipient_number));
+    const campCallLogs = selectedCampaignCallLogs;
 
     // Attempt numbers
     const attemptMap: Record<string, number> = {};
@@ -234,7 +362,8 @@ export default function OutcomesTab() {
       return true;
     });
 
-    const getContactForLog = (cl: CallLog) => campContacts.find((c) => c.phone_number === cl.recipient_number);
+    const getContactForLog = (cl: CallLog) =>
+      campContacts.find((c) => normalizeComparablePhone(c.phone_number) === normalizeComparablePhone(cl.recipient_number));
 
     // Export to CSV
     const handleExportCSV = () => {
@@ -494,12 +623,32 @@ export default function OutcomesTab() {
               return (
                 <Card key={camp.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedCampaign(camp)}>
                   <CardContent className="pt-5 pb-4 space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="font-semibold text-base">{camp.venue_name}</h3>
+                    <div className="flex items-start justify-between gap-2 text-wrap">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-base truncate">{camp.venue_name}</h3>
                         {camp.venue_location && <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5"><MapPin className="h-3 w-3" /> {camp.venue_location}</p>}
                       </div>
-                      <Badge className={STATUS_COLORS[camp.status] || ""} variant="secondary">{camp.status}</Badge>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge className={STATUS_COLORS[camp.status] || ""} variant="secondary">{camp.status}</Badge>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenuItem onClick={() => {
+                              setEditingCampaign(camp);
+                              setEditName(camp.venue_name);
+                            }}>
+                              <Pencil className="h-4 w-4 mr-2" /> Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleDeleteCampaign(camp.id, camp.venue_name)}>
+                              <Trash2 className="h-4 w-4 mr-2" /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
 
                     <div className="space-y-1">
@@ -522,6 +671,33 @@ export default function OutcomesTab() {
             })}
           </div>
         )}
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingCampaign} onOpenChange={(open) => !open && setEditingCampaign(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Campaign</DialogTitle>
+            <DialogDescription>Rename your campaign to keep your outreach organized.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="campaign-name">Campaign Name</Label>
+              <Input 
+                id="campaign-name" 
+                value={editName} 
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Enter campaign name..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingCampaign(null)} disabled={updating}>Cancel</Button>
+            <Button onClick={handleUpdateCampaignName} disabled={updating || !editName.trim()}>
+              {updating ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

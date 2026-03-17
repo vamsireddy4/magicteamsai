@@ -6,6 +6,16 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const TELNYX_TRANSFER_STATE_PREFIX = "transfer-state:";
+function encodeTelnyxTransferState(payload: {
+  currentIndex: number;
+  forwardingNumbers: Array<{ phone_number: string; label?: string | null }>;
+  fromNumber: string;
+  currentLegAnswered?: boolean;
+}) {
+  return `${TELNYX_TRANSFER_STATE_PREFIX}${btoa(JSON.stringify(payload))}`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -172,10 +182,10 @@ async function initiateTwilioSequentialDial(
   if (hasNext) {
     // If this dial fails, Twilio will POST to the action URL to try the next number
     const actionUrl = `${supabaseUrl}/functions/v1/transfer-call?attempt=${attempt + 1}&amp;agent_id=${agentId}&amp;phone_config_id=${phoneConfig.id}`;
-    twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial action="${actionUrl}" timeout="30">${destination}</Dial></Response>`;
+    twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial action="${actionUrl}" timeout="10">${destination}</Dial></Response>`;
   } else {
     // Last number - no fallback, just say sorry if it fails
-    twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="30">${destination}</Dial><Say>Sorry, no one is available to take your call right now. Please try again later.</Say></Response>`;
+    twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="10">${destination}</Dial><Say>Sorry, no one is available to take your call right now. Please try again later.</Say></Response>`;
   }
 
   const updateResponse = await fetch(
@@ -253,12 +263,12 @@ async function handleTwilioCallback(req: Request, url: URL, supabase: any, supab
   if (hasNext) {
     const actionUrl = `${supabaseUrl}/functions/v1/transfer-call?attempt=${attempt + 1}&amp;agent_id=${agentId}&amp;phone_config_id=${phoneConfigId}`;
     return new Response(
-      `<?xml version="1.0" encoding="UTF-8"?><Response><Dial action="${actionUrl}" timeout="30">${destination}</Dial></Response>`,
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Dial action="${actionUrl}" timeout="10">${destination}</Dial></Response>`,
       { headers: { ...corsHeaders, "Content-Type": "text/xml" } }
     );
   } else {
     return new Response(
-      `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="30">${destination}</Dial><Say>Sorry, no one is available to take your call right now. Please try again later.</Say></Response>`,
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="10">${destination}</Dial><Say>Sorry, no one is available to take your call right now. Please try again later.</Say></Response>`,
       { headers: { ...corsHeaders, "Content-Type": "text/xml" } }
     );
   }
@@ -274,44 +284,85 @@ async function handleTelnyxTransfer(phoneConfig: any, callSid: string, forwardin
     );
   }
 
-  // Try each number sequentially
-  for (let i = 0; i < forwardingNumbers.length; i++) {
-    const destination = forwardingNumbers[i].phone_number;
-    const label = forwardingNumbers[i].label || `Person ${i + 1}`;
+  const destination = forwardingNumbers[0].phone_number;
+  const label = forwardingNumbers[0].label || "Person 1";
 
-    console.log(`Telnyx transfer attempt ${i + 1}/${forwardingNumbers.length}: ${destination} (${label})`);
+  console.log(`Telnyx transfer attempt 1/${forwardingNumbers.length}: ${destination} (${label})`);
 
-    const transferResponse = await fetch(
-      `https://api.telnyx.com/v2/calls/${callSid}/actions/transfer`,
+  try {
+    const stopStreamingResponse = await fetch(
+      `https://api.telnyx.com/v2/calls/${callSid}/actions/streaming_stop`,
       {
         method: "POST",
         headers: {
           Authorization: `Bearer ${telnyxApiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ to: destination, from: phoneConfig.phone_number }),
-      }
+        body: JSON.stringify({}),
+      },
     );
 
-    if (transferResponse.ok) {
-      return new Response(
-        JSON.stringify({ success: true, message: `Call transferred to ${destination} (${label})` }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (!stopStreamingResponse.ok) {
+      const stopText = await stopStreamingResponse.text();
+      console.warn(`Telnyx streaming_stop before transfer returned non-2xx: ${stopText}`);
     }
-
-    const err = await transferResponse.text();
-    console.error(`Telnyx transfer to ${destination} failed:`, err);
-
-    // If not the last number, continue to next
-    if (i < forwardingNumbers.length - 1) {
-      console.log(`Trying next forwarding number...`);
-      continue;
-    }
+  } catch (streamErr) {
+    console.warn("Telnyx streaming_stop before transfer failed:", streamErr);
   }
 
+  const transferResponse = await fetch(
+    `https://api.telnyx.com/v2/calls/${callSid}/actions/transfer`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${telnyxApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        to: destination,
+        from: phoneConfig.phone_number,
+        timeout_secs: 10,
+        park_after_unbridge: "self",
+        target_leg_client_state: btoa(JSON.stringify({
+          type: "transfer-leg",
+          originalCallControlId: callSid,
+          currentIndex: 0,
+        })),
+        command_id: crypto.randomUUID(),
+      }),
+    }
+  );
+
+  if (!transferResponse.ok) {
+    const err = await transferResponse.text();
+    console.error(`Telnyx transfer to ${destination} failed:`, err);
+    return new Response(
+      JSON.stringify({ error: "Transfer failed", details: err }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  await supabase.from("telnyx_call_state").upsert({
+    call_control_id: callSid,
+    join_url: encodeTelnyxTransferState({
+      currentIndex: 0,
+      forwardingNumbers: forwardingNumbers.map((entry: any) => ({
+        phone_number: entry.phone_number,
+        label: entry.label || null,
+      })),
+      fromNumber: phoneConfig.phone_number,
+      currentLegAnswered: false,
+    }),
+    telnyx_api_key: telnyxApiKey,
+    agent_id: forwardingNumbers[0]?.agent_id || null,
+    user_id: forwardingNumbers[0]?.user_id || null,
+  }, { onConflict: "call_control_id" });
+
   return new Response(
-    JSON.stringify({ error: "All forwarding numbers failed" }),
-    { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    JSON.stringify({
+      success: true,
+      message: `Transferring call to ${destination} (${label}). Will try the next number automatically if this one is busy or unanswered.`,
+    }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
   );
 }

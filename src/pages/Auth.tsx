@@ -2,6 +2,7 @@ import * as React from "react";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +11,9 @@ import { useToast } from "@/hooks/use-toast";
 import { Phone, Bot, Sparkles } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
+const GOOGLE_SETUP_ERROR = "Unsupported provider: provider is not enabled";
+const INVALID_CREDENTIALS_ERROR = "Invalid login credentials";
+
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
@@ -17,16 +21,25 @@ export default function Auth() {
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const { signIn, signUp, signInWithGoogle, user, loading: authLoading } = useAuth();
+  const [resetLoading, setResetLoading] = useState(false);
+  const {
+    signIn,
+    signUp,
+    signInWithGoogle,
+    resetPassword,
+    user,
+    loading: authLoading,
+    needsOnboarding,
+  } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
   // Redirect authenticated users
   useEffect(() => {
     if (user) {
-      navigate("/dashboard", { replace: true });
+      navigate(needsOnboarding ? "/onboarding" : "/dashboard", { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, needsOnboarding, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,13 +55,52 @@ export default function Auth() {
         });
       }
     } catch (error: any) {
+      const message = error?.message || "Authentication failed";
+      if (isLogin && message.includes(INVALID_CREDENTIALS_ERROR)) {
+        setIsLogin(false);
+        toast({
+          title: "Account not found",
+          description: "This email/password does not match an existing account in this Supabase project. Use Sign up to create one, or reset your password if the account already exists.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       toast({
         title: "Error",
-        description: error.message,
+        description: message,
         variant: "destructive",
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!email) {
+      toast({
+        title: "Enter your email",
+        description: "Provide your email first, then request a password reset.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      await resetPassword(email);
+      toast({
+        title: "Password reset sent",
+        description: "Check your email for the password reset link.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to send password reset email",
+        variant: "destructive",
+      });
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -57,9 +109,12 @@ export default function Auth() {
     try {
       await signInWithGoogle();
     } catch (error: any) {
+      const message = error?.message || "Google sign-in failed";
       toast({
         title: "Error",
-        description: error.message,
+        description: message.includes(GOOGLE_SETUP_ERROR)
+          ? "Google sign-in is not enabled in Supabase yet. Enable the Google provider in your Supabase Auth settings, then try again."
+          : message,
         variant: "destructive",
       });
     } finally {
@@ -76,59 +131,70 @@ export default function Auth() {
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen overflow-hidden">
       {/* Left side - branding */}
-      <div className="hidden lg:flex lg:w-1/2 flex-col justify-between bg-primary p-12 text-primary-foreground">
-        <div>
+      <motion.div 
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
+        className="hidden lg:flex lg:w-1/2 flex-col justify-between bg-primary p-10 text-primary-foreground relative overflow-hidden"
+      >
+        <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary to-primary/80" />
+        <div className="relative z-10">
           <div className="flex items-center gap-3 mb-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-foreground/20">
-              <Phone className="h-5 w-5" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-transparent">
+              <img src="/logo.png" alt="MagicTeams" className="h-10 w-10 object-contain" />
             </div>
             <span className="text-xl font-bold tracking-tight">MagicTeams</span>
           </div>
         </div>
-        <div className="space-y-6">
-          <h1 className="text-4xl font-bold leading-tight">
+        <div className="relative z-10 space-y-6">
+          <h1 className="text-4xl font-bold leading-tight lg:text-5xl">
             Your AI-Powered<br />Phone Receptionist
           </h1>
-          <p className="text-lg text-primary-foreground/80 max-w-md">
+          <p className="text-base text-primary-foreground/80 max-w-md md:text-lg">
             Never miss a call again. Set up intelligent AI receptionists that handle 
             calls, answer questions, and delight your customers 24/7.
           </p>
-          <div className="flex gap-6 pt-4">
-            <div className="flex items-center gap-2 text-sm text-primary-foreground/70">
+          <div className="flex flex-wrap gap-4 pt-4">
+            <div className="flex items-center gap-2 rounded-full bg-primary-foreground/10 px-4 py-2 text-sm backdrop-blur-sm">
               <Bot className="h-4 w-4" />
               <span>Custom AI Agents</span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-primary-foreground/70">
+            <div className="flex items-center gap-2 rounded-full bg-primary-foreground/10 px-4 py-2 text-sm backdrop-blur-sm">
               <Sparkles className="h-4 w-4" />
               <span>Knowledge Base</span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-primary-foreground/70">
+            <div className="flex items-center gap-2 rounded-full bg-primary-foreground/10 px-4 py-2 text-sm backdrop-blur-sm">
               <Phone className="h-4 w-4" />
               <span>Twilio Integration</span>
             </div>
           </div>
         </div>
-        <p className="text-sm text-primary-foreground/50">
+        <p className="relative z-10 text-sm text-primary-foreground/50 font-medium">
           Powered by MagicTeams AI
         </p>
-      </div>
+      </motion.div>
 
       {/* Right side - form */}
-      <div className="flex flex-1 items-center justify-center p-8">
-        <Card className="w-full max-w-md border-0 shadow-none lg:border lg:shadow-sm">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+        className="flex flex-1 items-center justify-center p-8 bg-background"
+      >
+        <Card className="w-full max-w-md border-0 shadow-none lg:border lg:shadow-xl lg:rounded-3xl transition-all duration-300">
           <CardHeader className="space-y-1 text-center">
             <div className="flex items-center justify-center gap-2 lg:hidden mb-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
-                <Phone className="h-4 w-4 text-primary-foreground" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-transparent">
+                <img src="/logo.png" alt="MagicTeams" className="h-9 w-9 object-contain" />
               </div>
               <span className="text-lg font-bold">MagicTeams</span>
             </div>
-            <CardTitle className="text-2xl font-bold">
+            <CardTitle className="text-2xl font-bold tracking-tight">
               {isLogin ? "Welcome back" : "Create an account"}
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-sm font-medium">
               {isLogin
                 ? "Sign in to manage your AI receptionists"
                 : "Get started with your AI phone receptionist"}
@@ -138,7 +204,7 @@ export default function Auth() {
             <Button
               type="button"
               variant="outline"
-              className="w-full"
+              className="w-full h-10 rounded-xl shadow-sm border-border hover:shadow-md hover:border-primary/30 transition-all font-medium"
               onClick={handleGoogleSignIn}
               disabled={googleLoading}
             >
@@ -184,6 +250,7 @@ export default function Auth() {
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     required={!isLogin}
+                    className="h-10 rounded-xl"
                   />
                 </div>
               )}
@@ -196,6 +263,7 @@ export default function Auth() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  className="h-10 rounded-xl"
                 />
               </div>
               <div className="space-y-2">
@@ -208,11 +276,22 @@ export default function Auth() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   minLength={6}
+                  className="h-10 rounded-xl"
                 />
               </div>
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full h-10 rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all active:scale-[0.98]" disabled={loading}>
                 {loading ? "Please wait..." : isLogin ? "Sign In" : "Create Account"}
               </Button>
+              {isLogin && (
+                <button
+                  type="button"
+                  onClick={handleResetPassword}
+                  disabled={resetLoading}
+                  className="w-full text-sm font-medium text-primary hover:underline disabled:opacity-50"
+                >
+                  {resetLoading ? "Sending reset link..." : "Forgot password?"}
+                </button>
+              )}
             </form>
             <div className="mt-6 text-center text-sm text-muted-foreground">
               {isLogin ? "Don't have an account? " : "Already have an account? "}
@@ -225,7 +304,7 @@ export default function Auth() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </motion.div>
     </div>
   );
 }
