@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Trash2, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import { getErrorMessage, getFunctionUnavailableMessage, isEdgeFunctionUnavailable } from "@/lib/edge-functions";
 import { CALENDAR_PROVIDER_META, getCachedLogoDataUrl } from "@/lib/provider-logos";
+import { useLocation, useNavigate } from "react-router-dom";
 
 interface CalendarIntegration {
   id: string;
@@ -73,12 +74,15 @@ const PROVIDERS = [
 export default function CalendarIntegrations() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [integrations, setIntegrations] = useState<CalendarIntegration[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
+  const [googleConnecting, setGoogleConnecting] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
 
   // Cal.com auto-fetch state
@@ -143,7 +147,202 @@ export default function CalendarIntegrations() {
     return () => { supabase.removeChannel(channel); };
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+
+    const params = new URLSearchParams(location.search);
+    if (params.get("google_oauth") !== "1") return;
+    const isPopup = params.get("popup") === "1";
+
+    const finalizeGoogleOAuth = async () => {
+      setGoogleConnecting(true);
+      try {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+
+        const session = sessionData.session;
+        const providerToken = session?.provider_token;
+        const providerRefreshToken = session?.provider_refresh_token;
+
+        if (!providerToken) {
+          throw new Error("Google OAuth completed, but no provider token was returned.");
+        }
+
+        const profileRes = await fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList/primary", {
+          headers: {
+            Authorization: `Bearer ${providerToken}`,
+          },
+        });
+
+        if (!profileRes.ok) {
+          const err = await profileRes.json().catch(() => ({}));
+          throw new Error(err.error?.message || "Failed to read your Google Calendar profile.");
+        }
+
+        const primaryCalendar = await profileRes.json();
+
+        const { data: existingIntegration, error: existingError } = await supabase
+          .from("calendar_integrations")
+          .select("id, refresh_token, config")
+          .eq("user_id", user.id)
+          .eq("provider", "google_calendar")
+          .maybeSingle();
+
+        if (existingError) throw existingError;
+
+        const integrationPayload = {
+          user_id: user.id,
+          provider: "google_calendar",
+          display_name: primaryCalendar.summary || primaryCalendar.id || "Google Calendar",
+          calendar_id: primaryCalendar.id || "primary",
+          access_token: providerToken,
+          refresh_token: providerRefreshToken || existingIntegration?.refresh_token || null,
+          token_expires_at: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
+          api_key: null,
+          config: {
+            ...(existingIntegration?.config || {}),
+            oauth_connected: true,
+            calendar_summary: primaryCalendar.summary || null,
+          },
+        } as any;
+
+        if (existingIntegration?.id) {
+          const { error: updateError } = await supabase
+            .from("calendar_integrations")
+            .update(integrationPayload)
+            .eq("id", existingIntegration.id);
+
+          if (updateError) throw updateError;
+        } else {
+          const { error: insertError } = await supabase
+            .from("calendar_integrations")
+            .insert(integrationPayload);
+
+          if (insertError) throw insertError;
+        }
+
+        toast({ title: "Google Calendar connected" });
+        await fetchData();
+        if (isPopup && window.opener) {
+          window.opener.postMessage({ type: "google-calendar-connected" }, window.location.origin);
+          window.close();
+          return;
+        }
+      } catch (err: any) {
+        if (isPopup && window.opener) {
+          window.opener.postMessage({ type: "google-calendar-error", message: getErrorMessage(err) || "Could not complete Google OAuth." }, window.location.origin);
+          window.close();
+          return;
+        }
+        toast({
+          title: "Google connection failed",
+          description: getErrorMessage(err) || "Could not complete Google OAuth.",
+          variant: "destructive",
+        });
+      } finally {
+        setGoogleConnecting(false);
+        if (!isPopup) {
+          navigate(location.pathname, { replace: true });
+        }
+      }
+    };
+
+    void finalizeGoogleOAuth();
+  }, [user, location.pathname, location.search, navigate]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === "google-calendar-connected") {
+        setGoogleConnecting(false);
+        toast({ title: "Google Calendar connected" });
+        void fetchData();
+      }
+      if (event.data?.type === "google-calendar-error") {
+        setGoogleConnecting(false);
+        toast({
+          title: "Google connection failed",
+          description: event.data?.message || "Could not complete Google OAuth.",
+          variant: "destructive",
+        });
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [toast]);
+
   const connectedProviders = integrations.map(i => i.provider);
+
+  const connectGoogleCalendar = async () => {
+    setGoogleConnecting(true);
+    const oauthOptions = {
+      redirectTo: `${window.location.origin}/calendar-integrations?google_oauth=1&popup=1`,
+      scopes: "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events",
+      queryParams: {
+        access_type: "offline",
+        prompt: "consent",
+        include_granted_scopes: "true",
+      },
+    } as const;
+
+    try {
+      const { data, error } = await supabase.auth.linkIdentity({
+        provider: "google",
+        options: oauthOptions,
+      });
+
+      if (error) throw error;
+      if (data?.url) {
+        const popup = window.open(data.url, "google-calendar-oauth", "width=520,height=720,resizable=yes,scrollbars=yes");
+        if (!popup) {
+          window.location.href = data.url;
+          return;
+        }
+        return;
+      }
+      throw new Error("Google OAuth URL was not returned.");
+    } catch (err: any) {
+      const message = getErrorMessage(err) || "";
+      const shouldFallbackToSignIn =
+        message.toLowerCase().includes("manual linking is disabled") ||
+        message.toLowerCase().includes("identity linking");
+
+      if (shouldFallbackToSignIn) {
+        try {
+          const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: "google",
+            options: oauthOptions,
+          });
+          if (error) throw error;
+          if (data?.url) {
+            const popup = window.open(data.url, "google-calendar-oauth", "width=520,height=720,resizable=yes,scrollbars=yes");
+            if (!popup) {
+              window.location.href = data.url;
+              return;
+            }
+            return;
+          }
+          throw new Error("Google OAuth URL was not returned.");
+        } catch (fallbackErr: any) {
+          setGoogleConnecting(false);
+          toast({
+            title: "Google connection failed",
+            description: getErrorMessage(fallbackErr) || "Could not start Google OAuth.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
+      setGoogleConnecting(false);
+      toast({
+        title: "Google connection failed",
+        description: message || "Could not start Google OAuth.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleCalComFetch = async () => {
     if (!form.api_key) return;
@@ -280,6 +479,16 @@ export default function CalendarIntegrations() {
   };
 
   const handleDisconnect = async (id: string) => {
+    const { error: detachError } = await supabase
+      .from("appointment_tools" as any)
+      .update({ calendar_integration_id: null } as any)
+      .eq("calendar_integration_id", id);
+
+    if (detachError) {
+      toast({ title: "Error", description: detachError.message, variant: "destructive" });
+      return;
+    }
+
     const { error } = await supabase.from("calendar_integrations").delete().eq("id", id);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -315,6 +524,10 @@ export default function CalendarIntegrations() {
   };
 
   const openConnectDialog = (providerId: string) => {
+    if (providerId === "google_calendar") {
+      void connectGoogleCalendar();
+      return;
+    }
     setSelectedProvider(providerId);
     setForm({});
     setCalStep("api_key");
@@ -400,10 +613,17 @@ export default function CalendarIntegrations() {
                                 <span className="font-medium">{integration.calendar_id || "Default"}</span>
                               </div>
                             )}
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">API Key</span>
-                              <span className="font-medium">••••{integration.api_key?.slice(-4) || "N/A"}</span>
-                            </div>
+                            {integration.provider === "google_calendar" ? (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Auth</span>
+                                <span className="font-medium">{integration.refresh_token ? "OAuth connected" : "OAuth access only"}</span>
+                              </div>
+                            ) : (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">API Key</span>
+                                <span className="font-medium">••••{integration.api_key?.slice(-4) || "N/A"}</span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </CardContent>
@@ -435,8 +655,13 @@ export default function CalendarIntegrations() {
                       </CardHeader>
                       <CardContent>
                         <p className="text-sm text-muted-foreground mb-4">{provider.description}</p>
-                        <Button className="w-full" variant={isConnected ? "outline" : "default"} disabled={isConnected} onClick={() => openConnectDialog(provider.id)}>
-                          {isConnected ? "Connected" : "Connect"}
+                        <Button
+                          className="w-full"
+                          variant={isConnected ? "outline" : "default"}
+                          disabled={isConnected || (provider.id === "google_calendar" && googleConnecting)}
+                          onClick={() => openConnectDialog(provider.id)}
+                        >
+                          {isConnected ? "Connected" : provider.id === "google_calendar" && googleConnecting ? "Connecting..." : "Connect"}
                         </Button>
                       </CardContent>
                     </Card>

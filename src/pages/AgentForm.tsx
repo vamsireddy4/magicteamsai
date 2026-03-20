@@ -20,6 +20,8 @@ import AgentKnowledgeBase from "@/components/agent-tabs/AgentKnowledgeBase";
 import AgentCustomTools from "@/components/agent-tabs/AgentCustomTools";
 import AgentWebhooks from "@/components/agent-tabs/AgentWebhooks";
 import AgentCalendarIntegrations from "@/components/agent-tabs/AgentCalendarIntegrations";
+import { AnimatePresence, motion } from "framer-motion";
+import { usePersistentState } from "@/hooks/usePersistentState";
 
 interface ForwardingNumber {
   id: string;
@@ -145,6 +147,7 @@ export default function AgentForm() {
   const [forwardingNumbers, setForwardingNumbers] = useState<ForwardingNumber[]>([]);
   const [newFwdLabel, setNewFwdLabel] = useState("");
   const [newFwdNumber, setNewFwdNumber] = useState("");
+  const [activeTab, setActiveTab] = usePersistentState(`agent-form-active-tab-${id || "new"}`, "general");
   
   const [form, setForm] = useState({
     name: "",
@@ -320,6 +323,14 @@ export default function AgentForm() {
     return found ? `${found.name} ${found.languageLabel || ""}` : form.voice;
   }, [allVoices, form.voice]);
 
+  const tabs = [
+    { value: "general", label: "General", icon: Settings, disabled: false },
+    { value: "knowledge", label: "Knowledge", icon: BookOpen, disabled: !isEditing },
+    { value: "tools", label: "Tools", icon: Wrench, disabled: !isEditing },
+    { value: "webhooks", label: "Webhooks", icon: Webhook, disabled: !isEditing },
+  ] as const;
+  const activeIndex = Math.max(tabs.findIndex((tab) => tab.value === activeTab), 0);
+
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-in">
@@ -331,16 +342,44 @@ export default function AgentForm() {
           </div>
         </div>
 
-        <Tabs defaultValue="general" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="general" className="flex items-center gap-2"><Settings className="h-4 w-4" /><span className="hidden sm:inline">General</span></TabsTrigger>
-            <TabsTrigger value="knowledge" className="flex items-center gap-2" disabled={!isEditing}><BookOpen className="h-4 w-4" /><span className="hidden sm:inline">Knowledge</span></TabsTrigger>
-            <TabsTrigger value="tools" className="flex items-center gap-2" disabled={!isEditing}><Wrench className="h-4 w-4" /><span className="hidden sm:inline">Tools</span></TabsTrigger>
-            <TabsTrigger value="webhooks" className="flex items-center gap-2" disabled={!isEditing}><Webhook className="h-4 w-4" /><span className="hidden sm:inline">Webhooks</span></TabsTrigger>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="relative grid w-full grid-cols-4 overflow-hidden rounded-xl border border-border/50 bg-muted/60 p-1">
+            <motion.div
+              className="absolute inset-y-1 rounded-lg bg-background shadow-sm"
+              animate={{
+                width: "calc(25% - 6px)",
+                x: `calc(${activeIndex * 100}% + 4px)`,
+                opacity: tabs[activeIndex]?.disabled ? 0 : 1,
+              }}
+              transition={{ type: "spring", stiffness: 380, damping: 32, mass: 0.85 }}
+            />
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  disabled={tab.disabled}
+                  className="relative z-10 flex items-center gap-2 rounded-lg bg-transparent transition-colors duration-300 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </TabsTrigger>
+              );
+            })}
           </TabsList>
 
-          <TabsContent value="general" className="mt-6">
-            <form onSubmit={handleSubmit} className="space-y-6">
+          <AnimatePresence mode="wait" initial={false}>
+            {activeTab === "general" && (
+              <TabsContent value="general" forceMount className="relative mt-6 overflow-hidden">
+                <motion.div
+                  key="general"
+                  initial={{ opacity: 0, y: 14, scale: 0.985 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.985 }}
+                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <form onSubmit={handleSubmit} className="space-y-6">
               <Card>
                 <CardHeader><CardTitle>Basic Info</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
@@ -611,35 +650,67 @@ export default function AgentForm() {
                   </Button>
                 )}
               </div>
-            </form>
-          </TabsContent>
+                  </form>
+                </motion.div>
+              </TabsContent>
+            )}
 
-          {isEditing && id && user && (
-            <>
-              <TabsContent value="knowledge" className="mt-6">
-                <Card>
-                  <CardHeader><CardTitle>Knowledge Base</CardTitle></CardHeader>
-                  <CardContent><AgentKnowledgeBase agentId={id} userId={user.id} /></CardContent>
-                </Card>
+            {isEditing && id && user && activeTab === "knowledge" && (
+              <TabsContent value="knowledge" forceMount className="relative mt-6 overflow-hidden">
+                <motion.div
+                  key="knowledge"
+                  initial={{ opacity: 0, y: 14, scale: 0.985 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.985 }}
+                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <Card>
+                    <CardHeader><CardTitle>Knowledge Base</CardTitle></CardHeader>
+                    <CardContent><AgentKnowledgeBase agentId={id} userId={user.id} /></CardContent>
+                  </Card>
+                </motion.div>
               </TabsContent>
-              <TabsContent value="tools" className="mt-6 space-y-6">
-                <Card>
-                  <CardHeader><CardTitle>Appointment Tools</CardTitle></CardHeader>
-                  <CardContent><AgentCalendarIntegrations agentId={id} userId={user.id} /></CardContent>
-                </Card>
-                <Card>
-                  <CardHeader><CardTitle>Custom Tools</CardTitle></CardHeader>
-                  <CardContent><AgentCustomTools agentId={id} agentName={form.name} userId={user.id} /></CardContent>
-                </Card>
+            )}
+
+            {isEditing && id && user && activeTab === "tools" && (
+              <TabsContent value="tools" forceMount className="relative mt-6 overflow-hidden">
+                <motion.div
+                  key="tools"
+                  initial={{ opacity: 0, y: 14, scale: 0.985 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.985 }}
+                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                  className="space-y-6"
+                >
+                  <Card>
+                    <CardHeader><CardTitle>Appointment Tools</CardTitle></CardHeader>
+                    <CardContent><AgentCalendarIntegrations agentId={id} userId={user.id} /></CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader><CardTitle>Custom Tools</CardTitle></CardHeader>
+                    <CardContent><AgentCustomTools agentId={id} agentName={form.name} userId={user.id} /></CardContent>
+                  </Card>
+                </motion.div>
               </TabsContent>
-              <TabsContent value="webhooks" className="mt-6">
-                <Card>
-                  <CardHeader><CardTitle>Webhooks</CardTitle></CardHeader>
-                  <CardContent><AgentWebhooks agentId={id} agentName={form.name} userId={user.id} /></CardContent>
-                </Card>
+            )}
+
+            {isEditing && id && user && activeTab === "webhooks" && (
+              <TabsContent value="webhooks" forceMount className="relative mt-6 overflow-hidden">
+                <motion.div
+                  key="webhooks"
+                  initial={{ opacity: 0, y: 14, scale: 0.985 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.985 }}
+                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <Card>
+                    <CardHeader><CardTitle>Webhooks</CardTitle></CardHeader>
+                    <CardContent><AgentWebhooks agentId={id} agentName={form.name} userId={user.id} /></CardContent>
+                  </Card>
+                </motion.div>
               </TabsContent>
-            </>
-          )}
+            )}
+          </AnimatePresence>
         </Tabs>
       </div>
     </DashboardLayout>

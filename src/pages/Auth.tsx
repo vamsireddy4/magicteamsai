@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator";
 
 const GOOGLE_SETUP_ERROR = "Unsupported provider: provider is not enabled";
 const INVALID_CREDENTIALS_ERROR = "Invalid login credentials";
+const ONBOARDING_FLAG_KEY = "magicteams_onboarding_signup_only";
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -36,18 +37,22 @@ export default function Auth() {
 
   // Redirect authenticated users
   useEffect(() => {
-    if (user) {
-      navigate(needsOnboarding ? "/onboarding" : "/dashboard", { replace: true });
+    // Only redirect if a user exists AND we've finished the initial auth/profile check
+    if (user && !authLoading) {
+      const shouldShowOnboarding = sessionStorage.getItem(ONBOARDING_FLAG_KEY) === "true";
+      navigate(shouldShowOnboarding ? "/onboarding" : "/dashboard", { replace: true });
     }
-  }, [user, needsOnboarding, navigate]);
+  }, [user, needsOnboarding, navigate, authLoading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
       if (isLogin) {
+        sessionStorage.removeItem(ONBOARDING_FLAG_KEY);
         await signIn(email, password);
       } else {
+        sessionStorage.setItem(ONBOARDING_FLAG_KEY, "true");
         await signUp(email, password, fullName);
         toast({
           title: "Account created!",

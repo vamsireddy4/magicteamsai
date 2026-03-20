@@ -287,6 +287,12 @@ export type Database = {
       call_logs: {
         Row: {
           agent_id: string | null
+          billed_amount: number | null
+          billed_minutes: number | null
+          billed_rate_per_minute: number | null
+          billed_seconds: number | null
+          billing_source: string | null
+          billing_status: string
           caller_number: string | null
           created_at: string
           direction: string
@@ -304,6 +310,12 @@ export type Database = {
         }
         Insert: {
           agent_id?: string | null
+          billed_amount?: number | null
+          billed_minutes?: number | null
+          billed_rate_per_minute?: number | null
+          billed_seconds?: number | null
+          billing_source?: string | null
+          billing_status?: string
           caller_number?: string | null
           created_at?: string
           direction: string
@@ -321,6 +333,12 @@ export type Database = {
         }
         Update: {
           agent_id?: string | null
+          billed_amount?: number | null
+          billed_minutes?: number | null
+          billed_rate_per_minute?: number | null
+          billed_seconds?: number | null
+          billing_source?: string | null
+          billing_status?: string
           caller_number?: string | null
           created_at?: string
           direction?: string
@@ -342,6 +360,53 @@ export type Database = {
             columns: ["agent_id"]
             isOneToOne: false
             referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      minute_transactions: {
+        Row: {
+          amount: number | null
+          call_log_id: string | null
+          created_at: string
+          id: string
+          kind: string
+          notes: string | null
+          rate_per_minute: number | null
+          seconds_delta: number
+          source: string
+          user_id: string
+        }
+        Insert: {
+          amount?: number | null
+          call_log_id?: string | null
+          created_at?: string
+          id?: string
+          kind: string
+          notes?: string | null
+          rate_per_minute?: number | null
+          seconds_delta: number
+          source: string
+          user_id: string
+        }
+        Update: {
+          amount?: number | null
+          call_log_id?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          notes?: string | null
+          rate_per_minute?: number | null
+          seconds_delta?: number
+          source?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "minute_transactions_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
             referencedColumns: ["id"]
           },
         ]
@@ -420,6 +485,7 @@ export type Database = {
           calls_made: number
           created_at: string
           delay_seconds: number
+          enable_number_locking: boolean
           elevenlabs_campaign_id: string | null
           end_date: string | null
           id: string
@@ -443,6 +509,7 @@ export type Database = {
           calls_made?: number
           created_at?: string
           delay_seconds?: number
+          enable_number_locking?: boolean
           elevenlabs_campaign_id?: string | null
           end_date?: string | null
           id?: string
@@ -466,6 +533,7 @@ export type Database = {
           calls_made?: number
           created_at?: string
           delay_seconds?: number
+          enable_number_locking?: boolean
           elevenlabs_campaign_id?: string | null
           end_date?: string | null
           id?: string
@@ -492,6 +560,48 @@ export type Database = {
           },
           {
             foreignKeyName: "campaigns_phone_config_id_fkey"
+            columns: ["phone_config_id"]
+            isOneToOne: false
+            referencedRelation: "phone_configs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_phone_configs: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          id: string
+          phone_config_id: string
+          sort_order: number
+          user_id: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          id?: string
+          phone_config_id: string
+          sort_order?: number
+          user_id: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          phone_config_id?: string
+          sort_order?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_phone_configs_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_phone_configs_phone_config_id_fkey"
             columns: ["phone_config_id"]
             isOneToOne: false
             referencedRelation: "phone_configs"
@@ -655,6 +765,7 @@ export type Database = {
           created_at: string
           friendly_name: string | null
           id: string
+          inbound_agent_id: string | null
           is_active: boolean
           logo_url: string | null
           phone_number: string
@@ -670,6 +781,7 @@ export type Database = {
           created_at?: string
           friendly_name?: string | null
           id?: string
+          inbound_agent_id?: string | null
           is_active?: boolean
           logo_url?: string | null
           phone_number: string
@@ -685,6 +797,7 @@ export type Database = {
           created_at?: string
           friendly_name?: string | null
           id?: string
+          inbound_agent_id?: string | null
           is_active?: boolean
           logo_url?: string | null
           phone_number?: string
@@ -696,7 +809,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "phone_configs_inbound_agent_id_fkey"
+            columns: ["inbound_agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -705,6 +826,7 @@ export type Database = {
           created_at: string
           full_name: string | null
           gemini_api_key: string | null
+          analysis_model: string | null
           id: string
           onboarding_completed: boolean
           updated_at: string
@@ -716,6 +838,7 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           gemini_api_key?: string | null
+          analysis_model?: string | null
           id?: string
           onboarding_completed?: boolean
           updated_at?: string
@@ -727,8 +850,42 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           gemini_api_key?: string | null
+          analysis_model?: string | null
           id?: string
           onboarding_completed?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_minute_balances: {
+        Row: {
+          available_seconds: number
+          created_at: string
+          enterprise_rate_per_minute: number | null
+          id: string
+          last_enterprise_amount: number | null
+          last_enterprise_minutes: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          available_seconds?: number
+          created_at?: string
+          enterprise_rate_per_minute?: number | null
+          id?: string
+          last_enterprise_amount?: number | null
+          last_enterprise_minutes?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          available_seconds?: number
+          created_at?: string
+          enterprise_rate_per_minute?: number | null
+          id?: string
+          last_enterprise_amount?: number | null
+          last_enterprise_minutes?: number | null
           updated_at?: string
           user_id?: string
         }

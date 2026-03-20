@@ -206,10 +206,16 @@ export default function RetryCSVTab() {
         setRetrying(false);
         return;
       }
+      
       const campContacts = contacts.filter((c) => c.campaign_id === retryCampaignId);
+      const campaignCreatedAt = new Date(campaign.created_at || 0).getTime();
+      const campPhoneDigits = new Set(campContacts.map((c) => normalizeComparablePhone(c.phone_number)));
+      const campCalls = callLogs.filter((cl) => cl.recipient_number && campPhoneDigits.has(normalizeComparablePhone(cl.recipient_number)) && new Date(cl.started_at).getTime() >= campaignCreatedAt);
+
       const retryPhones = new Set(
         campContacts
           .filter((c) => !dncPhones.has(c.phone_number))
+          .filter((c) => campCalls.some((cl) => normalizeComparablePhone(cl.recipient_number) === normalizeComparablePhone(c.phone_number)))
           .map((c) => c.phone_number),
       );
       const retryContactIds = Array.from(retryPhones);
@@ -368,6 +374,11 @@ export default function RetryCSVTab() {
     }
 
     const filteredContacts = campContacts.filter((contact) => {
+      // Must have at least one call log to be eligible for a retry view
+      const contactPhone = normalizeComparablePhone(contact.phone_number);
+      const hasCallLog = campRetryCalls.some((cl) => normalizeComparablePhone(cl.recipient_number) === contactPhone);
+      if (!hasCallLog) return false;
+
       if (!searchTerm) return true;
       const term = searchTerm.toLowerCase();
       return (contact.phone_number || "").toLowerCase().includes(term) ||
@@ -376,7 +387,10 @@ export default function RetryCSVTab() {
     });
 
     const handleExportCSV = () => {
-      const exportable = campContacts.filter((contact) => !dncPhones.has(contact.phone_number || ""));
+      const exportable = campContacts.filter((contact) => {
+        const hasCallLog = campRetryCalls.some((cl) => normalizeComparablePhone(cl.recipient_number) === normalizeComparablePhone(contact.phone_number));
+        return hasCallLog && !dncPhones.has(contact.phone_number || "");
+      });
       if (exportable.length === 0) {
         toast({ title: "No contacts to export", description: "This campaign has no callable contacts.", variant: "destructive" });
         return;

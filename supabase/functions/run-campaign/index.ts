@@ -1,10 +1,14 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requirePositiveBalance } from "../_shared/minute-balance.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+
+const ACTIVE_CALL_STATUSES = ["queued", "initiated", "ringing", "in-progress"];
+const ACTIVE_CALL_LOCK_WINDOW_MS = 10 * 60 * 1000;
 
 function normalizeUltravoxLanguageHint(languageHint: string | null | undefined) {
   const value = String(languageHint || "").trim();
@@ -34,6 +38,43 @@ function normalizeUltravoxLanguageHint(languageHint: string | null | undefined) 
   };
 
   return map[normalized] || value;
+}
+
+async function getAvailablePhoneConfig(
+  supabase: any,
+  userId: string,
+  phoneConfigs: any[],
+  startIndex: number,
+  enableNumberLocking: boolean,
+) {
+  if (phoneConfigs.length === 0) return { phoneConfig: null, nextIndex: startIndex };
+
+  if (!enableNumberLocking) {
+    const phoneConfig = phoneConfigs[startIndex % phoneConfigs.length];
+    return { phoneConfig, nextIndex: (startIndex + 1) % phoneConfigs.length };
+  }
+
+  const activeSinceIso = new Date(Date.now() - ACTIVE_CALL_LOCK_WINDOW_MS).toISOString();
+  const { data: activeCalls } = await supabase
+    .from("call_logs")
+    .select("caller_number, started_at")
+    .eq("user_id", userId)
+    .in("status", ACTIVE_CALL_STATUSES)
+    .is("ended_at", null)
+    .gte("started_at", activeSinceIso)
+    .in("caller_number", phoneConfigs.map((entry) => entry.phone_number));
+
+  const busyNumbers = new Set((activeCalls || []).map((entry: any) => entry.caller_number));
+
+  for (let offset = 0; offset < phoneConfigs.length; offset += 1) {
+    const idx = (startIndex + offset) % phoneConfigs.length;
+    const candidate = phoneConfigs[idx];
+    if (!busyNumbers.has(candidate.phone_number)) {
+      return { phoneConfig: candidate, nextIndex: (idx + 1) % phoneConfigs.length };
+    }
+  }
+
+  return { phoneConfig: null, nextIndex: startIndex };
 }
 
 async function placeCall(
@@ -416,6 +457,8 @@ Deno.serve(async (req) => {
       });
     }
 
+    await requirePositiveBalance(supabase, user.id);
+
     // Fetch campaign
     const { data: campaign, error: campError } = await supabase
       .from("campaigns").select("*").eq("id", campaign_id).eq("user_id", user.id).single();
@@ -425,8 +468,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (!campaign.agent_id || !campaign.phone_config_id) {
-      return new Response(JSON.stringify({ error: "Campaign must have an agent and phone config assigned" }), {
+    if (!campaign.agent_id) {
+      return new Response(JSON.stringify({ error: "Campaign must have an agent assigned" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -439,10 +482,28 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch phone config
-    const { data: phoneConfig } = await supabase.from("phone_configs").select("*").eq("id", campaign.phone_config_id).single();
-    if (!phoneConfig) {
-      return new Response(JSON.stringify({ error: "Phone config not found" }), {
+    const { data: linkedPhoneConfigs } = await supabase
+      .from("campaign_phone_configs")
+      .select("phone_config_id, sort_order, phone_configs(*)")
+      .eq("campaign_id", campaign_id)
+      .eq("user_id", user.id)
+      .order("sort_order", { ascending: true });
+
+    let phoneConfigs = ((linkedPhoneConfigs || [])
+      .map((entry: any) => entry.phone_configs)
+      .filter(Boolean));
+
+    if (phoneConfigs.length === 0 && campaign.phone_config_id) {
+      const { data: fallbackPhoneConfig } = await supabase
+        .from("phone_configs")
+        .select("*")
+        .eq("id", campaign.phone_config_id)
+        .single();
+      if (fallbackPhoneConfig) phoneConfigs = [fallbackPhoneConfig];
+    }
+
+    if (phoneConfigs.length === 0) {
+      return new Response(JSON.stringify({ error: "Campaign must have at least one phone config assigned" }), {
         status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -481,15 +542,70 @@ Deno.serve(async (req) => {
 
     const delayMs = (campaign.delay_seconds || 30) * 1000;
     const results: any[] = [];
+    let nextPhoneIndex = 0;
 
     for (let i = 0; i < eligibleContacts.length; i++) {
       const contact = eligibleContacts[i];
       try {
-        const result = await placeCall(supabase, ultravoxApiKey, agent, phoneConfig, contact.phone_number, user.id, kbItems || [], agentTools || []);
-        results.push({ phone: contact.phone_number, status: "initiated", ...result });
+        await requirePositiveBalance(supabase, user.id);
+
+        let selection = await getAvailablePhoneConfig(
+          supabase,
+          user.id,
+          phoneConfigs,
+          nextPhoneIndex,
+          campaign.enable_number_locking ?? true,
+        );
+
+        let lockWaitAttempts = 0;
+        while (!selection.phoneConfig && lockWaitAttempts < 2) {
+          lockWaitAttempts += 1;
+          await sleep(3000);
+          selection = await getAvailablePhoneConfig(
+            supabase,
+            user.id,
+            phoneConfigs,
+            nextPhoneIndex,
+            campaign.enable_number_locking ?? true,
+          );
+        }
+
+        if (!selection.phoneConfig) {
+          selection = {
+            phoneConfig: phoneConfigs[nextPhoneIndex % phoneConfigs.length],
+            nextIndex: (nextPhoneIndex + 1) % phoneConfigs.length,
+          };
+        }
+
+        nextPhoneIndex = selection.nextIndex;
+        const result = await placeCall(
+          supabase,
+          ultravoxApiKey,
+          agent,
+          selection.phoneConfig,
+          contact.phone_number,
+          user.id,
+          kbItems || [],
+          agentTools || [],
+        );
+        results.push({
+          phone: contact.phone_number,
+          caller_number: selection.phoneConfig.phone_number,
+          status: "initiated",
+          ...result,
+        });
         // Create a PENDING outcome for this call
         await createOutcome(supabase, user.id, campaign_id, contact, "PENDING", campaign.round || 1);
       } catch (err: any) {
+        if (String(err?.message || "").toLowerCase().includes("minutes")) {
+          await supabase.from("campaigns").update({ status: "paused" }).eq("id", campaign_id);
+          results.push({
+            phone: contact.phone_number,
+            status: "stopped",
+            error: err.message,
+          });
+          break;
+        }
         console.error(`Failed to call ${contact.phone_number}:`, err.message);
         results.push({ phone: contact.phone_number, status: "failed", error: err.message });
       }

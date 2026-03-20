@@ -15,9 +15,9 @@ const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_MODEL = "gemini-2.0-flash";
 
 function getEffectiveApiKey(userApiKey?: string | null) {
-  const key = userApiKey || GEMINI_API_KEY;
+  const key = userApiKey?.trim() || GEMINI_API_KEY?.trim();
   if (!key) {
-    throw new Error("Gemini API Key is not configured. Please add it in Settings.");
+    throw new Error("Gemini API Key is not set. Please go to Settings and save your Gemini API key.");
   }
   return key;
 }
@@ -50,8 +50,9 @@ function sanitizeAnalysis(parsed: any, totalRows: number): GeminiCsvAnalysis {
   };
 }
 
-export async function analyzeCsvWithGemini(csvContent: string, userApiKey?: string | null): Promise<GeminiCsvAnalysis> {
+export async function analyzeCsvWithGemini(csvContent: string, userApiKey?: string | null, analysisModel?: string | null): Promise<GeminiCsvAnalysis> {
   const apiKey = getEffectiveApiKey(userApiKey);
+  const modelStr = analysisModel || "gemini";
   const lines = csvContent.trim().split("\n");
   const preview = lines.slice(0, Math.min(lines.length, 201)).join("\n");
   const totalRows = Math.max(lines.length - 1, 0);
@@ -81,41 +82,78 @@ Rules:
 - Include all CSV columns.
 - Detect phone, date, number, and email columns accurately.
 - Clean values by trimming whitespace.
-- Normalize phone numbers when obvious.
+- STRONGLY ENFORCED: ALWAYS convert phone numbers to full international E.164 format (e.g., +919441156873). If a number is missing a country code, you MUST intelligently imply its country code from the names/emails/context (default to +91 or +1 if obvious). DO NOT leave 10-digit numbers without a '+' and country code.
 - Remove completely empty rows.
 - Deduplicate rows with the same phone number when possible.
 - Keep up to 200 analyzed rows.`;
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
-    {
+  let text = "";
+
+  if (modelStr === "gemini") {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
+        }),
+      }
+    );
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data?.error?.message || "Gemini analysis failed");
+    text = data?.candidates?.[0]?.content?.parts?.map((part: any) => part?.text || "").join("") || "";
+    if (!text) throw new Error("Gemini returned an empty response");
+  } else {
+    let endpoint = "";
+    let apiModel = "";
+    let apiKeyToUse = apiKey;
+    
+    if (modelStr === "perplexity") {
+      endpoint = "https://api.perplexity.ai/chat/completions";
+      apiModel = "sonar";
+    } else if (modelStr === "grok") {
+      endpoint = "https://api.x.ai/v1/chat/completions";
+      apiModel = "grok-beta";
+    } else if (modelStr === "chatgpt") {
+      endpoint = "https://api.openai.com/v1/chat/completions";
+      apiModel = "gpt-4o-mini";
+    } else if (modelStr === "deepseek") {
+      endpoint = "https://api.deepseek.com/chat/completions";
+      apiModel = "deepseek-chat";
+    } else if (modelStr === "cloudflare") {
+      endpoint = "https://corsproxy.io/?" + encodeURIComponent("https://api.cloudflare.com/client/v4/accounts/a54b12fe3ef06df16ff0041d79c18fc0/ai/v1/chat/completions");
+      apiModel = "@cf/nvidia/nemotron-3-120b-a12b";
+    }
+
+    const payload: any = {
+      model: apiModel,
+      messages: [{ role: "user", content: prompt }]
+    };
+
+    if (modelStr !== "perplexity") {
+      payload.temperature = 0.1;
+    }
+    
+    if (modelStr === "chatgpt") {
+      payload.response_format = { type: "json_object" };
+    }
+
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKeyToUse}`
       },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: "application/json",
-        },
-      }),
-    }
-  );
+      body: JSON.stringify(payload)
+    });
 
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.error?.message || "Gemini analysis failed");
-  }
-
-  const text = data?.candidates?.[0]?.content?.parts?.map((part: any) => part?.text || "").join("") || "";
-  if (!text) {
-    throw new Error("Gemini returned an empty response");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data?.error?.message || `${modelStr} analysis failed`);
+    text = data?.choices?.[0]?.message?.content || "";
+    if (!text) throw new Error(`${modelStr} returned an empty response`);
   }
 
   const parsed = parseGeminiJsonResponse(text);

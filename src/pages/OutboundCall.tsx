@@ -11,6 +11,8 @@ import { PhoneCall, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Tables } from "@/integrations/supabase/types";
 import { getErrorMessage, getFunctionUnavailableMessage, isEdgeFunctionUnavailable } from "@/lib/edge-functions";
+import { usePersistentState } from "@/hooks/usePersistentState";
+import { ADMIN_EMAIL } from "@/lib/constants";
 
 const OUTBOUND_REQUEST_TIMEOUT_MS = 20000;
 
@@ -34,7 +36,8 @@ export default function OutboundCall() {
   const [agents, setAgents] = useState<Tables<"agents">[]>([]);
   const [phoneConfigs, setPhoneConfigs] = useState<Tables<"phone_configs">[]>([]);
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({
+  const [availableSeconds, setAvailableSeconds] = useState<number | null>(null);
+  const [form, setForm] = usePersistentState("outbound-call-form", {
     agent_id: "",
     recipient_number: "",
     phone_config_id: "",
@@ -44,14 +47,24 @@ export default function OutboundCall() {
     if (!user) return;
     supabase.from("agents").select("*").eq("is_active", true).then(({ data }) => setAgents(data || []));
     supabase.from("phone_configs").select("*").eq("is_active", true).then(({ data }) => setPhoneConfigs(data || []));
+    supabase
+      .from("user_minute_balances")
+      .select("available_seconds")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => setAvailableSeconds(data?.available_seconds ?? 0));
   }, [user]);
 
   const selectedAgent = agents.find((a) => a.id === form.agent_id);
   const selectedPhoneConfig = phoneConfigs.find((pc) => pc.id === form.phone_config_id);
+  const isAdmin = user?.email === ADMIN_EMAIL;
 
   const startDirectFallbackCall = async () => {
     if (!user || !selectedPhoneConfig || !selectedAgent) {
       throw new Error("Select an agent and phone number first");
+    }
+    if (!isAdmin && (availableSeconds ?? 0) <= 0) {
+      throw new Error("No minutes left. Add minutes before placing a call.");
     }
 
     const controller = new AbortController();
@@ -68,6 +81,7 @@ export default function OutboundCall() {
           agent: selectedAgent,
           phoneConfig: selectedPhoneConfig,
           recipientNumber: form.recipient_number,
+          userId: user.id,
         }),
         signal: controller.signal,
       });
@@ -101,6 +115,10 @@ export default function OutboundCall() {
   const handleCall = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    if (!isAdmin && (availableSeconds ?? 0) <= 0) {
+      toast({ title: "Error", description: "No minutes left. Add minutes before placing a call.", variant: "destructive" });
+      return;
+    }
     setLoading(true);
 
     try {
@@ -200,7 +218,7 @@ export default function OutboundCall() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button type="submit" className="w-full" disabled={loading || !form.agent_id || !form.phone_config_id}>
+              <Button type="submit" className="w-full" disabled={loading || !form.agent_id || !form.phone_config_id || (availableSeconds ?? 0) <= 0}>
                 {loading ? (
                   <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Placing Call...</>
                 ) : (

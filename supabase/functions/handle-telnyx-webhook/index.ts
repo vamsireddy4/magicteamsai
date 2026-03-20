@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { deductMinutesForCall } from "../_shared/minute-balance.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -99,7 +100,7 @@ Deno.serve(async (req) => {
 
     const { data: existingCallLog } = await supabase
       .from("call_logs")
-      .select("id, agent_id, user_id, status, caller_number, recipient_number, twilio_call_sid, ultravox_call_id")
+      .select("id, agent_id, user_id, status, caller_number, recipient_number, twilio_call_sid, ultravox_call_id, started_at, billing_status")
       .eq("twilio_call_sid", callControlId)
       .maybeSingle();
 
@@ -224,11 +225,27 @@ Deno.serve(async (req) => {
 
       let callStatus = "completed";
       const normalizedCause = String(hangupCause).toLowerCase();
-      if (normalizedCause.includes("busy") || normalizedCause.includes("rejected")) {
+      const normalizedSource = String(hangupSource).toLowerCase();
+      
+      // Broaden detection for busy and unanswered states
+      if (normalizedCause.includes("busy") || 
+          normalizedCause.includes("rejected") || 
+          normalizedCause.includes("user_busy") ||
+          sipResponseCode === "486" || 
+          sipResponseCode === "600") {
         callStatus = "busy";
-      } else if (normalizedCause.includes("no_answer") || normalizedCause.includes("timeout") || normalizedCause.includes("cancel")) {
+      } else if (normalizedCause.includes("no_answer") || 
+                 normalizedCause.includes("timeout") || 
+                 normalizedCause.includes("cancel") ||
+                 normalizedCause.includes("no_user_responding") ||
+                 sipResponseCode === "408" ||
+                 sipResponseCode === "480" ||
+                 sipResponseCode === "487") {
         callStatus = "no-answer";
-      } else if (normalizedCause.includes("unallocated") || normalizedCause.includes("no_route") || normalizedCause.includes("invalid")) {
+      } else if (normalizedCause.includes("unallocated") || 
+                 normalizedCause.includes("no_route") || 
+                 normalizedCause.includes("invalid") ||
+                 normalizedCause.includes("destination_out_of_order")) {
         callStatus = "failed";
       }
 
@@ -280,7 +297,7 @@ Deno.serve(async (req) => {
               from: originalTransferState.fromNumber,
               timeout_secs: 10,
               park_after_unbridge: "self",
-              target_leg_client_state: btoa(JSON.stringify({
+              client_state: btoa(JSON.stringify({
                 type: TELNYX_TRANSFER_LEG_TYPE,
                 originalCallControlId: originalTransferCallControlId,
                 currentIndex: nextIndex,
@@ -317,9 +334,12 @@ Deno.serve(async (req) => {
         .update({
           status: callStatus,
           ended_at: new Date().toISOString(),
+          duration: existingCallLog?.started_at
+            ? Math.max(0, Math.round((Date.now() - new Date(existingCallLog.started_at).getTime()) / 1000))
+            : 0,
           summary: `Hangup cause: ${hangupCause} (source: ${hangupSource})${sipResponseCode ? `, SIP: ${sipResponseCode}` : ""}`,
         })
-        .eq("twilio_call_sid", callControlId);
+        .or(`twilio_call_sid.eq.${callControlId},twilio_call_sid.eq.${originalTransferCallControlId}`);
 
       if (updateError) {
         console.error(`[telnyx-webhook] Failed to update call_logs: ${updateError.message}`);
@@ -327,6 +347,16 @@ Deno.serve(async (req) => {
 
       const terminalAlreadySet = existingCallLog?.status ? TERMINAL_STATUSES.has(existingCallLog.status) : false;
       if (existingCallLog?.agent_id && !terminalAlreadySet) {
+        if (existingCallLog.user_id) {
+          await deductMinutesForCall(supabase, {
+            userId: existingCallLog.user_id,
+            callLogId: existingCallLog.id,
+            durationSeconds: existingCallLog?.started_at
+              ? Math.max(0, Math.round((Date.now() - new Date(existingCallLog.started_at).getTime()) / 1000))
+              : 0,
+            kind: "live_deduction",
+          });
+        }
         await fireAgentWebhooks(supabase, existingCallLog.agent_id, "call.ended", {
           call_sid: callControlId,
           call_log_id: existingCallLog.id,

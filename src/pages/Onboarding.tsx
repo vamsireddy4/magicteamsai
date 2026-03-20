@@ -213,6 +213,7 @@ const SARVAM_LANGUAGES = [
 const SARVAM_MODELS = [
   { value: "sarvam-30b", label: "Sarvam 30B" },
 ];
+const ONBOARDING_FLAG_KEY = "magicteams_onboarding_signup_only";
 
 function StepHeader({ step }: { step: StepId }) {
   return (
@@ -317,6 +318,14 @@ export default function Onboarding() {
   const [temperature, setTemperature] = useState(0.7);
   const [firstSpeaker, setFirstSpeaker] = useState("FIRST_SPEAKER_AGENT");
   const [maxDuration, setMaxDuration] = useState(300);
+
+  useEffect(() => {
+    if (!user) return;
+    const shouldShowOnboarding = sessionStorage.getItem(ONBOARDING_FLAG_KEY) === "true";
+    if (!shouldShowOnboarding) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [user, navigate]);
 
   const currentIndustry = useMemo(
     () => INDUSTRIES.find((item) => item.id === industry) ?? INDUSTRIES[0],
@@ -438,16 +447,18 @@ export default function Onboarding() {
         });
       }
 
-      // 4. Complete onboarding profile status
-      await completeOnboarding();
+      // 4. Mark onboarding complete in DB (fire in background — don't block navigation)
+      sessionStorage.removeItem(ONBOARDING_FLAG_KEY);
+      completeOnboarding().catch(console.warn);
 
       toast({
         title: "Success!",
         description: "Your AI agent has been created and your dashboard is ready.",
       });
 
-      // 5. Navigate to the agents list
-      navigate("/agents", { replace: true });
+      // 5. Navigate immediately. Pass state flag so ProtectedRoute skips
+      //    the needsOnboarding check while the profile re-fetch settles.
+      navigate("/dashboard", { replace: true, state: { onboardingJustCompleted: true } });
     } catch (error: any) {
       console.error("Onboarding finish error:", error);
       toast({

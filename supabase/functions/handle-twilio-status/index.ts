@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { deductMinutesForCall } from "../_shared/minute-balance.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -66,7 +67,7 @@ Deno.serve(async (req) => {
 
     const { data: callLog } = await supabase
       .from("call_logs")
-      .select("id, agent_id, user_id, status, caller_number, recipient_number, twilio_call_sid, ultravox_call_id")
+      .select("id, agent_id, user_id, status, caller_number, recipient_number, twilio_call_sid, ultravox_call_id, billing_status")
       .eq("twilio_call_sid", callSid)
       .maybeSingle();
 
@@ -135,6 +136,14 @@ Deno.serve(async (req) => {
       }
 
       if (TERMINAL_STATUSES.has(status) && !wasTerminal) {
+        if (callLog?.user_id) {
+          await deductMinutesForCall(supabase, {
+            userId: callLog.user_id,
+            callLogId: callLog.id,
+            durationSeconds: duration ? parseInt(duration, 10) : 0,
+            kind: "live_deduction",
+          });
+        }
         await fireAgentWebhooks(supabase, callLog.agent_id, "call.ended", {
           call_sid: callSid,
           call_log_id: callLog.id,

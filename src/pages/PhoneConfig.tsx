@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Phone, Trash2, Settings, Eye, EyeOff, CheckCircle2, Pencil } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Phone, Trash2, Settings, Eye, EyeOff, CheckCircle2, Pencil, MoreHorizontal } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getCachedLogoDataUrl, PHONE_PROVIDER_META } from "@/lib/provider-logos";
 
@@ -19,6 +19,7 @@ interface PhoneConfig {
   provider: string;
   logo_url?: string | null;
   phone_number: string;
+  inbound_agent_id: string | null;
   twilio_account_sid: string | null;
   twilio_auth_token: string | null;
   telnyx_api_key: string | null;
@@ -27,6 +28,12 @@ interface PhoneConfig {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+interface AgentRow {
+  id: string;
+  name: string;
+  is_active: boolean;
 }
 
 const PROVIDERS = [
@@ -65,6 +72,36 @@ export default function PhoneConfig() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [editingConfig, setEditingConfig] = useState<PhoneConfig | null>(null);
+  const [agents, setAgents] = useState<AgentRow[]>([]);
+  const [inboundDialogOpen, setInboundDialogOpen] = useState(false);
+  const [editingInboundConfig, setEditingInboundConfig] = useState<PhoneConfig | null>(null);
+  const [selectedInboundAgentId, setSelectedInboundAgentId] = useState<string>("");
+  const [savingInbound, setSavingInbound] = useState(false);
+
+  const getSavedProviderCredentials = (providerId: string) => {
+    const existingConfigs = configs.filter((config) => config.provider === providerId);
+    if (existingConfigs.length === 0) return null;
+
+    if (providerId === "twilio") {
+      const existing = existingConfigs.find((config) => config.twilio_account_sid && config.twilio_auth_token);
+      if (!existing) return null;
+      return {
+        twilio_account_sid: existing.twilio_account_sid || "",
+        twilio_auth_token: existing.twilio_auth_token || "",
+      };
+    }
+
+    if (providerId === "telnyx") {
+      const existing = existingConfigs.find((config) => config.telnyx_api_key && config.telnyx_connection_id);
+      if (!existing) return null;
+      return {
+        telnyx_api_key: existing.telnyx_api_key || "",
+        telnyx_connection_id: existing.telnyx_connection_id || "",
+      };
+    }
+
+    return null;
+  };
 
   const backfillMissingLogos = async (rows: PhoneConfig[]) => {
     const missing = rows.filter((row) => !row.logo_url && PHONE_PROVIDER_META[row.provider]);
@@ -81,9 +118,13 @@ export default function PhoneConfig() {
 
   const fetchConfigs = async () => {
     if (!user) return;
-    const { data } = await supabase.from("phone_configs").select("*").order("created_at", { ascending: false });
+    const [{ data }, { data: agentRows }] = await Promise.all([
+      supabase.from("phone_configs").select("*").order("created_at", { ascending: false }),
+      supabase.from("agents").select("id, name, is_active").eq("is_active", true).order("name"),
+    ]);
     const rows = (data as PhoneConfig[]) || [];
     setConfigs(rows);
+    setAgents((agentRows as AgentRow[]) || []);
     setLoading(false);
     void backfillMissingLogos(rows);
   };
@@ -113,7 +154,7 @@ export default function PhoneConfig() {
       setForm(formData);
     } else {
       setEditingConfig(null);
-      setForm({});
+      setForm({ ...(getSavedProviderCredentials(providerId) || {}) });
     }
     setDialogOpen(true);
   };
@@ -130,12 +171,26 @@ export default function PhoneConfig() {
       phone_number: form.phone_number,
     };
 
+    const savedProviderCredentials = getSavedProviderCredentials(selectedProvider);
+
     if (selectedProvider === "twilio") {
-      data.twilio_account_sid = form.twilio_account_sid;
-      data.twilio_auth_token = form.twilio_auth_token;
+      data.twilio_account_sid = form.twilio_account_sid || savedProviderCredentials?.twilio_account_sid || null;
+      data.twilio_auth_token = form.twilio_auth_token || savedProviderCredentials?.twilio_auth_token || null;
     } else if (selectedProvider === "telnyx") {
-      data.telnyx_api_key = form.telnyx_api_key;
-      data.telnyx_connection_id = form.telnyx_connection_id;
+      data.telnyx_api_key = form.telnyx_api_key || savedProviderCredentials?.telnyx_api_key || null;
+      data.telnyx_connection_id = form.telnyx_connection_id || savedProviderCredentials?.telnyx_connection_id || null;
+    }
+
+    if (selectedProvider === "twilio" && (!data.twilio_account_sid || !data.twilio_auth_token)) {
+      setSaving(false);
+      toast({ title: "Missing credentials", description: "Save your Twilio Account SID and Auth Token once before adding more numbers.", variant: "destructive" });
+      return;
+    }
+
+    if (selectedProvider === "telnyx" && (!data.telnyx_api_key || !data.telnyx_connection_id)) {
+      setSaving(false);
+      toast({ title: "Missing credentials", description: "Save your Telnyx API key and Connection ID once before adding more numbers.", variant: "destructive" });
+      return;
     }
 
     let error;
@@ -160,6 +215,11 @@ export default function PhoneConfig() {
   };
 
   const deleteConfig = async (id: string) => {
+    await Promise.all([
+      supabase.from("campaign_phone_configs").delete().eq("phone_config_id", id),
+      supabase.from("campaigns").update({ phone_config_id: null } as any).eq("phone_config_id", id),
+      supabase.from("agents").update({ phone_number_id: null } as any).eq("phone_number_id", id),
+    ]);
     await supabase.from("phone_configs").delete().eq("id", id);
     toast({ title: "Configuration deleted" });
     fetchConfigs();
@@ -171,6 +231,42 @@ export default function PhoneConfig() {
   };
 
   const currentProviderConfig = PROVIDERS.find(p => p.id === selectedProvider);
+  const savedCredentials = selectedProvider ? getSavedProviderCredentials(selectedProvider) : null;
+  const reusingSavedCredentials = Boolean(savedCredentials && !editingConfig);
+  const getAgentName = (agentId: string | null) =>
+    agentId ? agents.find((agent) => agent.id === agentId)?.name || "Unknown agent" : null;
+
+  const openInboundDialog = (config: PhoneConfig) => {
+    setEditingInboundConfig(config);
+    setSelectedInboundAgentId(config.inbound_agent_id || "");
+    setInboundDialogOpen(true);
+  };
+
+  const saveInboundAgent = async () => {
+    if (!editingInboundConfig) return;
+    setSavingInbound(true);
+    const { error } = await supabase
+      .from("phone_configs")
+      .update({ inbound_agent_id: selectedInboundAgentId || null } as any)
+      .eq("id", editingInboundConfig.id);
+    setSavingInbound(false);
+
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    toast({
+      title: selectedInboundAgentId ? "Inbound bot updated" : "Inbound bot removed",
+      description: selectedInboundAgentId
+        ? `${getAgentName(selectedInboundAgentId) || "Selected agent"} will answer calls to ${editingInboundConfig.phone_number}.`
+        : "This number will no longer route to a dedicated inbound bot.",
+    });
+    setInboundDialogOpen(false);
+    setEditingInboundConfig(null);
+    setSelectedInboundAgentId("");
+    fetchConfigs();
+  };
 
   return (
     <DashboardLayout>
@@ -211,22 +307,43 @@ export default function PhoneConfig() {
                                 ? `Connection: ${config.telnyx_connection_id.slice(0, 8)}...`
                                 : ""}
                             </p>
+                            {config.inbound_agent_id && (
+                              <p className="text-xs text-muted-foreground">
+                                Inbound bot: {getAgentName(config.inbound_agent_id)}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge variant={config.is_active ? "default" : "secondary"}>
-                            {config.is_active ? "Active" : "Inactive"}
-                          </Badge>
-                          <Switch
-                            checked={config.is_active}
-                            onCheckedChange={() => toggleActive(config.id, config.is_active)}
-                          />
-                          <Button variant="ghost" size="icon" onClick={() => openConnectDialog(config.provider, config)}>
-                            <Pencil className="h-4 w-4 text-muted-foreground" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => deleteConfig(config.id)}>
-                            <Trash2 className="h-4 w-4 text-muted-foreground" />
-                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" aria-label="Open phone actions">
+                                <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                              <DropdownMenuItem onClick={() => toggleActive(config.id, config.is_active)}>
+                                <Badge variant={config.is_active ? "default" : "secondary"} className="mr-2">
+                                  {config.is_active ? "Active" : "Inactive"}
+                                </Badge>
+                                {config.is_active ? "Mark Inactive" : "Mark Active"}
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => openConnectDialog(config.provider, config)}>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => openInboundDialog(config)}>
+                                <Settings className="mr-2 h-4 w-4" />
+                                Settings
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => deleteConfig(config.id)} className="text-destructive focus:text-destructive">
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </CardContent>
                     </Card>
@@ -269,11 +386,19 @@ export default function PhoneConfig() {
                 {editingConfig ? "Edit" : "Connect"} {currentProviderConfig?.name}
               </DialogTitle>
               <DialogDescription>
-                Enter your {currentProviderConfig?.name} credentials to enable phone calls.
+                {reusingSavedCredentials
+                  ? `Using your saved ${currentProviderConfig?.name} credentials. Enter a phone number to connect another line.`
+                  : `Enter your ${currentProviderConfig?.name} credentials to enable phone calls.`}
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {reusingSavedCredentials && (
+                <div className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+                  Saved provider credentials found. You only need to enter the new phone number.
+                </div>
+              )}
               {currentProviderConfig?.fields.map((field) => (
+                reusingSavedCredentials && field.key !== "phone_number" ? null : (
                 <div key={field.key} className="space-y-2">
                   <Label htmlFor={field.key}>{field.label}</Label>
                   {field.type === "password" ? (
@@ -284,7 +409,7 @@ export default function PhoneConfig() {
                         value={form[field.key] || ""}
                         onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
                         placeholder={field.placeholder}
-                        required
+                        required={!reusingSavedCredentials}
                         className="pr-10"
                       />
                       <Button
@@ -308,11 +433,57 @@ export default function PhoneConfig() {
                   )}
                   <p className="text-xs text-muted-foreground">{field.help}</p>
                 </div>
+                )
               ))}
               <Button type="submit" className="w-full" disabled={saving}>
                 {saving ? "Saving..." : editingConfig ? `Update ${currentProviderConfig?.name}` : `Connect ${currentProviderConfig?.name}`}
               </Button>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={inboundDialogOpen}
+          onOpenChange={(open) => {
+            setInboundDialogOpen(open);
+            if (!open) {
+              setEditingInboundConfig(null);
+              setSelectedInboundAgentId("");
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Edit Inbound</DialogTitle>
+              <DialogDescription>
+                Choose which AI agent should answer inbound calls for {editingInboundConfig?.phone_number || "this number"}.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Inbound Agent</Label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={selectedInboundAgentId}
+                  onChange={(e) => setSelectedInboundAgentId(e.target.value)}
+                >
+                  <option value="">No dedicated inbound bot</option>
+                  {agents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3">
+                <Button onClick={saveInboundAgent} disabled={savingInbound}>
+                  {savingInbound ? "Saving..." : "Save Inbound"}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setInboundDialogOpen(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

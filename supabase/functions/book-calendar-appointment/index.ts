@@ -150,14 +150,11 @@ Deno.serve(async (req) => {
 });
 
 async function bookGoogleCalendar(integration: any, opts: any) {
-  const apiKey = integration.api_key;
-  const isStandardKey = apiKey?.startsWith("AIza");
-  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(integration.calendar_id || "primary")}/events${isStandardKey ? `?key=${apiKey}` : ""}`;
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (!isStandardKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  const { querySuffix, headers } = await getGoogleAuthHeaders(integration);
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(integration.calendar_id || "primary")}/events${querySuffix}`;
 
   const res = await fetch(url, {
-    method: "POST", headers,
+    method: "POST", headers: { ...headers, "Content-Type": "application/json" },
     body: JSON.stringify({
       summary: `MagicTeams AI: ${opts.attendee_name}`,
       description: opts.notes || "Booked via AI agent.",
@@ -172,6 +169,75 @@ async function bookGoogleCalendar(integration: any, opts: any) {
     throw new Error(`Google error: ${err.error?.message || res.statusText}`);
   }
   return { success: true, event: await res.json() };
+}
+
+async function getGoogleAuthHeaders(integration: any) {
+  const apiKey = integration.api_key;
+  if (apiKey?.startsWith("AIza")) {
+    return {
+      querySuffix: `?key=${apiKey}`,
+      headers: {} as Record<string, string>,
+    };
+  }
+
+  const token = await ensureGoogleAccessToken(integration);
+  return {
+    querySuffix: "",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    } as Record<string, string>,
+  };
+}
+
+async function ensureGoogleAccessToken(integration: any) {
+  const accessToken = integration.access_token || integration.api_key;
+  const expiresAt = integration.token_expires_at ? new Date(integration.token_expires_at).getTime() : 0;
+  const hasFreshAccessToken = accessToken && expiresAt > Date.now() + 60_000;
+
+  if (hasFreshAccessToken) {
+    return accessToken;
+  }
+
+  const refreshToken = integration.refresh_token;
+  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+  const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+
+  if (!refreshToken || !clientId || !clientSecret) {
+    if (accessToken) return accessToken;
+    throw new Error("Google Calendar OAuth is not fully configured.");
+  }
+
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+
+  const tokenJson = await tokenRes.json().catch(() => ({}));
+  if (!tokenRes.ok || !tokenJson.access_token) {
+    throw new Error(tokenJson.error_description || tokenJson.error || "Failed to refresh Google Calendar token.");
+  }
+
+  const nextExpiresAt = tokenJson.expires_in
+    ? new Date(Date.now() + Number(tokenJson.expires_in) * 1000).toISOString()
+    : null;
+
+  await supabase
+    .from("calendar_integrations")
+    .update({
+      access_token: tokenJson.access_token,
+      token_expires_at: nextExpiresAt,
+    })
+    .eq("id", integration.id);
+
+  return tokenJson.access_token as string;
 }
 
 async function bookCalCom(integration: any, opts: any) {

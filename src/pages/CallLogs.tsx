@@ -4,10 +4,12 @@ import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PhoneIncoming, PhoneOutgoing, History, Copy, Check, FileText, Clock, User } from "lucide-react";
 import { toast } from "sonner";
 import type { Json } from "@/integrations/supabase/types";
+import { AnimatePresence, motion } from "framer-motion";
 
 interface CallLog {
   id: string;
@@ -27,13 +29,23 @@ interface CallLog {
 
 interface TranscriptMessage {
   role?: string;
+  speaker?: string;
   text?: string;
   timestamp?: string | number | null;
 }
 
+const hasTranscriptContent = (transcript: Json | null) =>
+  Array.isArray(transcript)
+    ? transcript.some((item) => {
+        const text = typeof (item as TranscriptMessage)?.text === "string" ? (item as TranscriptMessage).text : "";
+        return text.trim().length > 0;
+      })
+    : transcript !== null;
+
 export default function CallLogs() {
   const { user } = useAuth();
   const [calls, setCalls] = useState<CallLog[]>([]);
+  const [callView, setCallView] = useState<"live" | "demo">("live");
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [selectedCall, setSelectedCall] = useState<CallLog | null>(null);
@@ -70,7 +82,8 @@ export default function CallLogs() {
         call.status === "initiated" ||
         call.status === "in-progress" ||
         call.duration === null ||
-        call.transcript === null
+        call.duration === 0 ||
+        !hasTranscriptContent(call.transcript)
       )
     );
   };
@@ -179,6 +192,10 @@ export default function CallLogs() {
     setSelectedCall(call);
   };
 
+  const filteredCalls = calls.filter((call) =>
+    callView === "demo" ? call.direction === "demo" : call.direction !== "demo"
+  );
+
   const syncUltravoxCallFromLocal = async (call: CallLog) => {
     if (!call.ultravox_call_id) return;
 
@@ -213,12 +230,13 @@ export default function CallLogs() {
   };
 
   useEffect(() => {
-    if (!selectedCall?.ultravox_call_id || selectedCall.transcript) return;
+    if (!selectedCall?.ultravox_call_id) return;
+    if (!needsSync(selectedCall)) return;
 
     void syncUltravoxCallFromLocal(selectedCall).catch((error: Error) => {
       console.error("Failed to sync Ultravox call from local route", error);
     });
-  }, [selectedCall?.id, selectedCall?.ultravox_call_id, selectedCall?.transcript]);
+  }, [selectedCall?.id, selectedCall?.ultravox_call_id, selectedCall?.transcript, selectedCall?.duration, selectedCall?.status]);
 
   return (
     <DashboardLayout>
@@ -228,85 +246,126 @@ export default function CallLogs() {
             <h1 className="text-3xl font-bold tracking-tight">Call History</h1>
             <p className="text-muted-foreground mt-1">View all inbound and outbound calls with transcripts.</p>
           </div>
+          <div className="inline-flex items-center gap-1.5 rounded-2xl bg-muted/40 p-1">
+            <Button
+              type="button"
+              variant={callView === "live" ? "default" : "ghost"}
+              className={
+                callView === "live"
+                  ? "h-9 rounded-lg px-4 text-sm font-medium transition-all duration-200 ease-out"
+                  : "h-9 rounded-lg px-4 text-sm font-medium text-muted-foreground transition-all duration-200 ease-out"
+              }
+              onClick={() => setCallView("live")}
+            >
+              Live
+            </Button>
+            <Button
+              type="button"
+              variant={callView === "demo" ? "default" : "ghost"}
+              className={
+                callView === "demo"
+                  ? "h-9 rounded-lg px-4 text-sm font-medium transition-all duration-200 ease-out"
+                  : "h-9 rounded-lg px-4 text-sm font-medium text-muted-foreground transition-all duration-200 ease-out"
+              }
+              onClick={() => setCallView("demo")}
+            >
+              Demo
+            </Button>
+          </div>
         </div>
 
-        {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-20 bg-muted rounded-lg animate-pulse" />
-            ))}
-          </div>
-        ) : calls.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-16">
-              <History className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-1">No calls yet</h3>
-              <p className="text-sm text-muted-foreground">Calls will appear here once your agents start receiving them.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {calls.map((call) => (
-              <Card
-                key={call.id}
-                className="cursor-pointer hover:border-primary/40 transition-colors"
-                onClick={() => handleSelectCall(call)}
-              >
-                <CardContent className="flex items-center gap-4 p-4">
-                  {/* Direction icon */}
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
-                    call.direction === "inbound" ? "bg-accent" : "bg-primary/10"
-                  }`}>
-                    {call.direction === "inbound" ? (
-                      <PhoneIncoming className="h-4 w-4 text-accent-foreground" />
-                    ) : (
-                      <PhoneOutgoing className="h-4 w-4 text-primary" />
-                    )}
-                  </div>
-
-                  {/* Main info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <p className="font-medium text-sm truncate font-mono">
-                        {call.direction === "inbound" ? call.caller_number : call.recipient_number}
-                      </p>
-                      <Badge variant={statusColor(call.status) as any} className="text-[10px] shrink-0">
-                        {call.status}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span className="capitalize">{call.direction}</span>
-                      {call.agents?.name && (
-                        <>
-                          <span>·</span>
-                          <span className="flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            {call.agents.name}
-                          </span>
-                        </>
-                      )}
-                      {call.transcript && (
-                        <>
-                          <span>·</span>
-                          <Badge variant="outline" className="text-[10px] h-4">Transcript</Badge>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Duration & time */}
-                  <div className="text-right shrink-0">
-                    <p className="font-mono text-sm font-medium">{formatDuration(call.duration)}</p>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">
-                      <Clock className="h-3 w-3" />
-                      <span>{formatDate(call.started_at)}</span>
-                    </div>
-                  </div>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={callView}
+            initial={{ opacity: 0, y: 10, filter: "blur(4px)" }}
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            exit={{ opacity: 0, y: -10, filter: "blur(4px)" }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+          >
+            {loading ? (
+              <div className="space-y-3">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="h-20 bg-muted rounded-lg animate-pulse" />
+                ))}
+              </div>
+            ) : filteredCalls.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-16">
+                  <History className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold mb-1">
+                    No {callView === "demo" ? "demo" : "live"} calls yet
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {callView === "demo"
+                      ? "Demo calls will appear here once you start testing agents in the browser."
+                      : "Live calls will appear here once your agents start receiving or placing calls."}
+                  </p>
                 </CardContent>
               </Card>
-            ))}
-          </div>
-        )}
+            ) : (
+              <div className="space-y-3">
+                {filteredCalls.map((call) => (
+                  <Card
+                    key={call.id}
+                    className="cursor-pointer hover:border-primary/40 transition-colors"
+                    onClick={() => handleSelectCall(call)}
+                  >
+                    <CardContent className="flex items-center gap-4 p-4">
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+                        call.direction === "inbound" ? "bg-accent" : "bg-primary/10"
+                      }`}>
+                        {call.direction === "inbound" ? (
+                          <PhoneIncoming className="h-4 w-4 text-accent-foreground" />
+                        ) : (
+                          <PhoneOutgoing className="h-4 w-4 text-primary" />
+                        )}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <p className="font-medium text-sm truncate font-mono">
+                            {call.direction === "inbound" ? call.caller_number : call.recipient_number}
+                          </p>
+                          <Badge variant={statusColor(call.status) as any} className="text-[10px] shrink-0">
+                            {call.status}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <span className="capitalize">
+                            {call.direction === "demo" ? "Demo" : call.direction}
+                          </span>
+                          {call.agents?.name && (
+                            <>
+                              <span>·</span>
+                              <span className="flex items-center gap-1">
+                                <User className="h-3 w-3" />
+                                {call.agents.name}
+                              </span>
+                            </>
+                          )}
+                          {call.transcript && (
+                            <>
+                              <span>·</span>
+                              <Badge variant="outline" className="text-[10px] h-4">Transcript</Badge>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <p className="font-mono text-sm font-medium">{formatDuration(call.duration)}</p>
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">
+                          <Clock className="h-3 w-3" />
+                          <span>{formatDate(call.started_at)}</span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
 
         {/* Call details dialog */}
         <Dialog open={!!selectedCall} onOpenChange={() => setSelectedCall(null)}>
@@ -394,12 +453,25 @@ export default function CallLogs() {
                       {Array.isArray(selectedCall.transcript)
                         ? (selectedCall.transcript as TranscriptMessage[]).map((msg, i) => (
                             <div key={i} className="flex gap-2">
-                              <Badge
-                                variant={msg.role === "agent" ? "default" : "secondary"}
-                                className="text-xs shrink-0 h-5 mt-0.5"
-                              >
-                                {msg.role === "agent" ? "Agent" : "Caller"}
-                              </Badge>
+                              {(() => {
+                                const normalizedSpeaker = String(msg.role || msg.speaker || "system").toLowerCase();
+                                const isAgent = normalizedSpeaker === "agent";
+                                const label =
+                                  normalizedSpeaker === "agent"
+                                    ? "Agent"
+                                    : normalizedSpeaker === "user" || normalizedSpeaker === "caller"
+                                      ? "Caller"
+                                      : normalizedSpeaker.charAt(0).toUpperCase() + normalizedSpeaker.slice(1);
+
+                                return (
+                                  <Badge
+                                    variant={isAgent ? "default" : "secondary"}
+                                    className="text-xs shrink-0 h-5 mt-0.5"
+                                  >
+                                    {label}
+                                  </Badge>
+                                );
+                              })()}
                               <p className="text-sm leading-relaxed">{msg.text}</p>
                             </div>
                           ))

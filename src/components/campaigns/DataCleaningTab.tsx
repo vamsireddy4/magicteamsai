@@ -34,7 +34,7 @@ export default function DataCleaningTab() {
     setProcessing(true);
     try {
       const csvContent = await customerFile.text();
-      const data = await analyzeCsvWithGemini(csvContent, profile?.gemini_api_key);
+      const data = await analyzeCsvWithGemini(csvContent, profile?.gemini_api_key, profile?.analysis_model);
       setColumns(data.columns || []); setRows(data.rows || []); setSummary(data.summary || "");
       setSelectedIndices(new Set((data.rows || []).map((_: any, i: number) => i)));
       toast({ title: "Analysis complete", description: data.summary || `${data.rows?.length || 0} contacts found.` });

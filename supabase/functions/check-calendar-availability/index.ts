@@ -100,17 +100,11 @@ Deno.serve(async (req) => {
 });
 
 async function handleGoogleCalendar(integration: any, opts: any) {
-  const apiKey = integration.api_key;
+  const { accessToken, querySuffix, headers } = await getGoogleAuthHeaders(integration);
   const calendarId = integration.calendar_id || "primary";
-  const isStandardKey = apiKey?.startsWith("AIza");
-
-  const headers: Record<string, string> = {};
-  if (!isStandardKey) {
-    headers["Authorization"] = `Bearer ${apiKey}`;
-  }
 
   if (opts.test) {
-    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}${isStandardKey ? `?key=${apiKey}` : ""}`;
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}${querySuffix}`;
     const res = await fetch(url, { headers });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -123,7 +117,7 @@ async function handleGoogleCalendar(integration: any, opts: any) {
   const timeMin = opts.date || new Date().toISOString();
   const timeMax = new Date(new Date(timeMin).getTime() + 24 * 60 * 60 * 1000).toISOString();
 
-  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime${isStandardKey ? `&key=${apiKey}` : ""}`;
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime${querySuffix ? `&${querySuffix.slice(1)}` : ""}`;
   const res = await fetch(url, { headers });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -138,6 +132,77 @@ async function handleGoogleCalendar(integration: any, opts: any) {
       end: e.end?.dateTime || e.end?.date,
     })) || [],
   };
+}
+
+async function getGoogleAuthHeaders(integration: any) {
+  const apiKey = integration.api_key;
+  if (apiKey?.startsWith("AIza")) {
+    return {
+      accessToken: apiKey,
+      querySuffix: `?key=${apiKey}`,
+      headers: {} as Record<string, string>,
+    };
+  }
+
+  const token = await ensureGoogleAccessToken(integration);
+  return {
+    accessToken: token,
+    querySuffix: "",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    } as Record<string, string>,
+  };
+}
+
+async function ensureGoogleAccessToken(integration: any) {
+  const accessToken = integration.access_token || integration.api_key;
+  const expiresAt = integration.token_expires_at ? new Date(integration.token_expires_at).getTime() : 0;
+  const hasFreshAccessToken = accessToken && expiresAt > Date.now() + 60_000;
+
+  if (hasFreshAccessToken) {
+    return accessToken;
+  }
+
+  const refreshToken = integration.refresh_token;
+  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+  const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+
+  if (!refreshToken || !clientId || !clientSecret) {
+    if (accessToken) return accessToken;
+    throw new Error("Google Calendar OAuth is not fully configured.");
+  }
+
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+
+  const tokenJson = await tokenRes.json().catch(() => ({}));
+  if (!tokenRes.ok || !tokenJson.access_token) {
+    throw new Error(tokenJson.error_description || tokenJson.error || "Failed to refresh Google Calendar token.");
+  }
+
+  const nextExpiresAt = tokenJson.expires_in
+    ? new Date(Date.now() + Number(tokenJson.expires_in) * 1000).toISOString()
+    : null;
+
+  await supabase
+    .from("calendar_integrations")
+    .update({
+      access_token: tokenJson.access_token,
+      token_expires_at: nextExpiresAt,
+    })
+    .eq("id", integration.id);
+
+  return tokenJson.access_token as string;
 }
 
 // Cal.com v2 API

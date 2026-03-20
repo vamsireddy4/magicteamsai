@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requirePositiveBalance } from "../_shared/minute-balance.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -156,6 +157,8 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    await requirePositiveBalance(supabase, user.id);
 
     // Fetch agent (must belong to user)
     const { data: agent, error: agentError } = await supabase

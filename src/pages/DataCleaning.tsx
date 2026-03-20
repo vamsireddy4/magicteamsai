@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Upload, FileSpreadsheet, Users, Phone, Play, Loader2, Sparkles } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { analyzeCsvWithGemini } from "@/lib/gemini";
+import { usePersistentState } from "@/hooks/usePersistentState";
 
 interface ColumnDef {
   key: string;
@@ -37,9 +38,9 @@ export default function DataCleaning() {
   // Bulk call config
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [phoneConfigs, setPhoneConfigs] = useState<PhoneConfigRow[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState("");
-  const [selectedPhoneConfig, setSelectedPhoneConfig] = useState("");
-  const [delaySec, setDelaySec] = useState("30");
+  const [selectedAgent, setSelectedAgent] = usePersistentState("data-cleaning-selected-agent", "");
+  const [selectedPhoneConfig, setSelectedPhoneConfig] = usePersistentState("data-cleaning-selected-phone-config", "");
+  const [delaySec, setDelaySec] = usePersistentState("data-cleaning-delay-sec", "30");
   const [calling, setCalling] = useState(false);
 
   useEffect(() => {

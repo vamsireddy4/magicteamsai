@@ -56,6 +56,10 @@ const OUTCOMES = ["ALL", "ANSWERED", "DECLINED", "NO_ANSWER", "PENDING", "VOICEM
 const normalizeComparablePhone = (raw: string | null | undefined) =>
   String(raw || "").replace(/\D/g, "");
 
+const isLocalDevHost = () =>
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
 export default function OutcomesTab() {
   const { user, profile } = useAuth();
   const { toast } = useToast();
@@ -104,15 +108,20 @@ export default function OutcomesTab() {
   }, [user]);
 
   const syncCampaignCallLogsFromUltravox = async (callLogsToSync: CallLog[]) => {
-    const ultravoxLogs = callLogsToSync.filter((log) => log.ultravox_call_id);
+    const ultravoxLogs = callLogsToSync.filter(
+      (log) =>
+        log.ultravox_call_id &&
+        (!log.transcript || log.duration == null || ["initiated", "in-progress", "ringing", "queued"].includes(log.status)),
+    );
     if (ultravoxLogs.length === 0) return callLogsToSync;
 
     const syncedLogs = await Promise.all(
       ultravoxLogs.map(async (log) => {
         try {
           const response = await fetch(`/api/local/ultravox-call-details?callId=${encodeURIComponent(log.ultravox_call_id!)}`);
+          if (response.status === 204) return log;
           const data = await response.json().catch(() => ({}));
-          if (!response.ok) return log;
+          if (!response.ok || data?.unavailable) return log;
 
           const updateData = {
             duration: data?.duration ?? log.duration,
@@ -151,7 +160,9 @@ export default function OutcomesTab() {
       return;
     }
 
-    void supabase.functions.invoke("sync-call-data").catch(() => null);
+    if (!isLocalDevHost()) {
+      void supabase.functions.invoke("sync-call-data").catch(() => null);
+    }
 
     const campContacts = contacts.filter((c) => c.campaign_id === selectedCampaign.id);
     const campPhoneDigits = new Set(campContacts.map((c) => normalizeComparablePhone(c.phone_number)));
@@ -625,7 +636,10 @@ export default function OutcomesTab() {
                   <CardContent className="pt-5 pb-4 space-y-3">
                     <div className="flex items-start justify-between gap-2 text-wrap">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-base truncate">{camp.venue_name}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-base truncate">{camp.venue_name}</h3>
+                          {camp.round > 1 && <Badge variant="outline" className="px-1.5 py-0 text-[10px] h-5">Retry {camp.round}</Badge>}
+                        </div>
                         {camp.venue_location && <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5"><MapPin className="h-3 w-3" /> {camp.venue_location}</p>}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">

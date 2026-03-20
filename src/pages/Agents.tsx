@@ -60,8 +60,8 @@ export default function Agents() {
       }
 
       toast({ title: "Agent deleted" });
-      // The user specifically asked for automatic refresh
-      window.location.reload();
+      // Realtime subscription auto-refetches, but call explicitly to be safe
+      fetchAgents();
     } catch (err: any) {
       toast({ title: "Error", description: err.message || "Failed to delete agent", variant: "destructive" });
     }
@@ -112,7 +112,10 @@ export default function Agents() {
                         <Link to={`/agents/${agent.id}`}>
                           <DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>
                         </Link>
-                        <DropdownMenuItem onClick={() => deleteAgent(agent.id)} className="text-destructive">
+                        <DropdownMenuItem
+                          onClick={(e) => { e.stopPropagation(); deleteAgent(agent.id); }}
+                          className="text-destructive"
+                        >
                           <Trash2 className="h-4 w-4 mr-2" />Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>

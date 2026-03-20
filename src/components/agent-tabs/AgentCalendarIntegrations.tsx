@@ -27,6 +27,9 @@ import { getErrorMessage, getFunctionUnavailableMessage, isEdgeFunctionUnavailab
 interface CalendarIntegration {
   id: string; user_id: string; provider: string; display_name: string;
   api_key: string | null; calendar_id: string | null; is_active: boolean;
+  access_token?: string | null;
+  refresh_token?: string | null;
+  token_expires_at?: string | null;
   config: Record<string, any>; created_at: string;
 }
 
@@ -54,6 +57,63 @@ const PROVIDER_NAMES: Record<string, string> = {
 };
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+const formatDayKey = (date: Date) =>
+  date.toLocaleDateString("en-US", { weekday: "long" });
+
+const toDateInput = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const buildGoogleSlots = (
+  tool: AppointmentTool,
+  fromDate: string,
+  toDate: string,
+  events: Array<{ summary?: string; start?: string; end?: string; attendeeName?: string | null }>
+) => {
+  const durationMinutes = tool.appointment_types?.[0]?.duration || 30;
+  const slots: Array<{ time: string; date: string; status: "available" | "booked"; summary?: string; attendeeName?: string | null }> = [];
+  const startDate = new Date(`${fromDate}T00:00:00`);
+  const endDate = new Date(`${toDate}T00:00:00`);
+
+  for (let current = new Date(startDate); current <= endDate; current.setDate(current.getDate() + 1)) {
+    const dayKey = formatDayKey(current);
+    const hours = tool.business_hours?.[dayKey];
+    if (!hours?.enabled) continue;
+
+    const [startHour, startMinute] = hours.start.split(":").map(Number);
+    const [endHour, endMinute] = hours.end.split(":").map(Number);
+    const windowStart = new Date(current);
+    windowStart.setHours(startHour, startMinute, 0, 0);
+    const windowEnd = new Date(current);
+    windowEnd.setHours(endHour, endMinute, 0, 0);
+
+    for (let slotStart = new Date(windowStart); slotStart < windowEnd; slotStart = new Date(slotStart.getTime() + durationMinutes * 60 * 1000)) {
+      const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60 * 1000);
+      if (slotEnd > windowEnd) break;
+
+      const overlappingEvent = events.find((event) => {
+        if (!event.start || !event.end) return false;
+        const eventStart = new Date(event.start);
+        const eventEnd = new Date(event.end);
+        return slotStart < eventEnd && slotEnd > eventStart;
+      });
+
+      slots.push({
+        time: slotStart.toISOString(),
+        date: toDateInput(current),
+        status: overlappingEvent ? "booked" : "available",
+        summary: overlappingEvent?.summary,
+        attendeeName: overlappingEvent?.attendeeName || null,
+      });
+    }
+  }
+
+  return slots;
+};
 
 interface Props {
   agentId: string;
@@ -91,6 +151,129 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
   const [bookingEmail, setBookingEmail] = useState("");
   const [bookingInProgress, setBookingInProgress] = useState(false);
 
+  const getLinkedIntegration = useCallback((tool: AppointmentTool | null) => {
+    if (!tool) return null;
+    return integrations.find((item) => item.id === tool.calendar_integration_id) || null;
+  }, [integrations]);
+
+  const getFallbackIntegration = useCallback((tool: AppointmentTool | null) => {
+    if (!tool) return null;
+    return integrations.find((item) => item.provider === tool.provider && item.is_active) || null;
+  }, [integrations]);
+
+  const relinkToolToActiveIntegration = useCallback(async (tool: AppointmentTool) => {
+    const fallbackIntegration = getFallbackIntegration(tool);
+    if (!fallbackIntegration) {
+      toast({
+        title: "No active calendar found",
+        description: `Connect an active ${PROVIDER_NAMES[tool.provider]} integration first.`,
+        variant: "destructive",
+      });
+      return null;
+    }
+
+    const { error } = await supabase
+      .from("appointment_tools" as any)
+      .update({ calendar_integration_id: fallbackIntegration.id } as any)
+      .eq("id", tool.id);
+
+    if (error) {
+      toast({ title: "Relink failed", description: error.message, variant: "destructive" });
+      return null;
+    }
+
+    const nextTool = { ...tool, calendar_integration_id: fallbackIntegration.id };
+    setTools((prev) => prev.map((item) => item.id === tool.id ? nextTool : item));
+    setViewTool((prev) => prev?.id === tool.id ? nextTool : prev);
+    toast({ title: "Calendar relinked", description: `${tool.name} now uses ${fallbackIntegration.display_name}.` });
+    return fallbackIntegration;
+  }, [getFallbackIntegration, toast]);
+
+  const fetchGoogleAvailabilityClientSide = useCallback(async (tool: AppointmentTool, fromDate: string, toDate: string) => {
+    const integration = getLinkedIntegration(tool) || getFallbackIntegration(tool);
+    if (!integration) {
+      throw new Error("Calendar integration not found");
+    }
+
+    const accessToken = integration.access_token || integration.api_key;
+    if (!accessToken) {
+      throw new Error("Google Calendar is connected without an access token");
+    }
+
+    const calendarId = integration.calendar_id || "primary";
+    const start = new Date(`${fromDate}T00:00:00`);
+    const end = new Date(`${toDate}T23:59:59`);
+    const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`);
+    url.searchParams.set("timeMin", start.toISOString());
+    url.searchParams.set("timeMax", end.toISOString());
+    url.searchParams.set("singleEvents", "true");
+    url.searchParams.set("orderBy", "startTime");
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.error?.message || "Failed to fetch Google Calendar availability");
+    }
+
+    const events = (payload.items || []).map((event: any) => ({
+      summary: event.summary,
+      start: event.start?.dateTime || event.start?.date,
+      end: event.end?.dateTime || event.end?.date,
+      attendeeName:
+        event.attendees?.find((attendee: any) => attendee.displayName)?.displayName ||
+        event.creator?.displayName ||
+        null,
+    }));
+
+    return {
+      success: true,
+      events,
+      slots: buildGoogleSlots(tool, fromDate, toDate, events),
+    };
+  }, [getFallbackIntegration, getLinkedIntegration]);
+
+  const bookGoogleSlotClientSide = useCallback(async () => {
+    if (!viewTool?.calendar_integration_id || !bookingSlot) {
+      throw new Error("No Google booking slot selected");
+    }
+
+    const integration = getLinkedIntegration(viewTool) || getFallbackIntegration(viewTool);
+    if (!integration) {
+      throw new Error("Calendar integration not found");
+    }
+
+    const accessToken = integration.access_token || integration.api_key;
+    if (!accessToken) {
+      throw new Error("Google Calendar is connected without an access token");
+    }
+
+    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(integration.calendar_id || "primary")}/events`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        summary: `MagicTeams AI: ${bookingName}`,
+        start: { dateTime: bookingSlot.time },
+        end: { dateTime: new Date(new Date(bookingSlot.time).getTime() + 30 * 60 * 1000).toISOString() },
+        attendees: bookingEmail ? [{ email: bookingEmail, displayName: bookingName }] : undefined,
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.error?.message || "Failed to book Google Calendar event");
+    }
+
+    return payload;
+  }, [bookingEmail, bookingName, bookingSlot, getFallbackIntegration, getLinkedIntegration, viewTool]);
+
   const fetchData = async () => {
     const [intRes, toolsRes] = await Promise.all([
       supabase.from("calendar_integrations").select("*").eq("user_id", userId).order("created_at"),
@@ -114,11 +297,11 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
   // Auto-fetch availability when tab switches or dates change
   useEffect(() => {
     if (viewTab === "availability" && viewTool?.calendar_integration_id) {
-      fetchAvailability(viewTool, availabilityFromDate);
+      fetchAvailability(viewTool, availabilityFromDate, availabilityToDate);
     }
   }, [viewTab, availabilityFromDate, availabilityToDate, viewTool]);
 
-  const fetchAvailability = useCallback(async (tool: AppointmentTool, date: string) => {
+  const fetchAvailability = useCallback(async (tool: AppointmentTool, fromDate: string, toDate: string) => {
     if (!tool.calendar_integration_id) {
       setAvailabilityData({ error: "No calendar connected to this tool" });
       return;
@@ -126,16 +309,39 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
     setLoadingAvailability(true);
     setAvailabilityData(null);
     try {
+      const linkedIntegration = getLinkedIntegration(tool);
+      const effectiveIntegration = linkedIntegration || await relinkToolToActiveIntegration(tool);
+      if (!effectiveIntegration) {
+        setAvailabilityData({ error: "Calendar integration not found" });
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke("check-calendar-availability", {
         body: {
           provider: tool.provider,
-          integration_id: tool.calendar_integration_id,
-          date,
+          integration_id: effectiveIntegration.id,
+          date: fromDate,
+          end_date: toDate,
         },
       });
       if (error) throw error;
       setAvailabilityData(data);
     } catch (err: any) {
+      if (tool.provider === "google_calendar" && isEdgeFunctionUnavailable(err)) {
+        try {
+          const fallbackData = await fetchGoogleAvailabilityClientSide(tool, fromDate, toDate);
+          setAvailabilityData(fallbackData);
+          return;
+        } catch (fallbackErr: any) {
+          const message = getErrorMessage(fallbackErr) || "Failed to fetch Google availability";
+          setAvailabilityData({
+            error: message.toLowerCase().includes("invalid authentication credentials")
+              ? "Google Calendar access expired or is invalid. Reconnect Google Calendar from Calendar Integrations and try again."
+              : message,
+          });
+          return;
+        }
+      }
       setAvailabilityData({
         error: isEdgeFunctionUnavailable(err)
           ? getFunctionUnavailableMessage("Calendar availability")
@@ -144,15 +350,20 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
     } finally {
       setLoadingAvailability(false);
     }
-  }, []);
+  }, [getLinkedIntegration, relinkToolToActiveIntegration, fetchGoogleAvailabilityClientSide]);
 
   const handleBookSlot = async () => {
     if (!viewTool?.calendar_integration_id || !bookingSlot) return;
     setBookingInProgress(true);
     try {
+      const effectiveIntegration = getLinkedIntegration(viewTool) || await relinkToolToActiveIntegration(viewTool);
+      if (!effectiveIntegration) {
+        throw new Error("Calendar integration not found");
+      }
+
       const { data, error } = await supabase.functions.invoke("book-calendar-appointment", {
         body: {
-          integration_id: viewTool.calendar_integration_id,
+          integration_id: effectiveIntegration.id,
           start_time: bookingSlot.time,
           attendee_name: bookingName,
           attendee_email: bookingEmail || undefined,
@@ -162,8 +373,24 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
       toast({ title: "Appointment booked successfully!", description: "The slot has been reserved." });
       setBookingSlot(null);
       // Refresh availability
-      fetchAvailability(viewTool, availabilityFromDate);
+      fetchAvailability(viewTool, availabilityFromDate, availabilityToDate);
     } catch (err: any) {
+      if (viewTool.provider === "google_calendar" && isEdgeFunctionUnavailable(err)) {
+        try {
+          await bookGoogleSlotClientSide();
+          toast({ title: "Appointment booked successfully!", description: "The slot has been reserved." });
+          setBookingSlot(null);
+          fetchAvailability(viewTool, availabilityFromDate, availabilityToDate);
+          return;
+        } catch (fallbackErr: any) {
+          toast({
+            title: "Booking failed",
+            description: getErrorMessage(fallbackErr) || "Failed to book appointment",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
       toast({
         title: "Booking failed",
         description: getErrorMessage(err) || "Failed to book appointment",
@@ -182,6 +409,15 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
     const d = new Date(); d.setDate(d.getDate() + 7);
     setAvailabilityToDate(d.toISOString().split("T")[0]);
   };
+
+  const groupedBookedEvents = Array.isArray(availabilityData?.events)
+    ? availabilityData.events.reduce((acc: Record<string, any[]>, event: any) => {
+        const dateKey = event.start ? new Date(event.start).toISOString().slice(0, 10) : "unknown";
+        if (!acc[dateKey]) acc[dateKey] = [];
+        acc[dateKey].push(event);
+        return acc;
+      }, {})
+    : {};
 
   const toggleTool = async (id: string, current: boolean) => {
     await supabase.from("appointment_tools" as any).update({ is_active: !current } as any).eq("id", id);
@@ -377,23 +613,47 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
                     {availabilityData && !loadingAvailability && (
                       <div className="space-y-3">
                         {availabilityData.error ? (
-                          <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                            {availabilityData.error}
+                          <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive space-y-3">
+                            <div>{availabilityData.error}</div>
+                            {String(availabilityData.error).toLowerCase().includes("reconnect google calendar") && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-destructive/30 bg-background text-destructive hover:bg-destructive/5 hover:text-destructive"
+                                onClick={() => navigate("/calendar-integrations")}
+                              >
+                                Reconnect Google Calendar
+                              </Button>
+                            )}
                           </div>
                         ) : availabilityData.events ? (
                           <>
-                            <h4 className="font-semibold text-sm">Events ({availabilityFromDate} to {availabilityToDate})</h4>
+                            <h4 className="font-semibold text-sm">Booked Appointments ({availabilityFromDate} to {availabilityToDate})</h4>
                             {availabilityData.events.length === 0 ? (
-                              <p className="text-sm text-muted-foreground">No events — calendar is free all day.</p>
+                              <p className="text-sm text-muted-foreground">No appointments booked in this date range.</p>
                             ) : (
-                              <div className="space-y-1.5">
-                                {availabilityData.events.map((evt: any, i: number) => (
-                                  <div key={i} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
-                                    <span className="font-medium">{evt.summary || "Busy"}</span>
-                                    <span className="text-muted-foreground text-xs">
-                                      {evt.start ? new Date(evt.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""} 
-                                      {evt.end ? ` – ${new Date(evt.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ""}
-                                    </span>
+                              <div className="space-y-3">
+                                {Object.entries(groupedBookedEvents).map(([dateKey, events]) => (
+                                  <div key={dateKey} className="space-y-2">
+                                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                      {new Date(`${dateKey}T00:00:00`).toLocaleDateString([], { weekday: "short", day: "2-digit", month: "short", year: "numeric" })}
+                                    </div>
+                                    <div className="space-y-1.5">
+                                      {events.map((evt: any, i: number) => (
+                                        <div key={`${dateKey}-${i}`} className="rounded-md border px-3 py-2 text-sm">
+                                          <div className="flex items-center justify-between gap-3">
+                                            <span className="font-medium">{evt.summary || "Booked appointment"}</span>
+                                            <span className="text-muted-foreground text-xs">
+                                              {evt.start ? new Date(evt.start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+                                              {evt.end ? ` – ${new Date(evt.end).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+                                            </span>
+                                          </div>
+                                          <div className="mt-1 text-xs text-muted-foreground">
+                                            {evt.attendeeName ? `Booked for ${evt.attendeeName}` : "Booked"}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
                                   </div>
                                 ))}
                               </div>
@@ -409,15 +669,28 @@ export default function AgentCalendarIntegrations({ agentId, userId }: Props) {
                                   {availabilityData.slots.map((slot: any, i: number) => {
                                     const slotTime = typeof slot === "string" ? slot : (slot.time || slot.start || "");
                                     const slotDate = typeof slot === "object" && slot.date ? slot.date : "";
+                                    const slotStatus = typeof slot === "object" ? slot.status : "available";
+                                    const isBooked = slotStatus === "booked";
                                     const dt = slotTime ? new Date(slotTime) : null;
                                     return (
                                       <div
                                         key={i}
-                                        className="rounded-md border px-2 py-1.5 text-xs text-center font-medium hover:bg-accent hover:border-primary cursor-pointer transition-colors"
-                                        onClick={() => setBookingSlot({ time: slotTime, date: slotDate })}
+                                        className={`rounded-md border px-2 py-1.5 text-xs text-center font-medium transition-colors ${
+                                          isBooked
+                                            ? "border-green-300 bg-green-50 text-green-800"
+                                            : "cursor-pointer hover:bg-accent hover:border-primary"
+                                        }`}
+                                        onClick={() => {
+                                          if (!isBooked) setBookingSlot({ time: slotTime, date: slotDate });
+                                        }}
                                       >
                                         {slotDate && <div className="text-muted-foreground">{new Date(slotDate + "T00:00:00").toLocaleDateString([], { day: '2-digit', month: 'short' })}</div>}
-                                        {dt ? dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : JSON.stringify(slot)}
+                                        <div>{dt ? dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : JSON.stringify(slot)}</div>
+                                        {isBooked && (
+                                          <div className="mt-1 text-[10px] font-medium text-green-700">
+                                            {slot.attendeeName ? slot.attendeeName : "Booked"}
+                                          </div>
+                                        )}
                                       </div>
                                     );
                                   })}

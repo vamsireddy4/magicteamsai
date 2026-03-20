@@ -63,13 +63,28 @@ Deno.serve(async (req) => {
 
     const provider = phoneConfig.provider || "twilio";
 
-    // Find the active agent linked to this phone config
-    const { data: agent } = await supabase
-      .from("agents")
-      .select("*")
-      .eq("phone_number_id", phoneConfig.id)
-      .eq("is_active", true)
-      .single();
+    let agent = null;
+
+    if (phoneConfig.inbound_agent_id) {
+      const { data: mappedAgent } = await supabase
+        .from("agents")
+        .select("*")
+        .eq("id", phoneConfig.inbound_agent_id)
+        .eq("user_id", phoneConfig.user_id)
+        .eq("is_active", true)
+        .maybeSingle();
+      agent = mappedAgent;
+    }
+
+    if (!agent) {
+      const { data: fallbackAgent } = await supabase
+        .from("agents")
+        .select("*")
+        .eq("phone_number_id", phoneConfig.id)
+        .eq("is_active", true)
+        .single();
+      agent = fallbackAgent;
+    }
 
     if (!agent) {
       return new Response(

@@ -323,7 +323,7 @@ async function handleTelnyxTransfer(phoneConfig: any, callSid: string, forwardin
         from: phoneConfig.phone_number,
         timeout_secs: 10,
         park_after_unbridge: "self",
-        target_leg_client_state: btoa(JSON.stringify({
+        client_state: btoa(JSON.stringify({
           type: "transfer-leg",
           originalCallControlId: callSid,
           currentIndex: 0,

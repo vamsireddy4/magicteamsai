@@ -27,6 +27,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  // Session-level flag: once completeOnboarding() is called, this permanently
+  // flips to true for the lifetime of the React tree (until page refresh).
+  // This ensures ALL protected routes see needsOnboarding=false immediately,
+  // not just the dashboard, without waiting for DB/profile re-fetch to settle.
+  const [sessionOnboardingDone, setSessionOnboardingDone] = useState(false);
 
   const fetchProfile = async (nextUser: User | null) => {
     if (!nextUser) {
@@ -148,23 +153,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Immediately flip session flag — this makes needsOnboarding=false RIGHT NOW
+    // for every protected route in the app, without waiting for DB or re-fetch.
+    setSessionOnboardingDone(true);
+
+    // Optimistically update profile in memory too
+    setProfile((prev) => prev ? { ...prev, onboarding_completed: true } : prev);
+
     try {
+      // Use upsert so it works even if the profile row doesn't exist yet
       const { error } = await supabase
         .from("profiles")
-        .update({ onboarding_completed: true })
-        .eq("user_id", user.id);
+        .upsert(
+          { user_id: user.id, onboarding_completed: true },
+          { onConflict: "user_id" }
+        );
 
       if (error) {
-        console.warn("Could not update onboarding status (column might be missing):", error.message);
+        console.warn("Could not update onboarding status:", error.message);
       }
     } catch (e) {
       console.warn("Error completing onboarding:", e);
     }
 
-    await fetchProfile(user);
+    // Sync fresh profile from DB in background
+    fetchProfile(user).catch(() => {});
   };
 
-  const needsOnboarding = Boolean(user && profile && profile.onboarding_completed === false);
+  // needsOnboarding: false if any of these are true:
+  //   - sessionOnboardingDone (set immediately when completeOnboarding() is called)
+  //   - profile exists and onboarding_completed is not false
+  //   - still loading (don't redirect yet)
+  const needsOnboarding = Boolean(
+    !loading &&
+    !sessionOnboardingDone &&
+    user && (
+      !profile ||
+      profile.onboarding_completed === false
+    )
+  );
 
   return (
     <AuthContext.Provider
